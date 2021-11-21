@@ -1,0 +1,6 @@
+﻿  Stylus.cpp
+C:\Users\andris\source\repos\glazy\glazy\Stylus.cpp(80,22): warning C4805: '!=': unsafe mix of type 'bool' and type 'int' in operation
+C:\Users\andris\source\repos\glazy\glazy\Stylus.cpp(158,38): warning C4244: '+=': conversion from 'double' to 'float', possible loss of data
+C:\Users\andris\source\repos\glazy\glazy\Stylus.cpp(159,38): warning C4244: '+=': conversion from 'double' to 'float', possible loss of data
+C:\Users\andris\source\repos\glazy\glazy\Stylus.cpp(181,59): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
+  glazy.vcxproj -> C:\Users\andris\source\repos\glazy\x64\Debug\glazy.lib
