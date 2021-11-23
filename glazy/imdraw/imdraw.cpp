@@ -231,48 +231,31 @@ void imdraw::triangle() {
 	pop_program();
 }
 
-void imdraw::quad() {
+void imdraw::quad(GLuint texture) {
 	static auto geo = imgeo::quad();
 
 	// init vao
-	static GLuint vao = []() {
-		glGenVertexArrays(1, &vao);
-		glBindVertexArray(vao);
-		auto pos_vbo = imdraw::make_vbo(geo.positions);
-		glBindBuffer(GL_ARRAY_BUFFER, pos_vbo);
-		glEnableVertexAttribArray(0);
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-
-		auto uv_vbo = imdraw::make_vbo(geo.uvs.value());
-		glBindBuffer(GL_ARRAY_BUFFER, pos_vbo);
-		glEnableVertexAttribArray(1);
-		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
-
-		glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-		return vao;
-	}();
-
-	// create ebo
-	static GLuint ebo = []() {
-		GLuint ebo;
-		glGenBuffers(1, &ebo);
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-		glBufferData(GL_ELEMENT_ARRAY_BUFFER, geo.indices.size() * sizeof(unsigned int), geo.indices.data(), GL_STATIC_DRAW);
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-		return ebo;
-	}();
+	static auto vao = imdraw::make_vao(program(), {
+		{"aPos", {make_vbo(geo.positions), 3}},
+		{"aUV", {make_vbo(geo.uvs.value()), 2}}
+	});
+	static auto ebo = imdraw::make_ebo(geo.indices);
 
 	// get indices count
 	static auto indices_count = (GLuint)geo.indices.size();
 
 	// draw
 	push_program(program());
+	imdraw::set_uniforms(program(), {
+		{ "useTextureMap", true }
+	});
+	glBindTexture(GL_TEXTURE_2D, texture);
 	glBindVertexArray(vao);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-	glDrawElements(GL_TRIANGLES, indices_count, GL_UNSIGNED_INT, NULL);
+	glDrawElements(GL_TRIANGLES, geo.indices.size(), GL_UNSIGNED_INT, NULL);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
+	glBindTexture(GL_TEXTURE_2D, 0);
 	pop_program();
 }
 

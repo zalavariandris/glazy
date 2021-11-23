@@ -36,19 +36,24 @@ int main(int argc, char* argv[]) {
 				glPolygonMode(GL_FRONT_AND_BACK, polygon_modes[polygon_mode_current]);
 			}
 
-			imdraw::set_model(glm::translate(glm::mat4(1), { 0,0,0 }));
+			//imdraw::set_model(glm::translate(glm::mat4(1), { 0,0,0 }));
+			//imdraw::set_color({ 1,1,1 });
+			//imdraw::cube();
+
+			//imdraw::set_color({ 1,1,1 }, 0.0);
+			//imdraw::lines(
+			//	{ {2,2,2}, {0,0,0} },
+			//	{ {3,3,3}, {5,5,0} }
+			//);
+
+			//imdraw::plate()
 			imdraw::set_color({ 1,1,1 });
-			imdraw::cube();
+			auto texture = imdraw::make_texture_from_file("C:/Users/andris/Pictures/50285493_806103886402081_6381557048001167360_n.jpg");
+			imdraw::quad(texture);
 
 			imdraw::set_model(glm::translate(glm::mat4(1), { 0,0,0 }));
 			imdraw::set_color({ 1,0,1 }, 0.5);
 			imdraw::grid();
-
-			imdraw::set_color({ 1,1,1 }, 0.0);
-			imdraw::lines(
-				{ {2,2,2}, {0,0,0} },
-				{ {3,3,3}, {5,5,0} }
-			);
 		}
 		glazy::end_frame();
 	}

@@ -5,6 +5,12 @@
 #include <glad/glad.h>
 
 namespace imdraw {
+	struct State {
+		glm::mat4 transform=glm::mat4(1);
+		glm::vec3 color=glm::vec3(1);
+		GLuint texture = 0;;
+		GLenum mode=GL_FILL;
+	};
 
 	// set brush state
 	void set_color(glm::vec3 rgb, float opacity = 0.0);
@@ -18,7 +24,7 @@ namespace imdraw {
 
 	// draw shapes
 	void triangle();
-	void quad();
+	void quad(GLuint texture);
 	void disc();
 
 	void cross();
