@@ -7,6 +7,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "glazy", "glazy.vcxproj", "{
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "draw_demo", "demos\draw_demo\draw_demo.vcxproj", "{E286A7AC-30F4-4C5D-9871-08EDCA8D4879}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OOGL-test", "tests\OOGL-test\OOGL-test.vcxproj", "{A3B90D0E-476E-47F0-9422-1DC69678FBD3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -31,6 +33,14 @@ Global
 		{E286A7AC-30F4-4C5D-9871-08EDCA8D4879}.Release|x64.Build.0 = Release|x64
 		{E286A7AC-30F4-4C5D-9871-08EDCA8D4879}.Release|x86.ActiveCfg = Release|Win32
 		{E286A7AC-30F4-4C5D-9871-08EDCA8D4879}.Release|x86.Build.0 = Release|Win32
+		{A3B90D0E-476E-47F0-9422-1DC69678FBD3}.Debug|x64.ActiveCfg = Debug|x64
+		{A3B90D0E-476E-47F0-9422-1DC69678FBD3}.Debug|x64.Build.0 = Debug|x64
+		{A3B90D0E-476E-47F0-9422-1DC69678FBD3}.Debug|x86.ActiveCfg = Debug|Win32
+		{A3B90D0E-476E-47F0-9422-1DC69678FBD3}.Debug|x86.Build.0 = Debug|Win32
+		{A3B90D0E-476E-47F0-9422-1DC69678FBD3}.Release|x64.ActiveCfg = Release|x64
+		{A3B90D0E-476E-47F0-9422-1DC69678FBD3}.Release|x64.Build.0 = Release|x64
+		{A3B90D0E-476E-47F0-9422-1DC69678FBD3}.Release|x86.ActiveCfg = Release|Win32
+		{A3B90D0E-476E-47F0-9422-1DC69678FBD3}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

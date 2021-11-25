@@ -154,6 +154,9 @@
     <ClInclude Include="glazy\glazy.h" />
     <ClInclude Include="glazy\imdraw\stb_image.h" />
     <ClInclude Include="glazy\Stylus.h" />
+    <ClInclude Include="glazy\OOGL\SmartGLObject.h" />
+    <ClInclude Include="glazy\OOGL\Program.h" />
+    <ClInclude Include="glazy\OOGL\Shader.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="glazy\Camera.cpp" />
@@ -161,6 +164,9 @@
     <ClCompile Include="glazy\imdraw\imdraw_internal.cpp" />
     <ClCompile Include="glazy\imgeo\imgeo.cpp" />
     <ClCompile Include="glazy\Stylus.cpp" />
+    <ClCompile Include="glazy\OOGL\SmartGLObject.cpp" />
+    <ClCompile Include="glazy\OOGL\Program.cpp" />
+    <ClCompile Include="glazy\OOGL\Shader.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".gitignore" />
