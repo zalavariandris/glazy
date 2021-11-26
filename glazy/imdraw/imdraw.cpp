@@ -47,7 +47,6 @@ const GLuint NORMAL_LOCATION = 2;
 const GLuint COLOR_LOCATION = 3;
 
 
-
 /***********
  * IMDRAW  *
  ***********/
@@ -63,13 +62,11 @@ namespace imdraw {
 				layout (location = 1) in vec2 aUV;
 				layout (location = 2) in vec3 aNormal;
 				layout (location = 3) in vec3 aColor;
-				layout (location = 4) in vec3 instancePosition;
-				layout (location = 5) in mat4 instanceMatrix;
+				layout (location = 4) in mat4 instanceMatrix;
 
 				uniform mat4 projection;
 				uniform mat4 view;
 				uniform mat4 model;
-				uniform bool useInstancePosition;
 				uniform bool useInstanceMatrix;
 
 				out vec2 vUV;
@@ -90,7 +87,7 @@ namespace imdraw {
 
 					FragPos = vec3(model * vec4(aPos, 1.0));
 
-					gl_Position = projection * viewModel * vec4(useInstancePosition ? aPos + instancePosition : aPos, 1.0);
+					gl_Position = projection * viewModel * vec4(aPos, 1.0);
 				};
 			)", R"(#version 330 core
 				out vec4 FragColor;
@@ -323,11 +320,18 @@ void imdraw::disc(std::vector<glm::vec3> centers, float diameter, glm::vec3 colo
 	static auto ebo = make_ebo(geo.indices);
 	static auto indices_count = (GLuint)geo.indices.size();
 
+	std::vector < glm::mat4> instances;
+	for (glm::vec3 const & P : centers) {
+		glm::mat4 M = glm::mat4(1);
+		M = glm::translate(M, P);
+		M = glm::scale(M, glm::vec3(diameter / 2));
+		instances.push_back(M);
+	}
 	auto VBO = imdraw::make_vbo(centers);
 
 	glBindVertexArray(vao);
 	glBindBuffer(GL_ARRAY_BUFFER, VBO);
-	auto location = glGetAttribLocation(program(), "instancePosition");
+	auto location = glGetAttribLocation(program(), "instanceMatrix");
 	glEnableVertexAttribArray(location);
 	glVertexAttribPointer(location, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
 	glVertexAttribDivisor(location, 1);
@@ -337,11 +341,11 @@ void imdraw::disc(std::vector<glm::vec3> centers, float diameter, glm::vec3 colo
 	push_program(program());
 	set_uniforms(program(), {
 		{"color", color},
-		{"model", glm::scale(glm::mat4(1), glm::vec3(diameter / 2))},
+		{"model", glm::mat4()},
 		{"useTextureMap", false},
-		{"useInstanceMatrix", false},
-		{"useInstancePosition", true}
-		});
+		{"useInstanceMatrix", true}
+	});
+
 	glBindVertexArray(vao);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
 	glDrawElements(geo.mode, indices_count, GL_UNSIGNED_INT, NULL);
