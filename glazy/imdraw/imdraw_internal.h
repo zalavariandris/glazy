@@ -11,10 +11,10 @@
 #include <glad/glad.h>
 
 namespace imdraw {
-	using Uniform = std::variant<bool, int, glm::vec3, glm::mat4, GLuint>;
-	using Texture = std::tuple<GLenum, GLuint>;
-	using Attribute = std::tuple<GLuint, GLint, GLenum, GLsizei>;
-	using Elements = std::tuple<GLuint, GLsizei, GLenum>;
+	using UniformVariant = std::variant<bool, int, float, glm::vec3, glm::mat4, GLuint>;
+	//using Texture = std::tuple<GLenum, GLuint>;
+	//using Attribute = std::tuple<GLuint, GLint, GLenum, GLsizei>;
+	//using Elements = std::tuple<GLuint, GLsizei, GLenum>;
 
 	/* Frame Buffer Object */
 	GLuint make_fbo(GLuint color_attachment);
@@ -52,7 +52,8 @@ namespace imdraw {
 	/* Program */
 	GLuint make_program_from_source(const char* vertexShaderSource, const char* fragmentShaderSource);
 	GLuint make_program_from_files(const char* vertexSourcePath, const char* fragmentSourcePath);
-	void set_uniforms(GLuint program, std::map<std::string, std::variant<bool, int, float, glm::vec3, glm::mat4, GLuint>> uniforms);
+	void set_uniforms(GLuint program, std::map<GLint, UniformVariant> uniforms);
+	void set_uniforms(GLuint program, std::map<std::string, UniformVariant> uniforms);
 	void push_program(GLuint program);
 	GLuint pop_program();
 

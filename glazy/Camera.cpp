@@ -97,17 +97,28 @@ void Camera::pan(double horizontal, double vertical) {
 	eye += offset;
 }
 
-glm::vec3 Camera::screen_to_planeXY(double mouseX, double mouseY, int screen_width, int screen_height) const {
-	const auto viewport = glm::vec4(0, 0, screen_width, screen_height);
+glm::vec3 Camera::screen_to_planeXY(double mouseX, double mouseY) const {
+	const auto viewport = glm::vec4(-1, -1, 2, 2);
 
 	glm::mat4 proj = getProjection();
 	glm::mat4 view = getView();
 
-	auto near_point = glm::unProject(glm::vec3(mouseX, screen_height - mouseY, 0.0), view, proj, glm::vec4(0, 0, screen_width, screen_height));
-	auto far_point = glm::unProject(glm::vec3(mouseX, screen_height - mouseY, 1.0), view, proj, glm::vec4(0, 0, screen_width, screen_height));
+	auto near_point = glm::unProject(glm::vec3(mouseX, mouseY, 0.0), view, proj, viewport);
+	auto far_point = glm::unProject(glm::vec3(mouseX, mouseY, 1.0), view, proj, viewport);
 
 	return ray_plane_intersection(near_point, far_point, { 0,0,0 }, { 0,0,1 });
-	//return ray_plane_intersection(near_point, far_point, target, eye-target);
+}
+
+glm::vec3 Camera::screen_to_planeXY(double mouseX, double mouseY, glm::vec4 viewport) const {
+	glm::mat4 proj = getProjection();
+	glm::mat4 view = getView();
+
+	mouseY = mouseY;
+
+	auto near_point = glm::unProject(glm::vec3(mouseX, mouseY, 0.0), view, proj, viewport);
+	auto far_point = glm::unProject(glm::vec3(mouseX, mouseY, 1.0), view, proj, viewport);
+
+	return ray_plane_intersection(near_point, far_point, { 0,0,0 }, { 0,0,1 });
 }
 
 void Camera::dolly(double offset) {

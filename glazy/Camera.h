@@ -32,7 +32,8 @@ public:
 
 	void pan(double horizontal, double vertical);
 
-	glm::vec3 screen_to_planeXY(double mouseX, double mouseY, int screen_width, int screen_height) const;
+	glm::vec3 screen_to_planeXY(double mouseX, double mouseY) const;
+	glm::vec3 screen_to_planeXY(double mouseX, double mouseY, glm::vec4 viewport) const;
 
 	void dolly(double offset);
 

@@ -74,7 +74,7 @@ GLuint imdraw::make_vbo(const std::vector<glm::vec3>& data, GLenum usage) {
 	GLuint vbo;
 	glGenBuffers(1, &vbo);
 	glBindBuffer(GL_ARRAY_BUFFER, vbo);
-	glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(glm::vec3), glm::value_ptr(data[0]), usage);
+	glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(glm::vec3), data.data(), usage);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	return vbo;
 }
@@ -83,7 +83,7 @@ GLuint imdraw::make_vbo(const std::vector<glm::vec2>& data, GLenum usage) {
 	GLuint vbo;
 	glGenBuffers(1, &vbo);
 	glBindBuffer(GL_ARRAY_BUFFER, vbo);
-	glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(glm::vec2), glm::value_ptr(data[0]), usage);
+	glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(glm::vec2), data.data(), usage);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	return vbo;
 }
@@ -92,7 +92,7 @@ GLuint imdraw::make_vbo(const std::vector<glm::mat4>& data, GLenum usage) {
 	GLuint vbo;
 	glGenBuffers(1, &vbo);
 	glBindBuffer(GL_ARRAY_BUFFER, vbo);
-	glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(glm::mat4), glm::value_ptr(data[0]), usage);
+	glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(glm::mat4), data.data(), usage);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	return vbo;
 }
@@ -114,6 +114,8 @@ GLuint imdraw::make_ebo(const std::vector<glm::uvec3>& data) {
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	return ebo;
 }
+
+
 
 /* Vertex Array Object */
 GLuint imdraw::make_vao(std::map <GLuint, std::tuple<GLuint, GLsizei>> attributes) {
@@ -279,6 +281,15 @@ GLuint imdraw::make_program_from_source(const char* vertexShaderSource, const ch
 	glAttachShader(shaderProgram, fragmentShader);
 	glLinkProgram(shaderProgram);
 
+	int success;
+	char infoLog[512];
+	glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
+	if (!success)
+	{
+		glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
+		std::cout << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
+	}
+
 	glDeleteShader(vertexShader);
 	glDeleteShader(fragmentShader);
 
@@ -292,12 +303,41 @@ GLuint imdraw::make_program_from_files(const char* vertexSourcePath, const char*
 	return make_program_from_source(vertexSource.c_str(), fragmentSource.c_str());
 }
 
-void imdraw::set_uniforms(GLuint program, std::map<std::string, std::variant<bool, int, float, glm::vec3, glm::mat4, GLuint>> uniforms)
+void imdraw::set_uniforms(GLuint program, std::map<GLint, UniformVariant> uniforms) {
+	push_program(program);
+	for (auto& [location, data] : uniforms)
+	{
+		if (auto value = std::get_if<bool>(&data)) {
+			glUniform1i(location, *value ? 1 : 0);
+		}
+		else if (auto value = std::get_if<int>(&data)) {
+			glUniform1i(location, *value);
+		}
+		else if (auto value = std::get_if<float>(&data)) {
+			glUniform1f(location, *value);
+		}
+		else if (auto value = std::get_if<GLuint>(&data)) {
+			glUniform1i(location, *value);
+		}
+		else if (auto value = std::get_if<glm::vec3>(&data)) {
+			glUniform3f(location, value->x, value->y, value->z);
+		}
+		else if (auto value = std::get_if<glm::mat4>(&data)) {
+			glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(*value));
+		}
+		else {
+			std::cout << "WARNING:GLAZY: '" << location << "' type is not handled" << std::endl;
+		}
+	}
+	pop_program();
+}
+
+void imdraw::set_uniforms(GLuint program, std::map<std::string, UniformVariant> uniforms)
 {
-	glUseProgram(program);
+	push_program(program);
 	for (auto& [name, data] : uniforms)
 	{
-		auto location = glGetUniformLocation(program, name.c_str());
+		GLint location = glGetUniformLocation(program, name.c_str());
 		if (location < 0) {
 			std::cout << "WARNING:GLAZY: '" << name << "' uniform is not used!" << std::endl;
 		}
@@ -324,6 +364,7 @@ void imdraw::set_uniforms(GLuint program, std::map<std::string, std::variant<boo
 			std::cout << "WARNING:GLAZY: '" << name << "' type is not handled" << std::endl;
 		}
 	}
+	pop_program();
 }
 
 std::vector<GLint> program_stack;

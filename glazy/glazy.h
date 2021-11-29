@@ -20,8 +20,10 @@
 #include <GLFW/glfw3native.h>
 
 // imgui
+#include "imgui.h"
 #include "imgui_impl_opengl3.h"
 #include "imgui_impl_glfw.h"
+#include "implot.h"
 
 // glm
 #include <glm/glm.hpp>
@@ -95,8 +97,8 @@ namespace glazy {
 		}
 
 		// configure
-		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
 		//glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
 		glfwSetErrorCallback(glfw_error_callback);
@@ -137,11 +139,16 @@ namespace glazy {
 		*************/
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();
+		ImGuiIO& io = ImGui::GetIO();
+		ImFontConfig cfg;
+		cfg.SizePixels = 13 * 1.5;
+		auto font_default = io.Fonts->AddFontDefault(&cfg);
 		ImGui_ImplGlfw_InitForOpenGL(window, true);
 		ImGui_ImplOpenGL3_Init();
-		ImGuiIO& io = ImGui::GetIO(); (void)io;
-		auto font_default = io.Fonts->AddFontDefault();
+
 		ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable; // enable docking
+		
+		ImPlot::CreateContext();
 
 		return EXIT_SUCCESS;
 	}
@@ -174,8 +181,9 @@ namespace glazy {
 		*********/
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
-		ImGui::NewFrame();
 		
+		ImGui::NewFrame();
+	
 
 		/********
 		  STYLUS
@@ -196,17 +204,20 @@ namespace glazy {
 		/************ 
 		  CREATE GUI 
 		*************/
+		ImGui::DockSpaceOverViewport();
+
 		camera.aspect = (float)display_w / display_h;
 
 		ImGui::Begin("camera");
 		ImGui::Checkbox("ortho", &camera.ortho);
 		ImGui::InputFloat("eye", &camera.eye.z);
 		ImGui::End();
-		control_camera(camera, display_w, display_h);
+		//control_camera(camera, display_w, display_h);
 	}
 
 	void end_frame() {
 		/* IMGUI */
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		ImGui::Render(); // render imgui
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData()); // draw imgui to screen
 
@@ -215,10 +226,14 @@ namespace glazy {
 	}
 
 	void destroy() {
+		// - cleanup implot
+		ImPlot::DestroyContext();
+
 		// - cleanup imgui
 		ImGui_ImplOpenGL3_Shutdown();
 		ImGui_ImplGlfw_Shutdown();
 		ImGui::DestroyContext();
+		
 
 		// - cleanup flfw
 		glfwDestroyWindow(window);

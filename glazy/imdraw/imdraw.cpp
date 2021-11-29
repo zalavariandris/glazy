@@ -52,8 +52,9 @@ const GLuint COLOR_LOCATION = 3;
  ***********/
 
 namespace imdraw {
+	std::map<std::string, GLint> uniform_locations;
+	void reset_uniforms(); // forward declaration
 	GLuint program() {
-
 		// init program
 		static auto prog = []() {
 			// make program
@@ -82,7 +83,7 @@ namespace imdraw {
 
 					mat4 viewModel = view*model;
 					if(useInstanceMatrix){
-						viewModel*=instanceMatrix;
+						viewModel *= instanceMatrix;
 					}
 
 					FragPos = vec3(model * vec4(aPos, 1.0));
@@ -156,6 +157,20 @@ namespace imdraw {
 				};
 			)");
 
+			// cache uniform locations
+			std::vector<std::string> uniform_names = {
+				"model", 
+				"view", 
+				"projection",
+				"useInstanceMatrix",
+				"color",
+				"useTextureMap",
+				"textureMap"
+			};
+			for (std::string name : uniform_names) {
+				uniform_locations[name] = glGetUniformLocation(p, name.c_str());
+			}
+
 			// set default uniforms
 			imdraw::set_uniforms(p, {
 				{"model", glm::mat4(1)},
@@ -170,6 +185,18 @@ namespace imdraw {
 		}();
 
 		return prog;
+	}
+
+	void reset_uniforms() {
+		imdraw::set_uniforms(program(), {
+			{uniform_locations["model"], glm::mat4(1)},
+			//{"view", glm::mat4(1)},
+			//{"projection", glm::mat4(1)},
+			{uniform_locations["useInstanceMatrix"], false},
+			{uniform_locations["color"], glm::vec3(1,0,0)},
+			{uniform_locations["useTextureMap"], false},
+			{uniform_locations["textureMap"], 0}
+		});
 	}
 }
 
@@ -188,13 +215,13 @@ namespace imdraw {
 
 void imdraw::set_projection(glm::mat4 projection_matrix) {
 	imdraw::set_uniforms(imdraw::program(), {
-		{"projection", projection_matrix}
+		{uniform_locations["projection"], projection_matrix}
 		});
 }
 
 void imdraw::set_view(glm::mat4 view_matrix) {
 	imdraw::set_uniforms(imdraw::program(), {
-		{"view", view_matrix}
+		{uniform_locations["view"], view_matrix}
 		});
 }
 
@@ -245,9 +272,10 @@ void imdraw::quad(GLuint texture) {
 
 	// draw
 	push_program(program());
+	imdraw::reset_uniforms();
 	imdraw::set_uniforms(program(), {
-		{"color", glm::vec3(1)},
-		{ "useTextureMap", true }
+		{uniform_locations["color"], glm::vec3(1)},
+		{uniform_locations["useTextureMap"], true }
 	});
 	glBindTexture(GL_TEXTURE_2D, texture);
 	glBindVertexArray(vao);
@@ -275,17 +303,20 @@ void imdraw::grid() {
 	static auto indices_count = (GLuint)geo.indices.size();
 
 	// draw
+	
 	push_program(program());
+	imdraw::reset_uniforms();
 	imdraw::set_uniforms(program(), {
-		{"model", glm::mat4(1)},
-		{"color", glm::vec3(0.5)},
-		{ "useTextureMap", false }
+		{uniform_locations["model"], glm::mat4(1)},
+		{uniform_locations["color"], glm::vec3(0.5)},
+		{uniform_locations["useTextureMap"], false }
 	});
 	glBindVertexArray(vao);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
 	glDrawElements(GL_LINES, indices_count, GL_UNSIGNED_INT, NULL);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
+	
 	pop_program();
 }
 
@@ -299,10 +330,11 @@ void imdraw::disc(glm::vec3 center, float diameter, glm::vec3 color) {
 
 	//draw
 	push_program(program());
+	imdraw::reset_uniforms();
 	set_uniforms(program(), {
-		{"color", color},
-		{"model", glm::scale(glm::translate(glm::mat4(1), center), glm::vec3(diameter/2))},
-		{"useTextureMap", false}
+		{uniform_locations["color"], color},
+		{uniform_locations["model"], glm::scale(glm::translate(glm::mat4(1), center), glm::vec3(diameter/2))},
+		{uniform_locations["useTextureMap"], false}
 	});
 	glBindVertexArray(vao);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
@@ -321,34 +353,51 @@ void imdraw::disc(std::vector<glm::vec3> centers, float diameter, glm::vec3 colo
 	static auto indices_count = (GLuint)geo.indices.size();
 
 	std::vector < glm::mat4> instances;
-	for (glm::vec3 const & P : centers) {
+	for (glm::vec3 P : centers) {
 		glm::mat4 M = glm::mat4(1);
 		M = glm::translate(M, P);
 		M = glm::scale(M, glm::vec3(diameter / 2));
 		instances.push_back(M);
 	}
-	auto VBO = imdraw::make_vbo(centers);
+	auto VBO = imdraw::make_vbo(instances);
 
-	glBindVertexArray(vao);
 	glBindBuffer(GL_ARRAY_BUFFER, VBO);
-	auto location = glGetAttribLocation(program(), "instanceMatrix");
-	glEnableVertexAttribArray(location);
-	glVertexAttribPointer(location, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
-	glVertexAttribDivisor(location, 1);
+	glBindVertexArray(vao);
+	std::size_t vec4Size = sizeof(glm::vec4);
+	
+	GLint location = glGetAttribLocation(program(), "instanceMatrix");
+	glEnableVertexAttribArray(location+0);
+	glVertexAttribPointer(location + 0, 4, GL_FLOAT, GL_FALSE, 4 * vec4Size, (void*)0);
+	
+	glEnableVertexAttribArray(location + 1);
+	glVertexAttribPointer(location + 1, 4, GL_FLOAT, GL_FALSE, 4 * vec4Size, (void*)(1 * vec4Size));
+	
+	glEnableVertexAttribArray(location + 2);
+	glVertexAttribPointer(location + 2, 4, GL_FLOAT, GL_FALSE, 4 * vec4Size, (void*)(2 * vec4Size));
+	
+	glEnableVertexAttribArray(location + 3);
+	glVertexAttribPointer(location + 3, 4, GL_FLOAT, GL_FALSE, 4 * vec4Size, (void*)(3 * vec4Size));
+	
+	glVertexAttribDivisor(location+0, 1);
+	glVertexAttribDivisor(location+1, 1);
+	glVertexAttribDivisor(location+2, 1);
+	glVertexAttribDivisor(location+3, 1);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindVertexArray(0);
 
 	//draw
 	push_program(program());
+	imdraw::reset_uniforms();
 	set_uniforms(program(), {
-		{"color", color},
-		{"model", glm::mat4()},
-		{"useTextureMap", false},
-		{"useInstanceMatrix", true}
+		{uniform_locations["color"], color},
+		{uniform_locations["model"], glm::mat4(1)},
+		{uniform_locations["useTextureMap"], false},
+		{uniform_locations["useInstanceMatrix"], true}
 	});
 
 	glBindVertexArray(vao);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-	glDrawElements(geo.mode, indices_count, GL_UNSIGNED_INT, NULL);
+	glDrawElementsInstanced(geo.mode, indices_count, GL_UNSIGNED_INT, NULL, instances.size());
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
 	pop_program();
@@ -375,9 +424,10 @@ void imdraw::cross(glm::vec3 center, float size) {
 
 	// draw
 	push_program(program());
+	imdraw::reset_uniforms();
 	set_uniforms(program(), {
-		{"model", glm::translate(glm::mat4(1), center) * glm::scale(glm::mat4(1), glm::vec3(size))},
-		{"useTextureMap", false}
+		{uniform_locations["model"], glm::translate(glm::mat4(1), center) * glm::scale(glm::mat4(1), glm::vec3(size))},
+		{uniform_locations["useTextureMap"], false}
 	});
 	glBindVertexArray(vao);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
@@ -400,9 +450,10 @@ void imdraw::cylinder(glm::vec3 center, float size) {
 
 	// draw
 	push_program(program());
+	imdraw::reset_uniforms();
 	set_uniforms(program(), {
-		{"model", glm::translate(glm::mat4(1), center)*glm::scale(glm::mat4(1), glm::vec3(size))},
-		{"useTextureMap", false}
+		{uniform_locations["model"], glm::translate(glm::mat4(1), center)*glm::scale(glm::mat4(1), glm::vec3(size))},
+		{uniform_locations["useTextureMap"], false}
 	});
 	glBindVertexArray(vao);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
@@ -426,8 +477,8 @@ void imdraw::sphere(glm::vec3 center, float diameter) {
 	// draw
 	push_program(program());
 	set_uniforms(program(), {
-		{"model", glm::translate(glm::mat4(1), center) * glm::scale(glm::mat4(1), glm::vec3(diameter/2))},
-		{"useTextureMap", false}
+		{uniform_locations["model"], glm::translate(glm::mat4(1), center) * glm::scale(glm::mat4(1), glm::vec3(diameter/2))},
+		{uniform_locations["useTextureMap"], false}
 	});
 	glBindVertexArray(vao);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
@@ -450,9 +501,10 @@ void imdraw::cube(glm::vec3 center, float size) {
 
 	// draw
 	push_program(program());
+	imdraw::reset_uniforms();
 	set_uniforms(program(), {
-		{"model", glm::translate(glm::mat4(1), center) * glm::scale(glm::mat4(1), glm::vec3(size))},
-		{"useTextureMap", false}
+		{uniform_locations["model"], glm::translate(glm::mat4(1), center) * glm::scale(glm::mat4(1), glm::vec3(size))},
+		{uniform_locations["useTextureMap"], false}
 	});
 	glBindVertexArray(vao);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
@@ -476,6 +528,7 @@ void imdraw::lines(std::vector<glm::vec3> P, std::vector<glm::vec3> Q) {
 
 	// draw
 	push_program(program());
+	imdraw::reset_uniforms();
 	glBindVertexArray(vao);
 	glDrawArrays(GL_LINES, 0, data.size());
 	glBindVertexArray(0);
