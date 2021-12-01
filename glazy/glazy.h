@@ -141,10 +141,13 @@ namespace glazy {
 		ImGui::CreateContext();
 		ImGuiIO& io = ImGui::GetIO();
 		ImFontConfig cfg;
-		cfg.SizePixels = 13 * 1.5;
-		auto font_default = io.Fonts->AddFontDefault(&cfg);
+		
+
 		ImGui_ImplGlfw_InitForOpenGL(window, true);
 		ImGui_ImplOpenGL3_Init();
+
+		cfg.SizePixels = 13;
+		auto font_default = io.Fonts->AddFontDefault(&cfg);
 
 		ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable; // enable docking
 		

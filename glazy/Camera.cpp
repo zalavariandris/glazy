@@ -3,6 +3,7 @@
 #pragma once
 #include "glm/ext.hpp"
 #include "glad/glad.h"
+#include <iostream>
 
 glm::vec3 ray_plane_intersection(glm::vec3 p0, glm::vec3 p1,
 	glm::vec3 p_co, glm::vec3 p_no,
@@ -65,6 +66,10 @@ glm::mat4 Camera::getView() const {
 	return glm::lookAt(eye, target, { 0,1,0 });
 }
 
+double Camera::get_target_distance() const {
+	return glm::distance(eye, target);
+}
+
 void Camera::orbit(double yaw, double pitch) {
 	const auto forward = glm::normalize(target - eye);
 	const auto right = glm::cross(forward, { 0,1,0 });
@@ -103,6 +108,8 @@ glm::vec3 Camera::screen_to_planeXY(double mouseX, double mouseY) const {
 	glm::mat4 proj = getProjection();
 	glm::mat4 view = getView();
 
+
+
 	auto near_point = glm::unProject(glm::vec3(mouseX, mouseY, 0.0), view, proj, viewport);
 	auto far_point = glm::unProject(glm::vec3(mouseX, mouseY, 1.0), view, proj, viewport);
 
@@ -121,11 +128,12 @@ glm::vec3 Camera::screen_to_planeXY(double mouseX, double mouseY, glm::vec4 view
 	return ray_plane_intersection(near_point, far_point, { 0,0,0 }, { 0,0,1 });
 }
 
-void Camera::dolly(double offset) {
+void Camera::dolly(double offset){
 	auto view = getView();
-	auto forward = glm::vec3(view[0][2], view[1][2], view[2][2]);
-	auto distance = glm::distance(eye, target);
-	eye += forward * distance * (float)offset;
+	auto forward = glm::normalize(glm::vec3(view[0][2], view[1][2], view[2][2]));
+	std::cout << "dolly: " << offset << std::endl;
+	std::cout << "forward: " << forward.x << "," << forward.y << "," << forward.z << std::endl;
+	this->eye += forward * (float)offset;
 }
 
 void Camera::to_program(unsigned int shader_program, std::string projection_name, std::string view_name) const {

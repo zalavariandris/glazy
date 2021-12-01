@@ -14,7 +14,7 @@ public:
 	bool ortho;
 
 	Camera() {
-		eye = glm::vec3(0, 0, -3);
+		eye = glm::vec3(0, 0, -5);
 		target = glm::vec3(0, 0, 0);
 		fov = 1.57 / 2;
 		tiltshift = glm::vec2(0.0, 0.0);
@@ -27,6 +27,8 @@ public:
 	glm::mat4 getProjection() const;
 
 	glm::mat4 getView() const;
+
+	double get_target_distance() const;
 
 	void orbit(double yaw, double pitch);
 

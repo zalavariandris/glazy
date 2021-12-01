@@ -73,8 +73,15 @@ namespace imdraw {
 				out vec2 vUV;
 				out vec3 vNormal;
 				out vec3 vColor;
-				out vec3 FragPos; 
+				out vec4 ScreenPos;
 
+				// Dash
+				flat out vec4 StartPos;
+				void dash(){
+					StartPos = ScreenPos;
+				}
+				
+				// Main
 				void main()
 				{
 					vUV = aUV;
@@ -86,8 +93,8 @@ namespace imdraw {
 						viewModel *= instanceMatrix;
 					}
 
-					FragPos = vec3(model * vec4(aPos, 1.0));
-
+					ScreenPos = vec4(projection * viewModel * vec4(aPos, 1.0));
+					//dash();
 					gl_Position = projection * viewModel * vec4(aPos, 1.0);
 				};
 			)", R"(#version 330 core
@@ -99,7 +106,8 @@ namespace imdraw {
 
 				uniform bool useVertexColor;
 
-				in vec3 FragPos; 
+				in vec4 ScreenPos;
+				
 				in vec3 vNormal;
 				in vec3 vColor;
 				in vec2 vUV;
@@ -111,6 +119,17 @@ namespace imdraw {
 					vec3 dir;
 					vec3 color;
 				};
+
+				// Dash
+				flat in vec4 StartPos;
+				void dash(){
+					float dashSize = 0.05;
+					float gapSize = 0.05;
+					float dist = abs(ScreenPos.x-StartPos.x) + abs(ScreenPos.y-StartPos.y);
+					if (fract(dist / (dashSize + gapSize)) > dashSize/(dashSize + gapSize)){
+						discard;
+					}
+				}
 
 				void main()
 				{
@@ -151,6 +170,9 @@ namespace imdraw {
 						vec3(0.5,0.5,0.7)*0.3
 					);
 					diff += max(dot(norm, rimlight.dir), 0.0)*rimlight.color;
+
+					// dashed
+					//dash();
 
 					// calc frag color
 					FragColor = vec4(col, alpha*(1.0-opacity));
