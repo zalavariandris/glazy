@@ -49,6 +49,49 @@ inline void free_image(void* data) {
 /*********
 * IMDRAW *
 **********/
+/* Textures */
+GLuint imdraw::make_texture(
+	GLsizei width,
+	GLsizei height,
+	const unsigned char* data,
+	GLint internalformat,
+	GLenum format,
+	GLint type,
+	GLint min_filter,
+	GLint mag_filter,
+	GLint wrap_s,
+	GLint wrap_t
+)
+{
+	unsigned int texture;
+	glGenTextures(1, &texture);
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap_s);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap_t);
+
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, min_filter);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, mag_filter);
+
+	glTexImage2D(GL_TEXTURE_2D, 0, internalformat, width, height, 0, format, type, data);
+	//glGenerateMipmap(GL_TEXTURE_2D);
+
+	glBindTexture(GL_TEXTURE_2D, 0);
+	return texture;
+}
+
+GLuint imdraw::make_texture_from_file(std::string path) {
+	int width, height, nrChannels;
+	unsigned char* data = read_image(path.c_str(), &width, &height, &nrChannels);
+
+	if (!data)
+		std::cout << "Failed to load texture from file: " << path << std::endl;
+
+	GLuint texture = imdraw::make_texture(width, height, data);
+
+	free_image(data);
+	return texture;
+}
+
 /* Frame Buffer Object */
 GLuint imdraw::make_fbo(GLuint color_attachment) {
 	GLuint fbo;
@@ -68,6 +111,27 @@ GLuint imdraw::make_fbo(GLuint color_attachment) {
 
 	return fbo;
 }
+
+GLuint imdraw::make_fbo(GLuint color_attachment, GLuint depth_attachment) {
+	GLuint fbo;
+	glGenFramebuffers(1, &fbo);
+
+	// attach
+	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color_attachment, 0);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depth_attachment, 0);
+
+
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+	{
+		std::cout << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << std::endl;
+	}
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	return fbo;
+}
+
 
 /* Vertex Buffer Objects*/
 GLuint imdraw::make_vbo(const std::vector<glm::vec3>& data, GLenum usage) {
@@ -199,50 +263,6 @@ GLuint imdraw::make_vao_from_trimesh(imgeo::Trimesh const& mesh, std::map<std::s
 	return vao;
 }
 */
-
-
-/* Textures */
-GLuint imdraw::make_texture(
-	GLsizei width,
-	GLsizei height,
-	const unsigned char* data,
-	GLint internalformat,
-	GLenum format,
-	GLint type,
-	GLint min_filter,
-	GLint mag_filter,
-	GLint wrap_s,
-	GLint wrap_t
-)
-{
-	unsigned int texture;
-	glGenTextures(1, &texture);
-	glBindTexture(GL_TEXTURE_2D, texture);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap_s);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap_t);
-
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, min_filter);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, mag_filter);
-
-	glTexImage2D(GL_TEXTURE_2D, 0, internalformat, width, height, 0, format, type, data);
-	//glGenerateMipmap(GL_TEXTURE_2D);
-
-	glBindTexture(GL_TEXTURE_2D, 0);
-	return texture;
-}
-
-GLuint imdraw::make_texture_from_file(std::string path) {
-	int width, height, nrChannels;
-	unsigned char* data = read_image(path.c_str(), &width, &height, &nrChannels);
-
-	if (!data)
-		std::cout << "Failed to load texture from file: " << path << std::endl;
-
-	GLuint texture = imdraw::make_texture(width, height, data);
-
-	free_image(data);
-	return texture;
-}
 
 /* Shader */
 GLuint imdraw::make_shader(GLenum type, const char* shaderSource) {

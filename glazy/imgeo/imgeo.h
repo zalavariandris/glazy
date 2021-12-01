@@ -22,4 +22,5 @@ namespace imgeo {
 	Trimesh cylinder();
 	Trimesh sphere(size_t segs = 8, size_t stacks = 8);
 	Trimesh cube();
+	Trimesh sharp_cube();
 }

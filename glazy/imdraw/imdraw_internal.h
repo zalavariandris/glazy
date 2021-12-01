@@ -16,20 +16,6 @@ namespace imdraw {
 	//using Attribute = std::tuple<GLuint, GLint, GLenum, GLsizei>;
 	//using Elements = std::tuple<GLuint, GLsizei, GLenum>;
 
-	/* Frame Buffer Object */
-	GLuint make_fbo(GLuint color_attachment);
-
-	/* Vertex Buffer Objects */
-	GLuint make_vbo(const std::vector<glm::vec3>& data, GLenum usage = GL_STATIC_DRAW);
-	GLuint make_vbo(const std::vector<glm::vec2>& data, GLenum usage = GL_STATIC_DRAW);
-	GLuint make_vbo(const std::vector<glm::mat4>& data, GLenum usage = GL_STATIC_DRAW);
-	GLuint make_ebo(const std::vector<unsigned int>& data);
-	GLuint make_ebo(const std::vector<glm::uvec3>& data);
-
-	/* Vertex Array Objects */
-	GLuint make_vao(std::map<GLuint, std::tuple<GLuint, GLsizei>> attributes);
-	GLuint make_vao(GLuint program, std::map<std::string, std::tuple<GLuint, GLsizei>> attributes);
-
 	/* Textures */
 	GLuint make_texture(
 		GLsizei width = -1,
@@ -45,6 +31,21 @@ namespace imdraw {
 	);
 
 	GLuint make_texture_from_file(std::string path);
+
+	/* Frame Buffer Object */
+	GLuint make_fbo(GLuint color_attachment);
+	GLuint make_fbo(GLuint color_attachment, GLuint depth_attachment);
+
+	/* Vertex Buffer Objects */
+	GLuint make_vbo(const std::vector<glm::vec3>& data, GLenum usage = GL_STATIC_DRAW);
+	GLuint make_vbo(const std::vector<glm::vec2>& data, GLenum usage = GL_STATIC_DRAW);
+	GLuint make_vbo(const std::vector<glm::mat4>& data, GLenum usage = GL_STATIC_DRAW);
+	GLuint make_ebo(const std::vector<unsigned int>& data);
+	GLuint make_ebo(const std::vector<glm::uvec3>& data);
+
+	/* Vertex Array Objects */
+	GLuint make_vao(std::map<GLuint, std::tuple<GLuint, GLsizei>> attributes);
+	GLuint make_vao(GLuint program, std::map<std::string, std::tuple<GLuint, GLsizei>> attributes);
 
 	/* Shader */
 	GLuint make_shader(GLenum type, const char* shaderSource);

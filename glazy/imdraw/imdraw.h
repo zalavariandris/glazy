@@ -31,10 +31,11 @@ namespace imdraw {
 	void grid();
 
 	void cube(glm::vec3 center, float size=1.0);
+	void sharp_cube(glm::vec3 center, float size = 1.0);
 	void cylinder(glm::vec3 center, float size=1.0);
 	void sphere(glm::vec3 center, float diameter=1.0);
 
 	void lines(std::vector<glm::vec3> P, std::vector<glm::vec3> Q);
-
+	
 	void text(glm::vec3 basepoint, char* string);
 }

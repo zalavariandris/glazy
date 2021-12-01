@@ -274,6 +274,42 @@ imgeo::Trimesh imgeo::cube() {
 		20,22,21, 20,23,22  // front
 	};
 
+	return { GL_TRIANGLES, positions, indices, std::nullopt, normals };
+}
+
+imgeo::Trimesh imgeo::sharp_cube() {
+	std::vector<glm::vec3> positions;
+	std::vector<glm::vec3> normals;
+	std::vector<unsigned int> indices;
+
+	// top
+	positions = std::vector<glm::vec3>{
+		// {-1,-1}, {+1, -1}, {+1,+1}, {-1,+1},
+		{-1,+1,-1}, {+1,+1,-1}, {+1,+1,+1}, {-1,+1,+1}, //top
+		{-1,-1,-1}, {+1,-1,-1}, {+1,-1,+1}, {-1,-1,+1}, //bottom
+		{-1,-1,-1}, {-1,+1,-1}, {-1,+1,+1}, {-1,-1,+1}, // right
+		{+1,-1,-1}, {+1,+1,-1}, {+1,+1,+1}, {+1,-1,+1}, // left
+		{-1,-1,+1}, {+1,-1,+1}, {+1,+1,+1}, {-1,+1,+1}, // front
+		{-1,-1,-1}, {+1,-1,-1}, {+1,+1,-1}, {-1,+1,-1}  // back
+	};
+
+	normals = std::vector<glm::vec3>{
+		{0,+1,0},{0,+1,0},{0,+1,0},{0,+1,0},
+		{0,-1,0},{0,-1,0},{0,-1,0},{0,-1,0},
+		{-1,0,0},{-1,0,0},{-1,0,0},{-1,0,0},
+		{+1,0,0},{+1,0,0},{+1,0,0},{+1,0,0},
+		{0,0,+1},{0,0,+1},{0,0,+1},{0,0,+1},
+		{0,0,-1},{0,0,-1},{0,0,-1},{0,0,-1}
+	};
+
+	indices = std::vector<unsigned int>{
+		 2, 0, 1,  3, 0, 2, // top
+		 5, 4, 6,  6, 4, 7, // bottom
+		 10,8, 9,  11,8,10, // right
+		13,12,14, 14,12,15, // left
+		17,16,18, 18,16,19, // back
+		22,20,21, 23,20,22  // front
+	};
 
 	return { GL_TRIANGLES, positions, indices, std::nullopt, normals };
 }

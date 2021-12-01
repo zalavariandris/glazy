@@ -95,6 +95,16 @@ void pop_viewport() {
 	//return viewport;
 }
 
+struct RenderTarget {
+	GLuint fbo;
+	GLuint color_attachment;
+	GLuint depth_attachment;
+	std::tuple<GLuint, GLuint, GLsizei, GLsizei> viewport;
+	bool depth_test = true;
+	bool blending = true;
+	bool culling = true;
+};
+
 void run_draw_demo() {
 	glazy::init();
 
@@ -104,7 +114,6 @@ void run_draw_demo() {
 	//glfwSetWindowMonitor(glazy::window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
 
 	//
-	
 	
 	/* create canvas FBO */
 	auto canvas_resolution = ImVec2(2048 * 2, 2048 * 2);
@@ -119,8 +128,9 @@ void run_draw_demo() {
 
 	/* create main FBO */
 	auto main_resolution = ImVec2(1024, 768);
-	auto main_texture = imdraw::make_texture(main_resolution.x, main_resolution.y, NULL, GL_RGB, GL_RGB, GL_FLOAT);
-	auto main_fbo = imdraw::make_fbo(main_texture);
+	GLuint main_texture;
+	GLuint main_depth_tex;
+	GLuint main_fbo;
 
 	// store mouse
 	glm::vec3 mouse_point;
@@ -156,13 +166,15 @@ void run_draw_demo() {
 
 				// update fbo and attachments
 				glDeleteTextures(1, &main_texture);
+				glDeleteTextures(1, &main_depth_tex);
 				glDeleteFramebuffers(1, &main_fbo);
 				main_texture = imdraw::make_texture(main_resolution.x, main_resolution.y, NULL, GL_RGB, GL_RGB, GL_FLOAT);
-				main_fbo = imdraw::make_fbo(main_texture);
+				main_depth_tex = imdraw::make_texture(main_resolution.x, main_resolution.y, NULL, GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_FLOAT);
+				main_fbo = imdraw::make_fbo(main_texture, main_depth_tex);
 			}
 			
 			glBindFramebuffer(GL_FRAMEBUFFER, main_fbo);
-			
+			glEnable(GL_DEPTH_TEST);
 			glViewport(0, 0, main_resolution.x, main_resolution.y);
 			glazy::camera.aspect = main_resolution.x / main_resolution.y;
 
@@ -233,13 +245,15 @@ void run_draw_demo() {
 				}
 				// restore render target
 				glBindFramebuffer(GL_FRAMEBUFFER, main_fbo);
+				
 				//pop_viewport();
 				glViewport(0, 0, main_resolution.x, main_resolution.y);
 			}
 
 			//
 			glClearColor(1.0, 1.0, 1.0, 1.0);
-			glClear(GL_COLOR_BUFFER_BIT);
+			glEnable(GL_DEPTH_TEST);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 			glazy::camera.aspect = main_resolution.x / main_resolution.y;
 			imdraw::set_projection(glazy::camera.getProjection());
 			imdraw::set_view(glazy::camera.getView());
@@ -251,6 +265,8 @@ void run_draw_demo() {
 			imdraw::quad(canvas_texture);
 			imdraw::disc(mouse_point, brush_size, { brush_color[0],brush_color[1],brush_color[2] });
 
+			// draw cube
+			imdraw::sharp_cube(glm::vec3(0),0.5);
 
 			// display fbo in window and handle input
 			ImGui::SetCursorPos(ImGui::GetWindowContentRegionMin());
@@ -273,7 +289,7 @@ void run_draw_demo() {
 }
 
 void run_imdraw_demo() {
-	glazy::init(true, true);
+	glazy::init();
 
 	while (glazy::is_running()) {
 		glazy::new_frame();

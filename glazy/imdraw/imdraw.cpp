@@ -170,7 +170,7 @@ namespace imdraw {
 						vec3(0.5,0.5,0.7)*0.3
 					);
 					diff += max(dot(norm, rimlight.dir), 0.0)*rimlight.color;
-
+					col*=diff;
 					// dashed
 					//dash();
 
@@ -285,7 +285,8 @@ void imdraw::quad(GLuint texture) {
 	// init vao
 	static auto vao = imdraw::make_vao(program(), {
 		{"aPos", {make_vbo(geo.positions), 3}},
-		{"aUV", {make_vbo(geo.uvs.value()), 2}}
+		{"aUV", {make_vbo(geo.uvs.value()), 2}},
+		{"aNormal", {make_vbo(geo.normals.value()), 2}}
 	});
 	static auto ebo = imdraw::make_ebo(geo.indices);
 
@@ -534,6 +535,39 @@ void imdraw::cube(glm::vec3 center, float size) {
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
 	pop_program();
+}
+
+void imdraw::sharp_cube(glm::vec3 center, float size) {
+	// geometry
+	auto geo = imgeo::sharp_cube();
+
+	// buffers
+	auto pos_buffer = make_vbo(geo.positions);
+	auto normals_buffer = make_vbo(geo.normals.value());
+	auto vao = make_vao(program(), {
+		{"aPos", {pos_buffer, 3}},
+		{"aNormal", {normals_buffer, 3}}
+		});
+	auto ebo = make_ebo(geo.indices);
+
+	// draw
+	push_program(program());
+	imdraw::reset_uniforms();
+	set_uniforms(program(), {
+		{uniform_locations["model"], glm::translate(glm::mat4(1), center) * glm::scale(glm::mat4(1), glm::vec3(size))},
+		{uniform_locations["useTextureMap"], false}
+		});
+	glBindVertexArray(vao);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+	glDrawElements(geo.mode, geo.indices.size(), GL_UNSIGNED_INT, NULL);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	glBindVertexArray(0);
+	pop_program();
+
+	glDeleteVertexArrays(1, &vao);
+	glDeleteBuffers(1, &pos_buffer);
+	glDeleteBuffers(1, &normals_buffer);
+	glDeleteBuffers(1, &ebo);
 }
 
 void imdraw::lines(std::vector<glm::vec3> P, std::vector<glm::vec3> Q) {
