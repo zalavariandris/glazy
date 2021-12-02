@@ -151,14 +151,14 @@ namespace glazy {
 		**************************/
 		static bool vsync=true;
 		glfwSwapInterval(vsync ? 1 : 0);     // 0: vsync-off, 1: vsync-on
-		static bool blend = true;
-		glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		static bool blend_test = true;
-		glEnable(GL_DEPTH_TEST);
-		static bool culling = true;
-		glEnable(GL_CULL_FACE);
-		glCullFace(GL_FRONT);
+		//static bool blend = true;
+		//glEnable(GL_BLEND);
+		//glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		//static bool blend_test = true;
+		//glEnable(GL_DEPTH_TEST);
+		//static bool culling = true;
+		//glEnable(GL_CULL_FACE);
+		//glCullFace(GL_FRONT);
 
 		return EXIT_SUCCESS;
 	}

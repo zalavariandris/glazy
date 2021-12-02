@@ -151,6 +151,7 @@
     <ClInclude Include="glazy\Camera.h" />
     <ClInclude Include="glazy\imdraw\imdraw.h" />
     <ClInclude Include="glazy\imdraw\imdraw_internal.h" />
+    <ClInclude Include="glazy\imdraw\imdraw_shader.h" />
     <ClInclude Include="glazy\imgeo\imgeo.h" />
     <ClInclude Include="glazy\glazy.h" />
     <ClInclude Include="glazy\imdraw\stb_image.h" />

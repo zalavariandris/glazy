@@ -36,6 +36,8 @@ namespace imdraw {
 	void sphere(glm::vec3 center, float diameter=1.0);
 
 	void lines(std::vector<glm::vec3> P, std::vector<glm::vec3> Q);
+
+	void arrow(glm::vec3 A, glm::vec3 B, glm::vec3 color);
 	
 	void text(glm::vec3 basepoint, char* string);
 }

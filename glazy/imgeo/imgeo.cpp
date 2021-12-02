@@ -53,7 +53,7 @@ imgeo::Trimesh imgeo::quad() {
 	};
 
 	static std::vector<glm::vec3> normals{
-		{0,0,1}, {0,0,1}, {0,0,1}, {0,0,1}
+		{0,0,-1}, {0,0,-1}, {0,0,-1}, {0,0,-1}
 	};
 
 	static std::vector<unsigned int> indices{

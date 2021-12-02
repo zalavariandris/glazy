@@ -174,7 +174,6 @@ void run_draw_demo() {
 			}
 			
 			glBindFramebuffer(GL_FRAMEBUFFER, main_fbo);
-			glEnable(GL_DEPTH_TEST);
 			glViewport(0, 0, main_resolution.x, main_resolution.y);
 			glazy::camera.aspect = main_resolution.x / main_resolution.y;
 
@@ -211,6 +210,7 @@ void run_draw_demo() {
 			if (ImGui::IsItemActive()) {
 				// bind render target
 				glBindFramebuffer(GL_FRAMEBUFFER, canvas_fbo);
+				glDisable(GL_DEPTH_TEST);
 				//push_viewport(0, 0, canvas_resolution.x, canvas_resolution.y);
 				glViewport(0, 0, canvas_resolution.x, canvas_resolution.y);
 				{
@@ -252,21 +252,23 @@ void run_draw_demo() {
 
 			//
 			glClearColor(1.0, 1.0, 1.0, 1.0);
-			glEnable(GL_DEPTH_TEST);
+			//glEnable(GL_DEPTH_TEST);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 			glazy::camera.aspect = main_resolution.x / main_resolution.y;
 			imdraw::set_projection(glazy::camera.getProjection());
 			imdraw::set_view(glazy::camera.getView());
 			// ---------------------------------------------------
 
-			for (auto i = 0; i < 1; i++) {
-				imdraw::grid();
-			}
+
+			imdraw::grid();
 			imdraw::quad(canvas_texture);
 			imdraw::disc(mouse_point, brush_size, { brush_color[0],brush_color[1],brush_color[2] });
-
+			
+			imdraw::arrow(glm::vec3(0), glm::vec3(1,0,0), glm::vec3(1,0,0));
+			imdraw::arrow(glm::vec3(0), glm::vec3(0, 1, 0), glm::vec3(0, 1, 0));
+			imdraw::arrow(glm::vec3(0), glm::vec3(0, 0, 1), glm::vec3(0, 0, 1));
 			// draw cube
-			imdraw::sharp_cube(glm::vec3(0),0.5);
+			//imdraw::sharp_cube(glm::vec3(0),0.5);
 
 			// display fbo in window and handle input
 			ImGui::SetCursorPos(ImGui::GetWindowContentRegionMin());

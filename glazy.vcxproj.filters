@@ -45,6 +45,9 @@
     <ClInclude Include="glazy\OOGL\Shader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="glazy\imdraw\imdraw_shader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="glazy\imdraw\imdraw.cpp">

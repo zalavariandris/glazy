@@ -36,6 +36,7 @@
 #include <variant>
 
 #include "imdraw_internal.h"
+#include "imdraw_shader.h"
 
 /**********
  * Utils  *
@@ -58,126 +59,10 @@ namespace imdraw {
 		// init program
 		static auto prog = []() {
 			// make program
-			GLuint p = imdraw::make_program_from_source(R"(#version 330 core
-				layout (location = 0) in vec3 aPos;
-				layout (location = 1) in vec2 aUV;
-				layout (location = 2) in vec3 aNormal;
-				layout (location = 3) in vec3 aColor;
-				layout (location = 4) in mat4 instanceMatrix;
-
-				uniform mat4 projection;
-				uniform mat4 view;
-				uniform mat4 model;
-				uniform bool useInstanceMatrix;
-
-				out vec2 vUV;
-				out vec3 vNormal;
-				out vec3 vColor;
-				out vec4 ScreenPos;
-
-				// Dash
-				flat out vec4 StartPos;
-				void dash(){
-					StartPos = ScreenPos;
-				}
-				
-				// Main
-				void main()
-				{
-					vUV = aUV;
-					vNormal = aNormal;
-					vColor = aColor;
-
-					mat4 viewModel = view*model;
-					if(useInstanceMatrix){
-						viewModel *= instanceMatrix;
-					}
-
-					ScreenPos = vec4(projection * viewModel * vec4(aPos, 1.0));
-					//dash();
-					gl_Position = projection * viewModel * vec4(aPos, 1.0);
-				};
-			)", R"(#version 330 core
-				out vec4 FragColor;
-
-				uniform vec3 color;
-				uniform bool useTextureMap;
-				uniform sampler2D textureMap;
-
-				uniform bool useVertexColor;
-
-				in vec4 ScreenPos;
-				
-				in vec3 vNormal;
-				in vec3 vColor;
-				in vec2 vUV;
-
-				uniform float opacity;
-
-				struct Light
-				{
-					vec3 dir;
-					vec3 color;
-				};
-
-				// Dash
-				flat in vec4 StartPos;
-				void dash(){
-					float dashSize = 0.05;
-					float gapSize = 0.05;
-					float dist = abs(ScreenPos.x-StartPos.x) + abs(ScreenPos.y-StartPos.y);
-					if (fract(dist / (dashSize + gapSize)) > dashSize/(dashSize + gapSize)){
-						discard;
-					}
-				}
-
-				void main()
-				{
-					// color
-					vec3 col = color;
-					float alpha = 1.0;
-					if(useTextureMap){
-						vec4 tex = texture(textureMap, vUV);
-						col *= tex.rgb;
-						alpha *= tex.a;
-					}
-
-					if(useVertexColor){
-						col*=vColor;
-					}
-
-					// Lighting
-					vec3 norm = normalize(vNormal);
-	
-					// ambient
-					vec3 diff = vec3(0.03);
-
-					//keylight
-					Light keylight = Light(
-						normalize(vec3(0.7,1,-0.5)), 
-						vec3(1,1,1)
-					);
-					diff += max(dot(norm, keylight.dir), 0.0)*keylight.color;
-
-					Light filllight = Light(
-						normalize(vec3(-0.7,0.5,-0.7)), 
-						vec3(0.5,0.4,0.3)*0.3
-					);
-					diff += max(dot(norm, filllight.dir), 0.0)*filllight.color;
-
-					Light rimlight = Light(
-						normalize(vec3(0.6,0.1,0.9)), 
-						vec3(0.5,0.5,0.7)*0.3
-					);
-					diff += max(dot(norm, rimlight.dir), 0.0)*rimlight.color;
-					col*=diff;
-					// dashed
-					//dash();
-
-					// calc frag color
-					FragColor = vec4(col, alpha*(1.0-opacity));
-				};
-			)");
+			GLuint p = imdraw::make_program_from_source(
+				IMDRAW_VERTEX_SHADER, 
+				IMDRAW_FRAGMENT_SHADER
+			);
 
 			// cache uniform locations
 			std::vector<std::string> uniform_names = {
@@ -235,16 +120,19 @@ namespace imdraw {
 //		});
 //}
 
-void imdraw::set_projection(glm::mat4 projection_matrix) {
+static glm::mat4 projection_matrix;
+void imdraw::set_projection(glm::mat4 M) {
 	imdraw::set_uniforms(imdraw::program(), {
-		{uniform_locations["projection"], projection_matrix}
-		});
+		{uniform_locations["projection"], M}
+	});
+	projection_matrix = M;
 }
-
-void imdraw::set_view(glm::mat4 view_matrix) {
+static glm::mat4 view_matrix;
+void imdraw::set_view(glm::mat4 M) {
 	imdraw::set_uniforms(imdraw::program(), {
-		{uniform_locations["view"], view_matrix}
-		});
+		{uniform_locations["view"], M}
+	});
+	view_matrix = M;
 }
 
 void imdraw::triangle() {
@@ -286,7 +174,7 @@ void imdraw::quad(GLuint texture) {
 	static auto vao = imdraw::make_vao(program(), {
 		{"aPos", {make_vbo(geo.positions), 3}},
 		{"aUV", {make_vbo(geo.uvs.value()), 2}},
-		{"aNormal", {make_vbo(geo.normals.value()), 2}}
+		{"aNormal", {make_vbo(geo.normals.value()), 3}}
 	});
 	static auto ebo = imdraw::make_ebo(geo.indices);
 
@@ -346,7 +234,9 @@ void imdraw::grid() {
 void imdraw::disc(glm::vec3 center, float diameter, glm::vec3 color) {
 	static auto geo = imgeo::disc();
 	static auto vao = make_vao(program(), {
-		{"aPos", {make_vbo(geo.positions), 3}}
+		{"aPos",    {make_vbo(geo.positions),      3}},
+		{"aUV",     {make_vbo(geo.uvs.value()),    2}},
+		{"aNormal", {make_vbo(geo.normals.value()),3}}
 		});
 	static auto ebo = make_ebo(geo.indices);
 	static auto indices_count = (GLuint)geo.indices.size();
@@ -580,7 +470,7 @@ void imdraw::lines(std::vector<glm::vec3> P, std::vector<glm::vec3> Q) {
 	auto vbo = make_vbo(data);
 	auto vao = make_vao(program(), {
 		{"aPos", {vbo, 3}},
-		});
+	});
 
 	// draw
 	push_program(program());
@@ -591,6 +481,36 @@ void imdraw::lines(std::vector<glm::vec3> P, std::vector<glm::vec3> Q) {
 	pop_program();
 
 	glDeleteBuffers(1, &vbo);
+	glDeleteVertexArrays(1, &vao);
+}
+
+void imdraw::arrow(glm::vec3 A, glm::vec3 B, glm::vec3 color) {
+	auto forward = glm::vec3(view_matrix[0][2], view_matrix[1][2], view_matrix[2][2]);
+	auto left = glm::cross(forward, A - B);
+	auto right = glm::cross(forward, B - A);
+	auto dir = B - A;
+	std::vector<glm::vec3> positions{A, B, B+(left-dir)*0.1f, B+(right-dir)*0.1f};
+
+	auto pos_vbo = make_vbo(positions);
+	auto vao = make_vao(program(), {
+		{"aPos", {pos_vbo, 3}},
+	});
+	std::vector<unsigned int> indices{ 0,1,1,2,1,3 };
+	auto ebo = make_ebo(indices);
+
+	// draw
+	push_program(program());
+	imdraw::reset_uniforms();
+	imdraw::set_uniforms(program(), { { "color", color } });
+	glBindVertexArray(vao);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+	glDrawElements(GL_LINES, indices.size(), GL_UNSIGNED_INT, NULL);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+	glBindVertexArray(0);
+	pop_program();
+
+	glDeleteBuffers(1, &pos_vbo);
+	glDeleteBuffers(1, &ebo);
 	glDeleteVertexArrays(1, &vao);
 }
 
