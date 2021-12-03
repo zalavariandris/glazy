@@ -3,13 +3,16 @@
 #include <iostream>
 
 // Constructors
-OOGL::SmartGLObject::SmartGLObject() {
-	GLCreate();
+OOGL::SmartGLObject::SmartGLObject(
+	std::function<GLuint()> c, 
+	std::function<void(GLuint)> d, 
+	std::function<bool(GLuint)> e)
+{
+	_id = c();
+	std::cout << "smartgl constructor " << _id << std::endl;
+	_deleteFunc = d;
+	_existFunc = e;
 	ref_inc();
-}
-// getters and setters
-GLuint OOGL::SmartGLObject::id() const {
-	return _id;
 }
 
 // reference counter
@@ -35,10 +38,9 @@ unsigned int OOGL::SmartGLObject::ref_count() const {
 
 // copy constructor
 OOGL::SmartGLObject::SmartGLObject(const OOGL::SmartGLObject& other) {
-	std::cout << "copy program: " << other._id << " refs: " << other.ref_count() << std::endl;
+	std::cout << "smartgl copy constructor: " << other._id << " refs: " << other.ref_count() << std::endl;
 
-
-	if (other.HasGLObject()) {
+	if (other._existFunc(other._id)) {
 		other.ref_inc();
 	}
 
@@ -49,10 +51,11 @@ OOGL::SmartGLObject::SmartGLObject(const OOGL::SmartGLObject& other) {
 // override equal operator
 OOGL::SmartGLObject& OOGL::SmartGLObject::operator=(const OOGL::SmartGLObject& other)
 {
-	if (this->HasGLObject()) {
+	
+	if (this->_existFunc(this->_id)) {
 		this->ref_dec();
 	}
-	if (other.HasGLObject()) {
+	if (other._existFunc(other._id)) {
 		other.ref_inc();
 	}
 
@@ -64,7 +67,7 @@ OOGL::SmartGLObject& OOGL::SmartGLObject::operator=(const OOGL::SmartGLObject& o
 
 // destructor
 OOGL::SmartGLObject::~SmartGLObject() {
-	std::cout << "delete program: " << this->_id << " refs: " << this->ref_count() << std::endl;
+	std::cout << "smargl destructor: " << this->_id << " refs: " << this->ref_count() << std::endl;
 
 	this->ref_dec();
 
@@ -74,8 +77,8 @@ OOGL::SmartGLObject::~SmartGLObject() {
 	}
 
 	if (glIsProgram(this->_id)) {
-		std::cout << "GC program: " << this->_id << std::endl;
-		GLDestroy();
+		std::cout << "delete gl object program: " << this->_id << std::endl;
+		this->_deleteFunc(this->_id);
 		free(this->refs_ptr);
 	}
 }

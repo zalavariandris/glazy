@@ -2,6 +2,8 @@
 #include <glad/glad.h>
 #include <map>
 #include <iostream>
+#include <functional>
+#include <variant>
 #define OOGL_PLACEHOLDER
 
 namespace OOGL {
@@ -11,38 +13,30 @@ namespace OOGL {
 		GLuint _id = -1;
 		static std::map<GLuint, int> refs;
 		mutable int* refs_ptr = NULL;
+
+		std::function<GLuint()> _createFunc;
+		std::function<void(GLuint)> _deleteFunc;
+		std::function<bool(GLuint)> _existFunc;
 	public:
 		// Constructors
-		//GLObject(OOGL_PLACEHOLDER) :_id(-1) {};
+		SmartGLObject(
+			std::function<GLuint()> c, 
+			std::function<void(GLuint)> d, 
+			std::function<bool(GLuint)> e
+		);
 
-		SmartGLObject();
-
-		// getters and setters
-		GLuint id() const;
-
+		// cast to GLuint
+		GLuint id() const {
+			return _id;
+		}
 		operator GLuint() const {
 			return _id;
 		}
 
 		// reference counter
 		void ref_inc() const;
-
 		void ref_dec() const;
-
 		unsigned int ref_count() const;
-
-		// overide
-		virtual void GLCreate() {
-			std::cout << "Error:GLCreate Base method called;" << std::endl;
-		};
-		virtual void GLDestroy() {
-			std::cout << "Error:GLDestroy Base method called;" << std::endl;
-		};
-
-		virtual bool HasGLObject() const {
-			std::cout << "Error:HasGLObject Base method called;" << std::endl;
-			return false;
-		};
 
 		// copy constructor
 		SmartGLObject(const SmartGLObject& other);

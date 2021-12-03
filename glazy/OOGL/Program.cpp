@@ -11,37 +11,28 @@
 #include "glm/gtc/type_ptr.hpp"
 
 
-void OOGL::Program::GLCreate() {
-	this->_id = glCreateProgram();
-}
-
-void OOGL::Program::GLDestroy() {
-	glDeleteProgram(this->_id);
-}
-
-bool OOGL::Program::HasGLObject() const {
-	return glIsProgram(this->_id);
-}
-
 OOGL::Program OOGL::Program::from_shaders(OOGL::Shader vertexShader, OOGL::Shader fragmentShader)
 {
-	auto instance = OOGL::Program();
+	auto program = OOGL::Program();
 
-	glAttachShader(instance._id, vertexShader.id());
-	glAttachShader(instance._id, fragmentShader.id());
-	glLinkProgram(instance._id);
+	assert(glIsShader(vertexShader));
+	assert(glIsShader(fragmentShader));
+
+	glAttachShader((GLuint)program, (GLuint)vertexShader);
+	glAttachShader((GLuint)program, (GLuint)fragmentShader);
+	glLinkProgram((GLuint)program);
 
 	// print linking errors if any
 	int success;
 	char infoLog[512];
-	glGetProgramiv(instance._id, GL_LINK_STATUS, &success);
+	glGetProgramiv((GLuint)program, GL_LINK_STATUS, &success);
 	if (!success)
 	{
-		glGetProgramInfoLog(instance._id, 512, NULL, infoLog);
+		glGetProgramInfoLog((GLuint)program, 512, NULL, infoLog);
 		std::cout << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
 	}
 
-	return instance;
+	return program;
 }
 
 OOGL::Program OOGL::Program::from_file(const char* vertex_path, const char* fragment_path) {
@@ -53,8 +44,8 @@ OOGL::Program OOGL::Program::from_file(const char* vertex_path, const char* frag
 
 void OOGL::Program::set_uniform(const char* name, const glm::mat4& value)
 {
-	if (!HasGLObject()) {
-		std::cout << "ERROR:GLObject not initalized; call Make fiirst" << std::endl;
+	if (glIsProgram(_id)) {
+		std::cout << "ERROR:GLObject not initalized; call Make first" << std::endl;
 		return;
 	}
 	auto location = glGetUniformLocation(this->id(), name);
@@ -62,7 +53,7 @@ void OOGL::Program::set_uniform(const char* name, const glm::mat4& value)
 }
 
 void OOGL::Program::set_uniform(const char* name, bool value) {
-	if (!HasGLObject()) {
+	if (glIsProgram(_id)) {
 		std::cout << "ERROR:GLObject not initalized; call Make fiirst" << std::endl;
 		return;
 	}
@@ -71,7 +62,7 @@ void OOGL::Program::set_uniform(const char* name, bool value) {
 }
 
 void OOGL::Program::set_uniform(const char* name, glm::vec3 value) {
-	if (!HasGLObject()) {
+	if (!this->_existFunc(this->_id)) {
 		std::cout << "ERROR:GLObject not initalized; call Make fiirst" << std::endl;
 	}
 	auto location = glGetUniformLocation(this->id(), name);
@@ -79,7 +70,7 @@ void OOGL::Program::set_uniform(const char* name, glm::vec3 value) {
 }
 
 void OOGL::Program::use() const {
-	if (!HasGLObject()) {
+	if (glIsProgram(_id)) {
 		std::cout << "ERROR:GLObject not initalized; call Make fiirst" << std::endl;
 		return;
 	}

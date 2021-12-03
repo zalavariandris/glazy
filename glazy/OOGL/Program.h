@@ -10,27 +10,20 @@
 #include "glm/glm.hpp"
 
 namespace OOGL {
-	class Program : SmartGLObject {
+	class Program : public SmartGLObject {
 	public:
-		using SmartGLObject::SmartGLObject;
-
-		void GLCreate() override;
-
-		void GLDestroy() override;
-
-		bool HasGLObject() const override;
-
-		//Program(GLuint id)
-		//{
-		//	if (!glIsProgram(id)) {
-		//		throw std::invalid_argument("OOGL: Invalid program id");
-		//	}
-
-		//	this->_id = id;
-		//	inc();
-
-		//	std::cout << "create program: " << this->_id << " refs: " << this->count() << std::endl;
-		//};
+		Program() : SmartGLObject(
+			[]()->GLuint {
+				return glCreateProgram();
+			},
+			[](GLuint program_id) {
+				glDeleteProgram(program_id);
+			},
+			[](GLuint program_id)->bool {
+				std::cout << "call program exist" << std::endl;
+				return glIsProgram(program_id);
+			}
+		){}
 
 		static Program from_shaders(Shader vertexShader, Shader fragmentShader);
 
