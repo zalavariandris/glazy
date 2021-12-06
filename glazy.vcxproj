@@ -148,6 +148,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="glazy\OOGL\Framebuffer.h" />
+    <ClInclude Include="glazy\OOGL\ElementBuffer.h" />
+    <ClInclude Include="glazy\OOGL\ArrayBuffer.h" />
     <ClInclude Include="glazy\Camera.h" />
     <ClInclude Include="glazy\imdraw\imdraw.h" />
     <ClInclude Include="glazy\imdraw\imdraw_internal.h" />
@@ -155,12 +158,20 @@
     <ClInclude Include="glazy\imgeo\imgeo.h" />
     <ClInclude Include="glazy\glazy.h" />
     <ClInclude Include="glazy\imdraw\stb_image.h" />
+    <ClInclude Include="glazy\OOGL\State.h" />
+    <ClInclude Include="glazy\OOGL\stb_image.h" />
     <ClInclude Include="glazy\Stylus.h" />
     <ClInclude Include="glazy\OOGL\SmartGLObject.h" />
     <ClInclude Include="glazy\OOGL\Program.h" />
     <ClInclude Include="glazy\OOGL\Shader.h" />
+    <ClInclude Include="glazy\OOGL\VertexArray.h" />
+    <ClInclude Include="glazy\OOGL\Texture.h" />
+    <ClInclude Include="glazy\widgets\Viewport.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="glazy\OOGL\Framebuffer.cpp" />
+    <ClCompile Include="glazy\OOGL\ElementBuffer.cpp" />
+    <ClCompile Include="glazy\OOGL\ArrayBuffer.cpp" />
     <ClCompile Include="glazy\Camera.cpp" />
     <ClCompile Include="glazy\imdraw\imdraw.cpp" />
     <ClCompile Include="glazy\imdraw\imdraw_internal.cpp" />
@@ -169,9 +180,14 @@
     <ClCompile Include="glazy\OOGL\SmartGLObject.cpp" />
     <ClCompile Include="glazy\OOGL\Program.cpp" />
     <ClCompile Include="glazy\OOGL\Shader.cpp" />
+    <ClCompile Include="glazy\OOGL\VertexArray.cpp" />
+    <ClCompile Include="glazy\OOGL\Texture.cpp" />
+    <ClCompile Include="glazy\widgets\Viewport.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".gitignore" />
+    <None Include="glazy\shaders\default.frag" />
+    <None Include="glazy\shaders\default.vert" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

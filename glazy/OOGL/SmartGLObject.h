@@ -1,28 +1,21 @@
 #pragma once
 #include <glad/glad.h>
-#include <map>
-#include <iostream>
 #include <functional>
-#include <variant>
-#define OOGL_PLACEHOLDER
 
 namespace OOGL {
 	class SmartGLObject {
 
 	protected:
 		GLuint _id = -1;
-		static std::map<GLuint, int> refs;
 		mutable int* refs_ptr = NULL;
 
 		std::function<GLuint()> _createFunc;
 		std::function<void(GLuint)> _deleteFunc;
-		std::function<bool(GLuint)> _existFunc;
 	public:
 		// Constructors
 		SmartGLObject(
 			std::function<GLuint()> c, 
-			std::function<void(GLuint)> d, 
-			std::function<bool(GLuint)> e
+			std::function<void(GLuint)> d
 		);
 
 		// cast to GLuint

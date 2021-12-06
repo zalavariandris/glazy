@@ -3,6 +3,7 @@
 // glm
 #include "glm/glm.hpp"
 #include <glad/glad.h>
+#include <vector>
 
 namespace imdraw {
 	struct State {
@@ -30,7 +31,7 @@ namespace imdraw {
 	void cross(glm::vec3 center, float size=1.0);
 	void grid();
 
-	void cube(glm::vec3 center, float size=1.0);
+	void cube(glm::vec3 center, float size=1.0, glm::vec3 color=glm::vec3(1,1,1));
 	void sharp_cube(glm::vec3 center, float size = 1.0);
 	void cylinder(glm::vec3 center, float size=1.0);
 	void sphere(glm::vec3 center, float diameter=1.0);

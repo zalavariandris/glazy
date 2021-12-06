@@ -5,7 +5,14 @@
 #include <fstream>
 #include <sstream>
 
+#include <assert.h>
+
 #include "SmartGLObject.h" 
+
+//inline void delete_the_shader(GLuint shader_id) {
+//	glDeleteShader(shader_id);
+//}
+
 
 namespace OOGL {
 	class Shader : public SmartGLObject
@@ -16,12 +23,10 @@ namespace OOGL {
 				return glCreateShader(type);
 			}, 
 			[](GLuint shader_id) {
+				assert(glIsShader(shader_id));
 				glDeleteShader(shader_id);
-			}, 
-			[](GLuint shader_id)->bool {
-				std::cout << "call shader exist" << std::endl;
-				return glIsShader(shader_id);
-			}){}
+			}
+		){}
 
 		static Shader from_source(GLenum type, const char* shaderSource);
 		static Shader from_file(GLenum type, const char* shader_path);

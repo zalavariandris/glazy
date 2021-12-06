@@ -15,7 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="draw_with_oogl.cpp">
+    <ClCompile Include="shadertoy_with_oogl.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

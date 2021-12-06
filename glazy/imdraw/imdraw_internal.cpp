@@ -49,6 +49,32 @@ inline void free_image(void* data) {
 /*********
 * IMDRAW *
 **********/
+std::vector<GLint> imdraw_program_stack;
+
+void imdraw::push_program(GLuint program) {
+	GLint current_prog = 0;
+	glGetIntegerv(GL_CURRENT_PROGRAM, &current_prog);
+
+	imdraw_program_stack.push_back(current_prog);
+
+	if (program != current_prog) {
+		glUseProgram(program);
+	}
+}
+
+GLuint imdraw::pop_program() {
+	assert(imdraw_program_stack.size() > 0);
+
+	GLint current_prog = 0;
+	glGetIntegerv(GL_CURRENT_PROGRAM, &current_prog);
+
+	GLuint program = imdraw_program_stack.back();
+	if (program != current_prog) {
+		glUseProgram(program);
+	}
+	imdraw_program_stack.pop_back();
+	return program;
+}
 /* Textures */
 GLuint imdraw::make_texture(
 	GLsizei width,
@@ -63,7 +89,7 @@ GLuint imdraw::make_texture(
 	GLint wrap_t
 )
 {
-	unsigned int texture;
+	GLuint texture;
 	glGenTextures(1, &texture);
 	glBindTexture(GL_TEXTURE_2D, texture);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap_s);
@@ -86,7 +112,7 @@ GLuint imdraw::make_texture_from_file(std::string path) {
 	if (!data)
 		std::cout << "Failed to load texture from file: " << path << std::endl;
 
-	GLuint texture = imdraw::make_texture(width, height, data);
+	auto texture = imdraw::make_texture(width, height, data);
 
 	free_image(data);
 	return texture;
@@ -285,20 +311,14 @@ GLuint imdraw::make_shader(GLenum type, const char* shaderSource) {
 }
 
 /* Program */
-GLuint imdraw::make_program_from_source(const char* vertexShaderSource, const char* fragmentShaderSource) {
+GLuint imdraw::make_program_from_shaders(GLuint vertex_shader, GLuint fragment_shader) {
 	std::cout << "create program" << std::endl;
-	// create vertex shader
-	auto vertexShader = make_shader(GL_VERTEX_SHADER, vertexShaderSource);
-
-	// create fragment shader
-	auto fragmentShader = make_shader(GL_FRAGMENT_SHADER, fragmentShaderSource);
-
 	// compile program
 	GLuint shaderProgram;
 	shaderProgram = glCreateProgram();
 
-	glAttachShader(shaderProgram, vertexShader);
-	glAttachShader(shaderProgram, fragmentShader);
+	glAttachShader(shaderProgram, vertex_shader);
+	glAttachShader(shaderProgram, fragment_shader);
 	glLinkProgram(shaderProgram);
 
 	int success;
@@ -309,6 +329,18 @@ GLuint imdraw::make_program_from_source(const char* vertexShaderSource, const ch
 		glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
 		std::cout << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
 	}
+	return shaderProgram;
+}
+
+GLuint imdraw::make_program_from_source(const char* vertexShaderSource, const char* fragmentShaderSource) {
+	std::cout << "create program" << std::endl;
+	// create vertex shader
+	auto vertexShader = make_shader(GL_VERTEX_SHADER, vertexShaderSource);
+
+	// create fragment shader
+	auto fragmentShader = make_shader(GL_FRAGMENT_SHADER, fragmentShaderSource);
+
+	GLuint shaderProgram = make_program_from_shaders(vertexShader, fragmentShader);
 
 	glDeleteShader(vertexShader);
 	glDeleteShader(fragmentShader);
@@ -387,32 +419,7 @@ void imdraw::set_uniforms(GLuint program, std::map<std::string, UniformVariant> 
 	pop_program();
 }
 
-std::vector<GLint> program_stack;
 
-void imdraw::push_program(GLuint program) {
-	GLint current_prog = 0;
-	glGetIntegerv(GL_CURRENT_PROGRAM, &current_prog);
-
-	program_stack.push_back(current_prog);
-
-	if (program != current_prog) {
-		glUseProgram(program);
-	}
-}
-
-GLuint imdraw::pop_program() {
-	assert(program_stack.size() > 0);
-
-	GLint current_prog = 0;
-	glGetIntegerv(GL_CURRENT_PROGRAM, &current_prog);
-
-	GLuint program = program_stack.back();
-	if (program != current_prog) {
-		glUseProgram(program);
-	}
-	program_stack.pop_back();
-	return program;
-}
 
 /* Trasform helpers */
 glm::mat4 imdraw::orbit(glm::mat4 m, float yaw, float pitch) {
@@ -427,12 +434,18 @@ glm::mat4 imdraw::orbit(glm::mat4 m, float yaw, float pitch) {
 }
 
 /* DRAW */
-void imdraw::draw(GLuint vao, GLenum mode, GLuint ebo, GLsizei count) {
+
+void imdraw::draw(GLenum mode, GLuint vao, GLsizei count) {
+	// draw VAO
+	glBindVertexArray(vao);
+	glDrawArrays(mode, 0, count);
+	glBindVertexArray(0);
+}
+void imdraw::draw(GLenum mode, GLuint vao, GLuint ebo, GLsizei count) {
 	// draw VAO
 	glBindVertexArray(vao);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
 	glDrawElements(mode, count, GL_UNSIGNED_INT, nullptr);
-
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
 }

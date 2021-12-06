@@ -2,26 +2,24 @@
 #include <stdlib.h>
 #include <iostream>
 
+
+
 // Constructors
 OOGL::SmartGLObject::SmartGLObject(
-	std::function<GLuint()> c, 
-	std::function<void(GLuint)> d, 
-	std::function<bool(GLuint)> e)
+	std::function<GLuint()> create_func, 
+	std::function<void(GLuint)> delete_func
+)
 {
-	_id = c();
+	_id = create_func();
 	std::cout << "smartgl constructor " << _id << std::endl;
-	_deleteFunc = d;
-	_existFunc = e;
-	ref_inc();
+	_deleteFunc = delete_func;
+
+	refs_ptr = (int*)malloc(sizeof(int));
+	(*refs_ptr) = 1;
 }
 
 // reference counter
 void OOGL::SmartGLObject::ref_inc() const {
-	if (refs_ptr == NULL) {
-		refs_ptr = (int*)malloc(sizeof(int));
-		(*refs_ptr) = 0;
-	}
-
 	(*refs_ptr) += 1;
 }
 
@@ -38,11 +36,9 @@ unsigned int OOGL::SmartGLObject::ref_count() const {
 
 // copy constructor
 OOGL::SmartGLObject::SmartGLObject(const OOGL::SmartGLObject& other) {
-	std::cout << "smartgl copy constructor: " << other._id << " refs: " << other.ref_count() << std::endl;
+	std::cout << "smartgl: copy: " << this->_id << " refs: " << this->ref_count() << std::endl;
 
-	if (other._existFunc(other._id)) {
-		other.ref_inc();
-	}
+	other.ref_inc();
 
 	this->_id = other._id;
 	this->refs_ptr = other.refs_ptr;
@@ -51,13 +47,9 @@ OOGL::SmartGLObject::SmartGLObject(const OOGL::SmartGLObject& other) {
 // override equal operator
 OOGL::SmartGLObject& OOGL::SmartGLObject::operator=(const OOGL::SmartGLObject& other)
 {
-	
-	if (this->_existFunc(this->_id)) {
-		this->ref_dec();
-	}
-	if (other._existFunc(other._id)) {
-		other.ref_inc();
-	}
+	std::cout << "smartgl: equal: " << this->_id << " refs: " << this->ref_count() << std::endl;
+	this->ref_dec();
+	other.ref_inc();
 
 	this->_id = other._id;
 	this->refs_ptr = other.refs_ptr;
@@ -67,18 +59,18 @@ OOGL::SmartGLObject& OOGL::SmartGLObject::operator=(const OOGL::SmartGLObject& o
 
 // destructor
 OOGL::SmartGLObject::~SmartGLObject() {
-	std::cout << "smargl destructor: " << this->_id << " refs: " << this->ref_count() << std::endl;
+	std::cout << "smartgl: destructor: " << this->_id << " refs: " << this->ref_count() << std::endl;
 
 	this->ref_dec();
 
-	// clenup gl if no references left
+	// keep alive?
 	if (this->ref_count() > 0) {
 		return;
 	}
 
-	if (glIsProgram(this->_id)) {
-		std::cout << "delete gl object program: " << this->_id << std::endl;
-		this->_deleteFunc(this->_id);
-		free(this->refs_ptr);
-	}
+	// when no references left:
+	// delete from GPU
+	std::cout << "smartgl: delete object: " << this->_id << " refs: " << this->ref_count() << std::endl;
+	free(this->refs_ptr);
+	this->_deleteFunc(this->_id);
 }

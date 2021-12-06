@@ -48,6 +48,30 @@
     <ClInclude Include="glazy\imdraw\imdraw_shader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="glazy\OOGL\VertexArray.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="glazy\OOGL\ArrayBuffer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="glazy\OOGL\ElementBuffer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="glazy\OOGL\Texture.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="glazy\OOGL\State.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="glazy\OOGL\stb_image.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="glazy\OOGL\Framebuffer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="glazy\widgets\Viewport.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="glazy\imdraw\imdraw.cpp">
@@ -74,8 +98,28 @@
     <ClCompile Include="glazy\OOGL\Shader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="glazy\OOGL\VertexArray.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="glazy\OOGL\ArrayBuffer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="glazy\OOGL\ElementBuffer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="glazy\OOGL\Texture.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="glazy\OOGL\Framebuffer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="glazy\widgets\Viewport.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include=".gitignore" />
+    <None Include="glazy\shaders\default.vert" />
+    <None Include="glazy\shaders\default.frag" />
   </ItemGroup>
 </Project>

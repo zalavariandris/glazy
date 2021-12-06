@@ -51,6 +51,7 @@ namespace imdraw {
 	GLuint make_shader(GLenum type, const char* shaderSource);
 
 	/* Program */
+	GLuint make_program_from_shaders(GLuint vertex_shader, GLuint fragment_shader);
 	GLuint make_program_from_source(const char* vertexShaderSource, const char* fragmentShaderSource);
 	GLuint make_program_from_files(const char* vertexSourcePath, const char* fragmentSourcePath);
 	void set_uniforms(GLuint program, std::map<GLint, UniformVariant> uniforms);
@@ -62,7 +63,14 @@ namespace imdraw {
 	glm::mat4 orbit(glm::mat4 m, float yaw, float pitch);
 
 	/* DRAW */
-	void draw(GLuint vao, GLenum mode, GLuint ebo, GLsizei count);
+	/**
+	draw array
+	*/
+	void draw(GLenum mode, GLuint vao, GLsizei count);
+	/**
+	draw elements
+	*/
+	void draw(GLenum mode, GLuint vao, GLuint ebo, GLsizei count);
 
 	/* RENDER */
 	void render(

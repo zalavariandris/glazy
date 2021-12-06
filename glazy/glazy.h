@@ -6,6 +6,7 @@
 // FileSystem
 #include <fstream>
 #include <sstream>
+#include <filesystem>
 
 // collections
 #include <vector>
@@ -33,8 +34,20 @@
 #include "Camera.h"
 #include "Stylus.h"
 
+// imdraw
 #include "imdraw/imdraw.h"
 #include "imdraw/imdraw_internal.h"
+
+// imgeo
+#include "imgeo/imgeo.h"
+
+// OOGL
+#include "OOGL/Shader.h"
+#include "OOGL/Program.h"
+#include "OOGL/ArrayBuffer.h"
+#include "OOGL/ElementBuffer.h"
+#include "OOGL/VertexArray.h"
+#include "OOGL/Texture.h"
 
 void control_camera(Camera& camera, int scree_width, int screen_height) {
 	auto io = ImGui::GetIO();
@@ -79,8 +92,6 @@ void control_camera(Camera& camera, int scree_width, int screen_height) {
 }
 
 namespace glazy {
-
-
 	GLFWwindow* window;
 	Camera camera;
 	// GLuint default_program;
@@ -160,6 +171,11 @@ namespace glazy {
 		//glEnable(GL_CULL_FACE);
 		//glCullFace(GL_FRONT);
 
+		// camera defaults
+		camera.ortho = false;
+		camera.eye = glm::vec3(0, 1, -5);
+		camera.target = glm::vec3(0, 0, 0);
+
 		return EXIT_SUCCESS;
 	}
 
@@ -214,10 +230,9 @@ namespace glazy {
 		/************ 
 		  CREATE GUI 
 		*************/
-		ImGui::DockSpaceOverViewport();
+		ImGui::DockSpaceOverViewport(NULL, ImGuiDockNodeFlags_PassthruCentralNode);
 
 		camera.aspect = (float)display_w / display_h;
-
 		ImGui::Begin("camera");
 		ImGui::Checkbox("ortho", &camera.ortho);
 		ImGui::InputFloat("eye", &camera.eye.z);
@@ -248,5 +263,45 @@ namespace glazy {
 		// - cleanup flfw
 		glfwDestroyWindow(window);
 		glfwTerminate();
+	}
+
+	std::map<std::string, std::filesystem::file_time_type> path_dates;
+	inline bool IsFileChanged(std::string path, bool trigger_first_time=false) {
+		if (!path_dates.contains(path))
+		{	
+			auto ftime = std::filesystem::last_write_time(path);
+			path_dates[path] = ftime;
+
+			if (!trigger_first_time) {
+				return false;
+			}
+		}
+
+		auto ftime = std::filesystem::last_write_time(path);
+		if (ftime != path_dates[path]) {
+			path_dates[path] = ftime;
+			return true;
+		}
+		return false;
+	}
+
+	inline std::string read_text(const char* path) {
+		std::string content;
+		std::cout << "read: " << path << std::endl;
+		std::string code;
+		std::ifstream file(path, std::ios::in);
+		std::stringstream stream;
+
+		if (!file.is_open()) {
+			std::cerr << "Could not read file " << path << ". File does not exist." << std::endl;
+		}
+
+		std::string line = "";
+		while (!file.eof()) {
+			std::getline(file, line);
+			content.append(line + "\n");
+		}
+		file.close();
+		return content;
 	}
 }

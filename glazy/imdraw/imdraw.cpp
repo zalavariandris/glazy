@@ -401,7 +401,7 @@ void imdraw::sphere(glm::vec3 center, float diameter) {
 	pop_program();
 }
 
-void imdraw::cube(glm::vec3 center, float size) {
+void imdraw::cube(glm::vec3 center, float size, glm::vec3 color) {
 	// geometry
 	static auto geo = imgeo::cube();
 
@@ -417,7 +417,8 @@ void imdraw::cube(glm::vec3 center, float size) {
 	imdraw::reset_uniforms();
 	set_uniforms(program(), {
 		{uniform_locations["model"], glm::translate(glm::mat4(1), center) * glm::scale(glm::mat4(1), glm::vec3(size))},
-		{uniform_locations["useTextureMap"], false}
+		{uniform_locations["useTextureMap"], false},
+		{uniform_locations["color"], color}
 	});
 	glBindVertexArray(vao);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);

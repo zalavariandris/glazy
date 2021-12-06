@@ -24,7 +24,7 @@
     <ProjectGuid>{dbddb6db-053d-461b-86dd-0e0e1dd18945}</ProjectGuid>
     <RootNamespace>drawwothoogl</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ProjectName>draw_with_oogl</ProjectName>
+    <ProjectName>shadertoy_with_oogl</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -148,7 +148,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="draw_with_oogl.cpp" />
+    <ClCompile Include="shadertoy_with_oogl.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\glazy.vcxproj">
