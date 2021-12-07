@@ -273,9 +273,12 @@ void run_draw_demo() {
 			// display fbo in window and handle input
 			ImGui::SetCursorPos(ImGui::GetWindowContentRegionMin());
 			ImGui::Image((ImTextureID)main_texture, main_resolution, ImVec2(0, 1), ImVec2(1, 0));
-			
+		
 		}
 		ImGui::End();
+
+		static char code[512];
+		ImGui::InputTextMultiline("code", code, 512);
 
 		// draw to screen
 		//glBindFramebuffer(GL_FRAMEBUFFER, 0);

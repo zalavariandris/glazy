@@ -5,18 +5,25 @@
 #include "glazy.h"
 #include <glm/gtx/matrix_decompose.hpp>
 #include "widgets/Viewport.h"
-
+#include <filesystem>
+#include "imgui_stdlib.h"
 
 
 void run_tests() {
 	std::cout << "running tests..." << std::endl;
-	auto vertex_shader_code = glazy::read_text("C:/Users/andris/source/repos/glazy/glazy/shaders/default.vert");
-	auto fragment_shader_code = glazy::read_text("C:/Users/andris/source/repos/glazy/glazy/shaders/default.frag");
+	
+	auto current_dir = std::filesystem::current_path();
+	auto glazy_dir = current_dir.parent_path().parent_path();
+	auto vertex_path = glazy_dir / "glazy" / "shaders" / "default.vert";
+	auto fragment_path = glazy_dir / "glazy" / "shaders" / "default.frag";
+	auto vertex_shader_code = glazy::read_text(vertex_path.string().c_str());
+	auto fragment_shader_code = glazy::read_text(fragment_path.string().c_str());
 
 	glazy::init();
 	// smartg gl tests
 	{
 		auto tex = OOGL::Texture();
+		std::cout << "is texture: " << (bool)glIsTexture(tex) << std::endl;
 	}
 	{
 		auto vert = OOGL::Shader(GL_VERTEX_SHADER);
@@ -25,7 +32,8 @@ void run_tests() {
 		std::cout << "is frag shader: " << (bool)glIsShader(vert) << std::endl;
 	}
 	{
-		auto progr = OOGL::Program();
+		auto prog = OOGL::Program();
+		std::cout << "is program: " << (bool)glIsProgram(prog) << std::endl;
 	}
 
 	{
@@ -38,6 +46,10 @@ void run_tests() {
 		auto vert = OOGL::Shader::from_source(GL_VERTEX_SHADER, vertex_shader_code.c_str());
 		auto frag = OOGL::Shader::from_source(GL_FRAGMENT_SHADER, fragment_shader_code.c_str());
 		auto prog = OOGL::Program::from_shaders(vert, frag);
+
+		std::cout << "is vert shader: " << (bool)glIsShader(vert) << std::endl;
+		std::cout << "is frag shader: " << (bool)glIsShader(vert) << std::endl;
+		std::cout << "is program: " << (bool)glIsProgram(prog) << std::endl;
 	}
 
 	{
@@ -48,27 +60,32 @@ void run_tests() {
 		}
 	}
 	glazy::destroy();
-	std::cout << "done!" << std::endl;
+	std::cout << "tests done!" << std::endl;
 }
 
 
 int main()
 {
-	//run_tests();
+	auto current_dir = std::filesystem::current_path();
+	auto glazy_dir = current_dir.parent_path().parent_path();
+	std::cout << "current directory:" << current_dir << std::endl;
+	std::cout << "glazy directory:" << glazy_dir << std::endl;
+	run_tests();
 
     glazy::init();
 
 	//glazy::destroy();
 	//return 0;
 
-	auto vertex_path = "C:/Users/andris/source/repos/glazy/glazy/shaders/default.vert";
-	auto fragment_path = "C:/Users/andris/source/repos/glazy/glazy/shaders/default.frag";
-	auto vertex_shader_code = glazy::read_text(vertex_path);
-	auto fragment_shader_code = glazy::read_text(fragment_path);
+	auto vertex_path = glazy_dir / "glazy" / "shaders" / "default.vert";
+	auto fragment_path = glazy_dir / "glazy" / "shaders" / "default.frag";
+	auto vertex_shader_code = glazy::read_text(vertex_path.string().c_str());
+	auto fragment_shader_code = glazy::read_text(fragment_path.string().c_str());
 
-	auto vertex_shader = OOGL::Shader::from_source(GL_VERTEX_SHADER, vertex_shader_code.c_str());
-	auto fragment_shader = OOGL::Shader::from_source(GL_FRAGMENT_SHADER, fragment_shader_code.c_str());
-	auto program = OOGL::Program::from_shaders(vertex_shader, fragment_shader);
+	auto program = OOGL::Program::from_shaders(
+		OOGL::Shader::from_source(GL_VERTEX_SHADER, vertex_shader_code.c_str()), 
+		OOGL::Shader::from_source(GL_FRAGMENT_SHADER, fragment_shader_code.c_str())
+	);
 
 	glazy::camera.eye = glm::vec3(-4, 4, -6);
 
@@ -82,8 +99,15 @@ int main()
 	main_camera.eye = glm::vec3(0, 1, -5);
 	main_camera.target = glm::vec3(0, 0, 0);
 
+	
+
     while (glazy::is_running()) {
         glazy::new_frame();
+
+		
+		ImGui::Begin("Style");
+		ImGui::ShowStyleEditor();
+		ImGui::End();
 
 		ImGuiWindowFlags flags = ImGuiWindowFlags_NoMove
 			| ImGuiWindowFlags_NoDecoration
@@ -97,9 +121,16 @@ int main()
 		ImGui::Text("%f fps", ImGui::GetIO().Framerate);
 		ImGui::End();
 
-		ImGui::SetNextWindowPos({ 0,0 });
-		auto viewport = ImGui::GetMainViewport();
+		ImGui::Begin("Code");
 		
+		if (ImGui::InputTextMultiline("code", &vertex_shader_code, { -1,-1 })) {
+			std::cout << "input changed" << std::endl;
+		}
+		ImGui::End();
+
+		// Background window
+		auto viewport = ImGui::GetMainViewport();
+		ImGui::SetNextWindowPos({ 0,0 });
 		ImGui::SetNextWindowSize(viewport->Size);
 		ImGui::Begin("background", 0, 
 			ImGuiWindowFlags_NoResize |
@@ -112,7 +143,7 @@ int main()
 			ImGuiWindowFlags_NoMove
 		);
 		{
-			ImGui::InvisibleButton("BACKGROUDN", ImVec2(-1, -1));
+			ImGui::InvisibleButton("BACKGROUND_CONTROL_BUTTON", ImVec2(-1, -1));
 			auto size = ImGui::GetItemRectSize();
 			auto camera = &glazy::camera;
 			auto io = ImGui::GetIO();
@@ -138,7 +169,7 @@ int main()
 				}
 			}
 		}
-		ImGui::End();
+		ImGui::End(); // end background
 
 		ImGui::Begin("Viewport3D");
 		{
@@ -171,7 +202,7 @@ int main()
 		//	init_ftime = ftime;
 		//}
 
-		if (glazy::IsFileChanged(vertex_path)) {
+		if (glazy::IsFileChanged(vertex_path.string())) {
 			std::cout << "vertex changed" << std::endl;
 		}
 

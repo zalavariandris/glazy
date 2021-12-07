@@ -36,7 +36,7 @@ void ControlCamera(Camera* main_camera, const ImVec2& size) {
 }
 
 void ViewportBegin(GLuint* main_fbo, GLuint* main_color, GLuint* main_depth, Camera* main_camera) {
-	assert(viewport_color_tex == 0);
+	assert(current_viewport_color == 0);
 	// calc item pos and scale
 	auto item_pos = ImGui::GetCursorPos();
 	auto item_size = ImGui::GetContentRegionAvail();
@@ -87,6 +87,7 @@ void ViewportEnd() {
 	assert(current_viewport_color > 0);
 
 	// restore viewport FBO and viewport
+	current_viewport_color = 0;
 	glBindFramebuffer(GL_FRAMEBUFFER, current_viewport_restore_fbo);
 	glViewport(
 		current_viewport_restore_viewport[0],
