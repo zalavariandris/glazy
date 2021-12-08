@@ -14,6 +14,7 @@ void run_tests() {
 	
 	auto current_dir = std::filesystem::current_path();
 	auto glazy_dir = current_dir.parent_path().parent_path();
+
 	auto vertex_path = glazy_dir / "glazy" / "shaders" / "default.vert";
 	auto fragment_path = glazy_dir / "glazy" / "shaders" / "default.frag";
 	auto vertex_shader_code = glazy::read_text(vertex_path.string().c_str());
@@ -68,8 +69,10 @@ int main()
 {
 	auto current_dir = std::filesystem::current_path();
 	auto glazy_dir = current_dir.parent_path().parent_path();
+	auto assets_dir = glazy_dir / "assets";
 	std::cout << "current directory:" << current_dir << std::endl;
 	std::cout << "glazy directory:" << glazy_dir << std::endl;
+	std::cout << "assets directory: " << assets_dir << std::endl;
 	run_tests();
 
     glazy::init();
@@ -77,8 +80,8 @@ int main()
 	//glazy::destroy();
 	//return 0;
 
-	auto vertex_path = glazy_dir / "glazy" / "shaders" / "default.vert";
-	auto fragment_path = glazy_dir / "glazy" / "shaders" / "default.frag";
+	auto vertex_path = glazy_dir / "glazy" / "shaders" / "matcap.vert";
+	auto fragment_path = glazy_dir / "glazy" / "shaders" / "matcap.frag";
 	auto vertex_shader_code = glazy::read_text(vertex_path.string().c_str());
 	auto fragment_shader_code = glazy::read_text(fragment_path.string().c_str());
 
@@ -211,33 +214,39 @@ int main()
 		//auto prog = OOGL::Program::from_shaders(vert, frag);
 		
 		// set program
+		static auto matcap_tex = imdraw::make_texture_from_file((assets_dir / "jeepster_skinmat2.jpg").string());
+		//imdraw::quad(matcap_tex);
+
 		program.set_uniforms({
 			{"projection", glazy::camera.getProjection()},
 			{"view", glazy::camera.getView()},
 			{"model", glm::mat4(1)},
-			{"useInstanceMatrix", false},
-			{"color", glm::vec3(1,1,0)},
-			{"useTextureMap", false},
-			{"textureMap", 0}
+			{"matCap", 0}
 		});
 
 		// create geometry
 		static auto geo = imgeo::cube();
 		static auto vbo = OOGL::ArrayBuffer::from_data(geo.positions);
+		static auto normal_vbo = OOGL::ArrayBuffer::from_data(geo.normals.value());
 		static auto vao = OOGL::VertexArray::from_attributes(program, {
-			{"aPos",{vbo, 3}}
+			{"position",{vbo, 3}},
+			{"normal", {normal_vbo, 3}}
 		});
 		static auto ebo = OOGL::ElementBuffer::from_data(geo.indices);
 
 		// draw
+		glEnable(GL_DEPTH_TEST);
 		glUseProgram(program);
+		
 		glClearColor(.5, .5, 1, 1);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		glBindTexture(GL_TEXTURE_2D, matcap_tex);
 		glBindVertexArray(vao);
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
 		glDrawElements(geo.mode, geo.indices.size(), GL_UNSIGNED_INT, nullptr);
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 		glBindVertexArray(0);
+		glBindTexture(GL_TEXTURE_2D, 0);
 
 		// 
 		ImGui::Text("program ref count: %i", program.ref_count());

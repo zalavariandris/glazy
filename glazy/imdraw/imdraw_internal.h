@@ -63,14 +63,8 @@ namespace imdraw {
 	glm::mat4 orbit(glm::mat4 m, float yaw, float pitch);
 
 	/* DRAW */
-	/**
-	draw array
-	*/
-	void draw(GLenum mode, GLuint vao, GLsizei count);
-	/**
-	draw elements
-	*/
-	void draw(GLenum mode, GLuint vao, GLuint ebo, GLsizei count);
+	void draw(GLenum mode, GLuint vao, GLsizei count); // draw array
+	void draw(GLenum mode, GLuint vao, GLuint ebo, GLsizei count); // draw elements
 
 	/* RENDER */
 	void render(
