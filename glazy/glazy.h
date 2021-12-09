@@ -151,7 +151,7 @@ namespace glazy {
 		ImGui_ImplGlfw_InitForOpenGL(window, true);
 		ImGui_ImplOpenGL3_Init();
 
-		cfg.SizePixels = 13;
+		cfg.SizePixels = 13*2;
 		auto font_default = io.Fonts->AddFontDefault(&cfg);
 
 		ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable; // enable docking

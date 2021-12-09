@@ -329,8 +329,6 @@ int main()
 				imdraw::set_projection(main_camera.getProjection());
 				imdraw::set_view(main_camera.getView());
 				imdraw::cube(glm::vec3(0), 1.0, glm::vec3(.8, .8, .8));
-
-
 			}
 			ViewportEnd();
 		}
