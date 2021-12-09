@@ -9,7 +9,9 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "draw_demo", "demos\draw_dem
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OOGL-test", "tests\OOGL-test\OOGL-test.vcxproj", "{A3B90D0E-476E-47F0-9422-1DC69678FBD3}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "draw_woth_oogl", "demos\draw_woth_oogl\draw_woth_oogl.vcxproj", "{DBDDB6DB-053D-461B-86DD-0E0E1DD18945}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "shadertoy_with_oogl", "demos\draw_woth_oogl\draw_woth_oogl.vcxproj", "{DBDDB6DB-053D-461B-86DD-0E0E1DD18945}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "read_exr", "demos\read_exr\read_exr.vcxproj", "{EAADF433-03C5-4BE9-A614-3E1E232FFE5D}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -51,6 +53,14 @@ Global
 		{DBDDB6DB-053D-461B-86DD-0E0E1DD18945}.Release|x64.Build.0 = Release|x64
 		{DBDDB6DB-053D-461B-86DD-0E0E1DD18945}.Release|x86.ActiveCfg = Release|Win32
 		{DBDDB6DB-053D-461B-86DD-0E0E1DD18945}.Release|x86.Build.0 = Release|Win32
+		{EAADF433-03C5-4BE9-A614-3E1E232FFE5D}.Debug|x64.ActiveCfg = Debug|x64
+		{EAADF433-03C5-4BE9-A614-3E1E232FFE5D}.Debug|x64.Build.0 = Debug|x64
+		{EAADF433-03C5-4BE9-A614-3E1E232FFE5D}.Debug|x86.ActiveCfg = Debug|Win32
+		{EAADF433-03C5-4BE9-A614-3E1E232FFE5D}.Debug|x86.Build.0 = Debug|Win32
+		{EAADF433-03C5-4BE9-A614-3E1E232FFE5D}.Release|x64.ActiveCfg = Release|x64
+		{EAADF433-03C5-4BE9-A614-3E1E232FFE5D}.Release|x64.Build.0 = Release|x64
+		{EAADF433-03C5-4BE9-A614-3E1E232FFE5D}.Release|x86.ActiveCfg = Release|Win32
+		{EAADF433-03C5-4BE9-A614-3E1E232FFE5D}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

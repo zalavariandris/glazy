@@ -72,6 +72,9 @@
     <ClInclude Include="glazy\widgets\Viewport.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="glazy\imdraw\imdraw_geo.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="glazy\imdraw\imdraw.cpp">

@@ -34,12 +34,13 @@
 #include "Camera.h"
 #include "Stylus.h"
 
+// imgeo
+#include "imgeo/imgeo.h"
+
 // imdraw
 #include "imdraw/imdraw.h"
 #include "imdraw/imdraw_internal.h"
-
-// imgeo
-#include "imgeo/imgeo.h"
+#include "imdraw/imdraw_geo.h"
 
 // OOGL
 #include "OOGL/Shader.h"

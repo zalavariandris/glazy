@@ -105,6 +105,35 @@ GLuint imdraw::make_texture(
 	return texture;
 }
 
+GLuint imdraw::make_texture_float(
+	GLsizei width,
+	GLsizei height,
+	const float* data,
+	GLint internalformat,
+	GLenum format,
+	GLint type,
+	GLint min_filter,
+	GLint mag_filter,
+	GLint wrap_s,
+	GLint wrap_t
+)
+{
+	GLuint texture;
+	glGenTextures(1, &texture);
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap_s);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap_t);
+
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, min_filter);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, mag_filter);
+
+	glTexImage2D(GL_TEXTURE_2D, 0, internalformat, width, height, 0, format, type, data);
+	//glGenerateMipmap(GL_TEXTURE_2D);
+
+	glBindTexture(GL_TEXTURE_2D, 0);
+	return texture;
+}
+
 GLuint imdraw::make_texture_from_file(std::string path) {
 	int width, height, nrChannels;
 	unsigned char* data = read_image(path.c_str(), &width, &height, &nrChannels);
@@ -204,8 +233,6 @@ GLuint imdraw::make_ebo(const std::vector<glm::uvec3>& data) {
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	return ebo;
 }
-
-
 
 /* Vertex Array Object */
 GLuint imdraw::make_vao(std::map <GLuint, std::tuple<GLuint, GLsizei>> attributes) {

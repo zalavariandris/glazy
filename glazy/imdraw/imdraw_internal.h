@@ -30,6 +30,19 @@ namespace imdraw {
 		GLint wrap_t = GL_REPEAT
 	);
 
+	GLuint make_texture_float(
+		GLsizei width = -1,
+		GLsizei height = -1,
+		const float* data = NULL,
+		GLint internalformat = GL_RGB,
+		GLenum format = GL_RGB,
+		GLint type = GL_FLOAT,
+		GLint min_filter = GL_LINEAR,
+		GLint mag_filter = GL_NEAREST,
+		GLint wrap_s = GL_REPEAT,
+		GLint wrap_t = GL_REPEAT
+	);
+
 	GLuint make_texture_from_file(std::string path);
 
 	/* Frame Buffer Object */

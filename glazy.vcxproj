@@ -148,6 +148,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="glazy\imdraw\imdraw_geo.h" />
     <ClInclude Include="glazy\OOGL\Framebuffer.h" />
     <ClInclude Include="glazy\OOGL\ElementBuffer.h" />
     <ClInclude Include="glazy\OOGL\ArrayBuffer.h" />

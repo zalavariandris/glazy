@@ -8,6 +8,145 @@
 #include <filesystem>
 #include "imgui_stdlib.h"
 
+// assimp: model loading
+#include "assimp/Importer.hpp"
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
+
+#include <deque>
+
+glm::mat4 assimp_to_glm(const aiMatrix4x4& aiMat)
+{
+	return {
+		aiMat.a1, aiMat.b1, aiMat.c1, aiMat.d1,
+		aiMat.a2, aiMat.b2, aiMat.c2, aiMat.d2,
+		aiMat.a3, aiMat.b3, aiMat.c3, aiMat.d3,
+		aiMat.a4, aiMat.b4, aiMat.c4, aiMat.d4
+	};
+}
+
+namespace imgeo {
+	struct Node {
+		std::vector<Node*> children;
+		glm::mat4 transform=glm::mat4(1);
+		std::vector<Trimesh> geos;
+		std::string name = "";
+	};
+}
+
+bool load_model(const std::filesystem::path & path) {
+	Assimp::Importer importer;
+	const aiScene* scene = importer.ReadFile(path.string(), aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_GenNormals);
+
+	if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode)
+	{
+		std::cout << "ERROR::ASSIMP::" << importer.GetErrorString() << std::endl;
+		return false;
+	}
+
+
+	/**
+	Collect all nodes
+	*/
+	std::vector<std::pair<aiNode*, imgeo::Node>> node_pairs;
+
+	// depth first search
+	std::cout << "DFS: " << path << " model: " << std::endl;
+	std::deque<aiNode*> nodes_to_visit{scene->mRootNode};
+	std::vector<aiNode* , imgeo::Node> node_pairs;
+	while (nodes_to_visit.size() > 0) {
+		aiNode* ainode = nodes_to_visit.back();
+		nodes_to_visit.pop_back();
+		// prepend children
+		for (unsigned int i = 0; i < ainode->mNumChildren; i++)
+		{
+			nodes_to_visit.push_front(ainode->mChildren[i]);
+		}
+
+		/*
+		do something with current node
+		*/
+		imgeo::Node mynode;
+		for (auto i = 0; ainode->mNumChildren; i++) {
+			mynode.children.push_back()
+		}
+		node_pairs.push_back({ ainode, mynode });
+	}
+	for(auto & node_pair : node_pairs) {
+		auto current_node = std::get<0>(node_pair);
+		auto my_node = std::get<0>(node_pair);
+			mynode.name = current_node->mName.C_Str();
+		mynode.transform = assimp_to_glm(current_node->mTransformation);
+		//TODO: mynode.parent = ?
+
+		for (auto i = 0; i < current_node->mNumMeshes; i++) {
+			aiMesh* mesh = scene->mMeshes[current_node->mMeshes[i]];
+
+			// process mesh
+			std::vector<glm::vec3> positions;
+			if (mesh->HasPositions())
+			{
+				for (auto i = 0; i < mesh->mNumVertices; i++) {
+					auto P = mesh->mVertices[i];
+					glm::vec3 pos{ P.x, P.y, P.z };
+					positions.push_back(pos);
+				}
+			}
+			std::vector<glm::vec3> normals;
+
+			if (mesh->HasNormals())
+			{
+				for (auto i = 0; i < mesh->mNumVertices; i++) {
+					auto N = mesh->mNormals[i];
+					glm::vec3 normal{ N.x, N.y, N.z };
+					normals.push_back(normal);
+				}
+			}
+
+			std::vector<glm::vec2> uvs;
+			std::vector<glm::vec3> tangents;
+			std::vector<glm::vec3> bitangents;
+			if (mesh->mTextureCoords[0]) // has UV
+			{
+				for (auto i = 0; i < mesh->mNumVertices; i++) {
+					auto texture_coords = mesh->mTextureCoords[0][i]; // TODO: multiple texture coordinates
+					glm::vec2 uv{ texture_coords.x, texture_coords.y };
+					uvs.push_back(uv);
+
+					auto T = mesh->mTangents[i];
+					glm::vec3 tangent{ T.x, T.y, T.z };
+					tangents.push_back(tangent);
+
+					auto bT = mesh->mBitangents[i];
+					glm::vec3 biTangent{ bT.x, bT.y, bT.z };
+					tangents.push_back(biTangent);
+				}
+			}
+
+			// indices
+			std::vector<unsigned int> indices;
+			for (auto i = 0; i < mesh->mNumFaces; i++) {
+				auto face = mesh->mFaces[i];
+				for (auto j = 0; j < face.mNumIndices; j++) {
+					auto vertex_index = face.mIndices[j];
+					indices.push_back(vertex_index);
+				}
+			}
+
+			auto geo = imgeo::Trimesh(GL_TRIANGLES,
+				positions,
+				indices,
+				uvs.size() > 0 ? std::optional<std::vector<glm::vec2>>(uvs) : std::nullopt,
+				normals.size() > 0 ? std::optional<std::vector<glm::vec3>>(normals) : std::nullopt,
+				std::nullopt
+			);
+
+			geometries.push_back(geo);
+		}
+	}
+
+	return true;
+}
 
 void run_tests() {
 	std::cout << "running tests..." << std::endl;
@@ -73,7 +212,11 @@ int main()
 	std::cout << "current directory:" << current_dir << std::endl;
 	std::cout << "glazy directory:" << glazy_dir << std::endl;
 	std::cout << "assets directory: " << assets_dir << std::endl;
-	run_tests();
+	//run_tests();
+
+		// load model
+	std::filesystem::path model_path = glazy_dir / "assets" / "backpack/backpack.obj";
+	auto model = load_model(model_path);
 
     glazy::init();
 
@@ -85,10 +228,14 @@ int main()
 	auto vertex_shader_code = glazy::read_text(vertex_path.string().c_str());
 	auto fragment_shader_code = glazy::read_text(fragment_path.string().c_str());
 
-	auto program = OOGL::Program::from_shaders(
-		OOGL::Shader::from_source(GL_VERTEX_SHADER, vertex_shader_code.c_str()), 
-		OOGL::Shader::from_source(GL_FRAGMENT_SHADER, fragment_shader_code.c_str())
+	auto program = imdraw::make_program_from_shaders(
+		imdraw::make_shader(GL_VERTEX_SHADER ,vertex_shader_code.c_str()),
+		imdraw::make_shader(GL_FRAGMENT_SHADER, fragment_shader_code.c_str())
 	);
+	//auto program = OOGL::Program::from_shaders(
+	//	OOGL::Shader::from_source(GL_VERTEX_SHADER, vertex_shader_code.c_str()), 
+	//	OOGL::Shader::from_source(GL_FRAGMENT_SHADER, fragment_shader_code.c_str())
+	//);
 
 	glazy::camera.eye = glm::vec3(-4, 4, -6);
 
@@ -102,7 +249,6 @@ int main()
 	main_camera.eye = glm::vec3(0, 1, -5);
 	main_camera.target = glm::vec3(0, 0, 0);
 
-	
 
     while (glazy::is_running()) {
         glazy::new_frame();
@@ -217,7 +363,7 @@ int main()
 		static auto matcap_tex = imdraw::make_texture_from_file((assets_dir / "jeepster_skinmat2.jpg").string());
 		//imdraw::quad(matcap_tex);
 
-		program.set_uniforms({
+		imdraw::set_uniforms(program, {
 			{"projection", glazy::camera.getProjection()},
 			{"view", glazy::camera.getView()},
 			{"model", glm::mat4(1)},
@@ -225,14 +371,14 @@ int main()
 		});
 
 		// create geometry
-		static auto geo = imgeo::cube();
-		static auto vbo = OOGL::ArrayBuffer::from_data(geo.positions);
-		static auto normal_vbo = OOGL::ArrayBuffer::from_data(geo.normals.value());
-		static auto vao = OOGL::VertexArray::from_attributes(program, {
-			{"position",{vbo, 3}},
-			{"normal", {normal_vbo, 3}}
-		});
-		static auto ebo = OOGL::ElementBuffer::from_data(geo.indices);
+		//static auto geo = imgeo::cube();
+		//static auto vbo = OOGL::ArrayBuffer::from_data(geo.positions);
+		//static auto normal_vbo = OOGL::ArrayBuffer::from_data(geo.normals.value());
+		//static auto vao = OOGL::VertexArray::from_attributes(program, {
+		//	{"position",{vbo, 3}},
+		//	{"normal", {normal_vbo, 3}}
+		//});
+		//static auto ebo = OOGL::ElementBuffer::from_data(geo.indices);
 
 		// draw
 		glEnable(GL_DEPTH_TEST);
@@ -241,15 +387,17 @@ int main()
 		glClearColor(.5, .5, 1, 1);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		glBindTexture(GL_TEXTURE_2D, matcap_tex);
-		glBindVertexArray(vao);
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-		glDrawElements(geo.mode, geo.indices.size(), GL_UNSIGNED_INT, nullptr);
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-		glBindVertexArray(0);
+
+		static auto geo_buffer = imdraw::make_geo(imgeo::sphere());
+		imdraw::draw(geo_buffer);
+		//glBindVertexArray(vao);
+		//glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+		//glDrawElements(geo.mode, geo.indices.size(), GL_UNSIGNED_INT, nullptr);
+		//glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+		//glBindVertexArray(0);
 		glBindTexture(GL_TEXTURE_2D, 0);
 
 		// 
-		ImGui::Text("program ref count: %i", program.ref_count());
         glazy::end_frame();
     }
     glazy::destroy();
