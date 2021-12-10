@@ -9,28 +9,28 @@ ImVec2 current_viewport_pos{ -1,-1 };
 GLint current_viewport_restore_fbo;
 GLint current_viewport_restore_viewport[4];
 
-void ControlCamera(Camera* main_camera, const ImVec2& size) {
+void ControlCamera(Camera* camera, const ImVec2& size) {
 	ImGui::Button("camera control", size);
 	auto io = ImGui::GetIO();
 	if (ImGui::IsItemActive()) {
 		if (ImGui::IsItemActive()) {
 			if (ImGui::IsMouseDragging(0) && (io.KeyMods == ImGuiKeyModFlags_Alt)) {
-				main_camera->pan(-io.MouseDelta.x / size.x, -io.MouseDelta.y / size.y);
+				camera->pan(-io.MouseDelta.x / size.x, -io.MouseDelta.y / size.y);
 			}
 			if (ImGui::IsMouseDragging(0) && (io.KeyMods == (ImGuiKeyModFlags_Ctrl | ImGuiKeyModFlags_Alt))) {
-				main_camera->orbit(-io.MouseDelta.x * 0.006, -io.MouseDelta.y * 0.006);
+				camera->orbit(-io.MouseDelta.x * 0.006, -io.MouseDelta.y * 0.006);
 			}
 			if (ImGui::IsMouseDragging(0) && (io.KeyMods == ImGuiKeyModFlags_Ctrl)) {
-				auto target_distance = main_camera->get_target_distance();
-				main_camera->dolly(-io.MouseDelta.y * target_distance * 0.005);
+				auto target_distance = camera->get_target_distance();
+				camera->dolly(-io.MouseDelta.y * target_distance * 0.005);
 			}
 		}
 	}
 
 	if (ImGui::IsItemHovered()) {
 		if (io.MouseWheel != 0 && !io.KeyMods) {
-			auto target_distance = main_camera->get_target_distance();
-			main_camera->dolly(-io.MouseWheel * target_distance * 0.2);
+			auto target_distance = camera->get_target_distance();
+			camera->dolly(-io.MouseWheel * target_distance * 0.2);
 		}
 	}
 }

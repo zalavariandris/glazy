@@ -108,7 +108,7 @@ GLuint imdraw::make_texture(
 GLuint imdraw::make_texture_float(
 	GLsizei width,
 	GLsizei height,
-	const float* data,
+	float* data,
 	GLint internalformat,
 	GLenum format,
 	GLint type,

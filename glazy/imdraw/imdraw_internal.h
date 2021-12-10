@@ -33,7 +33,7 @@ namespace imdraw {
 	GLuint make_texture_float(
 		GLsizei width = -1,
 		GLsizei height = -1,
-		const float* data = NULL,
+		float* data = NULL,
 		GLint internalformat = GL_RGB,
 		GLenum format = GL_RGB,
 		GLint type = GL_FLOAT,

@@ -167,7 +167,7 @@ void imdraw::triangle() {
 	pop_program();
 }
 
-void imdraw::quad(GLuint texture) {
+void imdraw::quad(GLuint texture, glm::vec2 pos, glm::vec2 size) {
 	static auto geo = imgeo::quad();
 
 	// init vao
@@ -182,11 +182,17 @@ void imdraw::quad(GLuint texture) {
 	static auto indices_count = (GLuint)geo.indices.size();
 
 	// draw
+	auto M = glm::mat4(1);
+	M = glm::translate(M, glm::vec3(pos, 0));
+	M = glm::scale(M, glm::vec3(size, 1));
+	
+
 	push_program(program());
 	imdraw::reset_uniforms();
 	imdraw::set_uniforms(program(), {
 		{uniform_locations["color"], glm::vec3(1)},
-		{uniform_locations["useTextureMap"], true }
+		{uniform_locations["useTextureMap"], true },
+		{uniform_locations["model"], M}
 	});
 	glBindTexture(GL_TEXTURE_2D, texture);
 	glBindVertexArray(vao);

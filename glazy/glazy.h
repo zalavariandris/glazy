@@ -192,6 +192,27 @@ namespace glazy {
 	}
 
 	/**
+	* return empty string if cancelled
+	*/
+	std::filesystem::path open_file_dialog(const char* filter) {
+		OPENFILENAMEA ofn;
+		CHAR szFile[260] = { 0 };
+		ZeroMemory(&ofn, sizeof(OPENFILENAME));
+		ofn.lStructSize = sizeof(OPENFILENAME);
+		ofn.hwndOwner = glfwGetWin32Window((GLFWwindow*)glazy::window);
+		ofn.lpstrFile = szFile;
+		ofn.nMaxFile = sizeof(szFile);
+		ofn.lpstrFilter = filter;
+		ofn.nFilterIndex = 1;
+		ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+		if (GetOpenFileNameA(&ofn) == true)
+		{
+			return ofn.lpstrFile;
+		}
+		return std::string();
+	}
+
+	/**
 	* Check windows
 	*
 	* @deprecated since 1.0
@@ -245,10 +266,7 @@ namespace glazy {
 		ImGui::DockSpaceOverViewport(NULL, ImGuiDockNodeFlags_PassthruCentralNode);
 
 		camera.aspect = (float)display_w / display_h;
-		ImGui::Begin("camera");
-		ImGui::Checkbox("ortho", &camera.ortho);
-		ImGui::InputFloat("eye", &camera.eye.z);
-		ImGui::End();
+
 		//control_camera(camera, display_w, display_h);
 	}
 
