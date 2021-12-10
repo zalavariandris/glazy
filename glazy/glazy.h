@@ -125,6 +125,17 @@ namespace glazy {
 			EXIT_FAILURE;
 		}
 
+		// center window
+		auto monitor = glfwGetPrimaryMonitor();
+		float xscale; float yscale;
+		glfwGetMonitorContentScale(monitor, &xscale, &yscale);
+		const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+		auto width = mode->width * 3 / 4;
+		auto height = mode->height * 3 / 4;
+		glfwSetWindowSize(window, width, height);
+		glfwSetWindowPos(window, (mode->width-width)/2, (mode->height-height)/2);
+		
+
 		glfwMakeContextCurrent(window);
 
 		/***************************
@@ -151,7 +162,7 @@ namespace glazy {
 		ImGui_ImplGlfw_InitForOpenGL(window, true);
 		ImGui_ImplOpenGL3_Init();
 
-		cfg.SizePixels = 13*2;
+		cfg.SizePixels = 13*xscale;
 		auto font_default = io.Fonts->AddFontDefault(&cfg);
 
 		ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable; // enable docking
