@@ -515,14 +515,14 @@ int run_gui() {
         ImGui::ShowStyleEditor();
 
         if (ImGui::Begin("Read")) {
-            ImGui::Text("%s", state.input_file().string().c_str());
-            ImGui::SameLine();
             if (ImGui::Button("Open...")) {
                 auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0");
                 if (!filepath.empty()) {
                     state.set_input_file(filepath);
                 }
             }
+            ImGui::SameLine();
+            ImGui::Text("%s", state.input_file().string().c_str());
             
             if (ImGui::BeginTabBar("MyTabBar", ImGuiTabBarFlags_None))
             {
