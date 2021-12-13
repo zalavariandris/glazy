@@ -465,6 +465,7 @@ namespace glazy {
 		glfwSetErrorCallback(glfw_error_callback);
 
 		// create main window
+		//glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
 		window = glfwCreateWindow(1024, 768, "Demo: OpenGL Only", nullptr, nullptr);
 
 		if (!window) {
@@ -503,20 +504,20 @@ namespace glazy {
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();
 		ImGuiIO& io = ImGui::GetIO();
-		ImFontConfig cfg;
+		
 		
 
 		ImGui_ImplGlfw_InitForOpenGL(window, true);
 		ImGui_ImplOpenGL3_Init();
 
-		//cfg.OversampleV = 3
-		//cfg.OversampleH = 3;
-		//cfg.SizePixels = 13*xscale;
+		ImFontConfig cfg;
+		cfg.OversampleV = 3;
+		cfg.OversampleH = 3;
+		cfg.SizePixels = 16*xscale;
 		//auto font_default = io.Fonts->AddFontDefault(&cfg);
-
-
 		//io.Fonts->AddFontFromFileTTF("C:/WINDOWS/FONTS/ARIAL.ttf", 13*xscale);
-		io.Fonts->AddFontFromFileTTF("C:/WINDOWS/FONTS/SEGUIVAR.ttf", 14 * xscale);
+		std::cout << "dpi scale: " << xscale << std::endl;
+		io.Fonts->AddFontFromFileTTF("C:/WINDOWS/FONTS/SEGUIVAR.ttf", 16 * xscale, &cfg);
 		
 		ImGui::GetStyle().ScaleAllSizes(xscale);
 

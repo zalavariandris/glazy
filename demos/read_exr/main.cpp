@@ -10,16 +10,20 @@ namespace fs = std::filesystem;
 #include "imdraw/imdraw_internal.h"
 #include "widgets/Viewport.h"
 
+#include <OpenImageIO/imagecache.h>
 #include <OpenImageIO/imagebuf.h>
 #include <OpenImageIO/imagebufalgo.h>
 #include <OpenImageIO/imageio.h>
 #include <OpenImageIO/deepdata.h>
 #include <OpenImageIO/export.h>
+using namespace OIIO;
 
 #include <windows.h>
 
 #include <functional>
 #include <system_error>
+
+#include <set>
 
 
 /*
@@ -49,7 +53,7 @@ inline std::vector<std::string> split_string(std::string text, const std::string
   joint_string({"andris", "judit", "masa"}, ", ")
   "andris, judit, masa"
 */
-inline std::string join_string(const std::vector<std::string> & tokens, const std::string &delimiter=", ") {
+inline std::string join_string(const std::vector<std::string> & tokens, const std::string &delimiter) {
     std::string text;
     // chan all but last items
     for (auto i = 0; i < tokens.size()-1; i++) {
@@ -95,7 +99,7 @@ inline std::string insert_layer_in_path(const fs::path & path,const std::string 
         digits.empty() ? "" : ".",
         layer_name,
         path.extension().string()
-       });
+       }, "");
     return layer_path;
 }
 
@@ -122,6 +126,7 @@ std::map<std::string, std::vector<int>> group_channels(const OIIO::ImageSpec & s
     return channel_groups;
 }
 
+/*
 std::map<std::string, OIIO::ImageBuf> split_layers(const OIIO::ImageBuf & img, const std::map<std::string, std::vector<int>> & channel_groups) {
     std::cout << "Split layers..." << std::endl;
     std::map<std::string, OIIO::ImageBuf> layers;
@@ -132,8 +137,6 @@ std::map<std::string, OIIO::ImageBuf> split_layers(const OIIO::ImageBuf & img, c
 
     return layers;
 }
-
-
 
 void write_layers(const std::filesystem::path & output_path, const std::map<std::string, OIIO::ImageBuf> & layers) {
     for (auto const & [layer_name, img] : layers) {
@@ -150,15 +153,19 @@ void write_layers(const std::filesystem::path & output_path, const std::map<std:
             digits.empty() ? "" : ".",
             digits,
             extension.string()
-        });
-        std::cout << "  " << output_path << std::endl;
+        },"");
 
+        // normalize path
+        output_path = fs::path(output_path).lexically_normal().string();
+        
         // write image
+        std::cout << "writing image to:  " << output_path << std::endl;
         img.write(output_path);
     }
 }
+*/
 
-using namespace OIIO;
+
 
 bool process_file(const std::filesystem::path & input_file) {
     std::cout << "Read image: " << input_file << "..." << std::endl;
@@ -181,19 +188,104 @@ bool process_file(const std::filesystem::path & input_file) {
         std::cout << std::endl;
     }
 
+    /* write each layer */
+    for (auto const& [layer_name, indices] : channel_groups) {
+        auto layer = OIIO::ImageBufAlgo::channels(img, indices.size(), indices);
+
+        // insert layer into filename
+        auto folder = input_file.parent_path();
+        auto [stem, digits] = split_digits(input_file.stem().string());
+        auto extension = input_file.extension();
+
+        auto output_path = join_string({
+            folder.string(),
+            "/",
+            stem,
+            layer_name,
+            digits.empty() ? "" : ".",
+            digits,
+            extension.string()
+        }, "");
+
+        // write image
+        std::cout << "writing image to:  " << output_path << std::endl;
+        layer.write(output_path);
+    }
+
+
+    /*
     auto layers = split_layers(img, channel_groups);
 
     std::cout << "Write files..." << std::endl;
     write_layers(input_file, layers);
-
+    */
     std::cout << "Done!" << std::endl;
     return true;
 }
 
-int run_cli(int argc, char* argv[]) {
-    std::cout << "Parse arguments" << std::endl;
+std::vector<fs::path> find_sequence(fs::path input_path) {
+    assert(std::filesystem::exists(input_path));
 
+    std::vector<fs::path> sequence;
+    // find sequence item in folder
+    auto [input_name, input_digits] = split_digits(input_path.stem().string());
+    auto folder = input_path.parent_path();
+
+    for (std::filesystem::path path : fs::directory_iterator{ folder, fs::directory_options::skip_permission_denied }) {
+        try {
+            // match filename and digits count
+            auto [name, digits] = split_digits(path.stem().string());
+            bool IsSequenceItem = (name == input_name) && (digits.size()==input_digits.size());
+            std::cout << "check file " << IsSequenceItem << " " << path << std::endl;
+            //std::cout << name << " <> " << input_name << std::endl;
+            if (IsSequenceItem) {
+                sequence.push_back(path);
+            }
+        }
+        catch (const std::system_error& ex) {
+            std::cout << "Exception: " << ex.what() << "\n  probably std::filesystem does not support Unicode filenames" << std::endl;
+        }
+    }
+
+    return sequence;
+}
+
+std::string to_string(std::vector<fs::path> sequence) {
+    // collect frame numbers
+    std::cout << "Sequence items:" << std::endl;
+    std::vector<int> frame_numbers;
+    for (auto seq_item : sequence) {
+        auto [name, digits] = split_digits(seq_item.stem().string());
+        frame_numbers.push_back(std::stoi(digits));
+    }
+    sort(frame_numbers.begin(), frame_numbers.end());
+
+    // format sequence to human readable string
+    int first_frame = frame_numbers[0];
+    int last_frame = frame_numbers.back();
+
+    auto [input_name, input_digits] = split_digits(sequence[0].stem().string());
+    std::string text = input_name;
+    for (auto i = 0; i < input_digits.size(); i++) {
+        text += "#";
+    }
+    text += sequence[0].extension().string();
+    text += " [" + std::to_string(first_frame) + "-" + std::to_string(last_frame) + "]";
+    return text;
+}
+
+
+int run_cli(int argc, char* argv[]) {
+    // setup cache
+    ImageCache* cache = ImageCache::create(true /* shared cache */);
+    cache->attribute("max_memory_MB", 1024.0f*16);
+    cache->attribute("autotile", 64);
+    //cache->attribute("forcefloat", 1);
+
+    std::cout << "Parse arguments" << std::endl;
+    // collect all paths with sequences
     std::vector<std::filesystem::path> paths;
+
     for (auto i = 1; i < argc; i++) {
         std::filesystem::path path{ argv[i] };
         if (!std::filesystem::exists(path)) {
@@ -211,13 +303,35 @@ int run_cli(int argc, char* argv[]) {
         }
 
         paths.push_back(path);
+
+        // find sequence
+        std::cout << "detect sequence for: " << path << std::endl;
+        auto seq = find_sequence(path);
+
+        // insert each item to paths
+        for (auto item : seq) {
+            paths.push_back(item);
+        }
     }
 
+    // keep uniq files only
+    std::sort(paths.begin(), paths.end());
+    paths.erase(unique(paths.begin(), paths.end()), paths.end());
+
+    std::cout << "files found: " << std::endl;
+    for (auto const& path : paths) {
+        std::cout << "- " << path << std::endl;
+    }
+    
+    
+    /* process each file */
     std::cout << "Process files:" << std::endl;
     for (auto const & path : paths) {
-        process_file(path);
+       process_file(path);
     }
-
+    /* exit */
+    std::cout << "done." << "press any key to exit" << std::endl;
+    
     getchar();
     return EXIT_SUCCESS;
 }
@@ -257,73 +371,6 @@ void TextureViewer(GLuint* fbo, GLuint* color_attachment, Camera * camera, GLuin
     imdraw::grid();
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
-
-//template <typename T>
-//class StateVar {
-//    T _cache;
-//    mutable bool dirty;
-//    std::vector<StateVar*> dependents;
-//    std::function<T(void)> eval;
-//
-//    StateVar<T>(T val) {
-//        _cache = val;
-//    }
-//
-//    StateVar<T>(std::function(T(void)) f) {
-//        eval = f;
-//    }
-//
-//    T value() {
-//
-//        return _cache;
-//    }
-//
-//    void evaluate() {
-//        // evaluate
-//        _cache = "boom";
-//
-//        // notify dependents
-//        for (auto dep : dependents) {
-//            dep.dirty = true;
-//        }
-//
-//        // clean flag
-//        dirty = false;
-//    }
-//};
-
-template <typename T>
-class StateVar {
-    T _cache;
-    std::vector<StateVar*> dependants;
-    std::function<T()> _eval;
-    bool dirty;
-
-public:
-    // Input
-    StateVar(T initial_val, std::vector<StateVar*> deps = {}) {
-        _cache = initial_val;
-    }
-
-    // Operator
-    StateVar(std::function<T()> f, std::vector<StateVar*> deps = {}) {
-        _eval = f;
-    }
-
-    T value() {
-        if (dirty) {
-            // eval
-            _cache = _eval();
-            // notify dependants
-            for (auto dep : dependants) {
-                dep->dirty = true;
-            }
-            // clear flag
-            dirty = false;
-        }
-        return _cache;
-    }
-};
 
 
 class State {
@@ -630,83 +677,15 @@ int test_process() {
     return EXIT_SUCCESS;
 }
 
-std::vector<fs::path> find_sequence(fs::path input_path) {
-    std::vector<fs::path> sequence;
-    // find sequence item in folder
-    auto [input_name, input_digits] = split_digits(input_path.stem().string());
-    auto folder = input_path.parent_path();
-
-    for (std::filesystem::path const& path : fs::directory_iterator{ folder, fs::directory_options::skip_permission_denied }) {
-        try {
-            // match filename and digits count
-            auto [name, digits] = split_digits(path.stem().string());
-            std::cout << name << " <> " << input_name << std::endl;
-            if (name == input_name && input_digits.size() == digits.size()) {
-                sequence.push_back(path);
-            }
-        }
-        catch (const std::system_error& ex) {
-            std::cout << "Exception: " << ex.what() << "\n  probably std::filesystem does not support Unicode filenames" << std::endl;
-        }
-    }
-
-    return sequence;
-}
-
-bool is_sequence(std::vector<fs::path> sequence) {
-    // onlt digits are different
-
-    // collect missing frames
-    return true
-}
-
-std::string to_string(std::vector<fs::path> sequence) {
-    // collect frame numbers
-    std::cout << "Sequence items:" << std::endl;
-    std::vector<int> frame_numbers;
-    for (auto seq_item : sequence) {
-        auto [name, digits] = split_digits(seq_item.stem().string());
-        frame_numbers.push_back(std::stoi(digits));
-    }
-    sort(frame_numbers.begin(), frame_numbers.end());
-
-    // format sequence to human readable string
-    int first_frame = frame_numbers[0];
-    int last_frame = frame_numbers.back();
-
-    auto [input_name, input_digits] = split_digits(sequence[0].stem().string());
-    std::string text = input_name;
-    for (auto i = 0; i < input_digits.size(); i++) {
-        text += "#";
-    }
-    text += sequence[0].extension().string();
-    text += " [" + std::to_string(first_frame) + "-" + std::to_string(last_frame) + "]";
-    return text;
-}
-
-
 int main(int argc, char * argv[])
 {
-
     if (argc > 1) {
         return run_cli(argc, argv);
     }
     else {
-        const fs::path input_path{ "C:/Users/andris/Downloads/52_06_EXAM_v06-vrayraw.0002.exr" };
-        
-        auto seq = find_sequence(input_path);
-        std::cout << to_string(seq) << std::endl;
-        for (auto p : seq) {
-            std::cout << "- " << p << std::endl;
-        }
-        // end
-        return EXIT_SUCCESS;
-        //return run_gui();
-
-       
+        return run_gui();
     }
 
-    getchar();
     return EXIT_SUCCESS;
 }
 

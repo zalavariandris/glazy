@@ -189,6 +189,8 @@
     <None Include=".gitignore" />
     <None Include="glazy\shaders\default.frag" />
     <None Include="glazy\shaders\default.vert" />
+    <None Include="README.md" />
+    <None Include="SETUP.md" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -124,5 +124,7 @@
     <None Include=".gitignore" />
     <None Include="glazy\shaders\default.vert" />
     <None Include="glazy\shaders\default.frag" />
+    <None Include="SETUP.md" />
+    <None Include="README.md" />
   </ItemGroup>
 </Project>
