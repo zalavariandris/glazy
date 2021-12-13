@@ -131,8 +131,6 @@ glm::vec3 Camera::screen_to_planeXY(double mouseX, double mouseY, glm::vec4 view
 void Camera::dolly(double offset){
 	auto view = getView();
 	auto forward = glm::normalize(glm::vec3(view[0][2], view[1][2], view[2][2]));
-	std::cout << "dolly: " << offset << std::endl;
-	std::cout << "forward: " << forward.x << "," << forward.y << "," << forward.z << std::endl;
 	this->eye += forward * (float)offset;
 }
 

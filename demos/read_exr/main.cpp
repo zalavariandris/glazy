@@ -3,6 +3,8 @@
 
 #include <iostream>
 #include <filesystem>
+namespace fs = std::filesystem;
+
 #include "glazy.h"
 #include "imdraw/imdraw.h"
 #include "imdraw/imdraw_internal.h"
@@ -16,6 +18,9 @@
 
 #include <windows.h>
 
+#include <functional>
+#include <system_error>
+
 
 /*
   https://github.com/OpenImageIO/oiio/blob/e058dc8c4aa36ea42b4a19e26eeb56fa1fbc8973/src/iv/ivgl.cpp
@@ -23,6 +28,11 @@
     GLenum& glformat, GLenum& glinternalformat);
 */
 
+/**
+  example:
+  split_string("hello_world", "_")
+  {"hello", "world"}
+*/
 inline std::vector<std::string> split_string(std::string text, const std::string &delimiter) {
     std::vector<std::string> tokens;
     size_t pos = 0;
@@ -35,16 +45,31 @@ inline std::vector<std::string> split_string(std::string text, const std::string
     return tokens;
 };
 
-inline std::string join_string(const std::vector<std::string> & tokens) {
+/*
+  joint_string({"andris", "judit", "masa"}, ", ")
+  "andris, judit, masa"
+*/
+inline std::string join_string(const std::vector<std::string> & tokens, const std::string &delimiter=", ") {
     std::string text;
-    for (auto token : tokens) {
-        text += token;
+    // chan all but last items
+    for (auto i = 0; i < tokens.size()-1; i++) {
+        text += tokens[i];
+        text += delimiter;
     }
+    // append last item
+    text += tokens.back();
     return text;
 }
 
+
+/*
+  split digits from the end of the string
+  split_digits("hello_4556")
+  {"hello", "4556"}
+*/
 inline std::tuple<std::string, std::string> split_digits(const std::string & stem) {
     assert(!stem.empty());
+
     int digits_count = 0;
     while (std::isdigit(stem[stem.size() - 1 - digits_count])) {
         digits_count++;
@@ -56,7 +81,11 @@ inline std::tuple<std::string, std::string> split_digits(const std::string & ste
     return { text, digits };
 }
 
-inline std::string insert_layer_in_path(const std::filesystem::path & path,const std::string & layer_name) {
+inline std::vector<fs::path> detect_sequence(fs::path file) {
+    
+}
+
+inline std::string insert_layer_in_path(const fs::path & path,const std::string & layer_name) {
     auto [stem, digits] = split_digits(path.stem().string());
     auto layer_path = join_string({
         path.parent_path().string(),
@@ -199,13 +228,14 @@ void TextureViewer(GLuint* fbo, GLuint* color_attachment, Camera * camera, GLuin
     static ImVec2 display_size;
 
     if (display_size.x != item_size.x || display_size.y != item_size.y) {
+        //std::cout << "update fbo" << std::endl;
         display_size = item_size;
         glDeleteTextures(1, color_attachment);
         *color_attachment = imdraw::make_texture_float(item_size.x, item_size.y, NULL);
         glDeleteFramebuffers(1, fbo);
         *fbo = imdraw::make_fbo(*color_attachment);
         camera->aspect = item_size.x / item_size.y;
-        std::cout << "update fbo" << std::endl;
+        
     }
 
     ControlCamera(camera, item_size);
@@ -228,34 +258,204 @@ void TextureViewer(GLuint* fbo, GLuint* color_attachment, Camera * camera, GLuin
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
+//template <typename T>
+//class StateVar {
+//    T _cache;
+//    mutable bool dirty;
+//    std::vector<StateVar*> dependents;
+//    std::function<T(void)> eval;
+//
+//    StateVar<T>(T val) {
+//        _cache = val;
+//    }
+//
+//    StateVar<T>(std::function(T(void)) f) {
+//        eval = f;
+//    }
+//
+//    T value() {
+//
+//        return _cache;
+//    }
+//
+//    void evaluate() {
+//        // evaluate
+//        _cache = "boom";
+//
+//        // notify dependents
+//        for (auto dep : dependents) {
+//            dep.dirty = true;
+//        }
+//
+//        // clean flag
+//        dirty = false;
+//    }
+//};
+
+template <typename T>
+class StateVar {
+    T _cache;
+    std::vector<StateVar*> dependants;
+    std::function<T()> _eval;
+    bool dirty;
+
+public:
+    // Input
+    StateVar(T initial_val, std::vector<StateVar*> deps = {}) {
+        _cache = initial_val;
+    }
+
+    // Operator
+    StateVar(std::function<T()> f, std::vector<StateVar*> deps = {}) {
+        _eval = f;
+    }
+
+    T value() {
+        if (dirty) {
+            // eval
+            _cache = _eval();
+            // notify dependants
+            for (auto dep : dependants) {
+                dep->dirty = true;
+            }
+            // clear flag
+            dirty = false;
+        }
+        return _cache;
+    }
+};
+
+
 class State {
 private:
     std::filesystem::path _input_file;
-    OIIO::ImageBuf _img;
-    OIIO::ROI _roi{ 0, 1, 0, 1 };
+    std::string _selected_layer;
 
-
+    mutable bool IMG_DIRTY{ true };
+    mutable bool ROI_DIRTY{ true };
+    mutable bool LAYER_CHANNELS_DIRTY{ true };
+    mutable bool TEXTURE_DIRTY{ true };
 public:
-    std::filesystem::path input_file() const{
-        return _input_file;
-    }
-
     void set_input_file(std::filesystem::path val) {
         _input_file = val;
-        _img = OIIO::ImageBuf(_input_file.string().c_str());
-    }
 
+        // dependents
+        IMG_DIRTY = true;
+    }
+    std::filesystem::path input_file() const { return _input_file; }
+
+    void set_selected_layer(std::string val) {
+        static std::vector<bool*> dependants{ &TEXTURE_DIRTY, &ROI_DIRTY };
+        _selected_layer = val;
+
+        // notify dependants
+        for (auto dep : dependants) { *dep = true; }
+    }
+    std::string selected_layer() const { return _selected_layer;}
+
+    // process
     OIIO::ImageBuf img() const {
-        return _img;
-    }
-    
-    OIIO::ROI roi() const {
-        return _roi;
+        static OIIO::ImageBuf cache;
+        static std::vector<bool*> dependants{ &ROI_DIRTY, &LAYER_CHANNELS_DIRTY };
+
+        if (IMG_DIRTY) {
+            // evaluate
+            if (std::filesystem::exists(_input_file)) {
+                std::cout << "evaluate image" << std::endl;
+                cache = OIIO::ImageBuf(_input_file.string().c_str());
+
+                // notify dependants
+                for (auto dep : dependants) { *dep = true; }
+            }
+
+            // clean flag
+            IMG_DIRTY = false;
+        }
+        return cache;
     }
 
-    void set_roi(OIIO::ROI val) {
-        _roi = val;
+    OIIO::ROI roi() const {
+        static OIIO::ROI cache{0,1,0,1,0,1, 0, 3};
+        static std::vector<bool*>dependants{&TEXTURE_DIRTY};
+
+        if (ROI_DIRTY) {
+            // evaluate
+            std::cout << "evaluate roi" << std::endl;
+            std::map<std::string, std::vector<int>> layers = group_channels(img().spec());
+            if (layers.contains(selected_layer())) {
+                auto indices = layers[selected_layer()];
+                cache = OIIO::ROI(0, img().spec().width, 0, img().spec().height, 0, 1, indices[0], indices[0] + indices.size());
+
+                // notify dependants
+                for (auto dep : dependants) { *dep = true; }
+            }
+
+            // clean flag
+            ROI_DIRTY = false;
+        }
+        return cache;
     }
+
+    std::map<std::string, std::vector<int>> layer_channels() {
+        static std::map<std::string, std::vector<int>> cache;
+        static std::vector<bool*> dependants{ &ROI_DIRTY };
+
+        if (LAYER_CHANNELS_DIRTY) {
+            // eval
+            std::cout << "Evaluate layer channels" << std::endl;
+            cache = group_channels(img().spec());
+
+            // notify dependants
+            for (auto dep : dependants) { *dep = true; }
+            
+            //clean flag
+            LAYER_CHANNELS_DIRTY = false;
+        }
+        return cache;
+    }
+
+    GLuint image_texture() {
+        static GLuint cache = 0;
+        if (TEXTURE_DIRTY) {
+            /* EVALUATE */
+            if (layer_channels().contains(selected_layer())) {
+                std::cout << "Evaluate textures" << std::endl;
+                std::cout << "- get pixels..." << std::endl;
+                float* data = (float*)malloc(roi().width() * roi().height() * roi().nchannels() * sizeof(float));
+                auto success = img().get_pixels(roi(), OIIO::TypeDesc::FLOAT, data);
+                assert(success);
+
+                /* make texture */
+                std::cout << "- make texture..." << std::endl;
+                if (cache != 0) { glDeleteTextures(1, &cache); } // delete prev texture if exists
+                cache = imdraw::make_texture_float(
+                    roi().width(), roi().height(),
+                    data, // data
+                    roi().nchannels() == 3 ? GL_RGB : GL_RED, // internal format
+                    roi().nchannels() == 3 ? GL_RGB : GL_RED, // format
+                    GL_FLOAT, // type
+                    GL_LINEAR, //min_filter
+                    GL_NEAREST, //mag_filter
+                    GL_REPEAT, //wrap_s
+                    GL_REPEAT //wrap_t
+                );
+                if (roi().nchannels() == 1) {
+                    glBindTexture(GL_TEXTURE_2D, cache);
+                    GLint swizzleMask[] = { GL_RED, GL_RED, GL_RED, GL_ONE };
+                    glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
+                    glBindTexture(GL_TEXTURE_2D, 0);
+                }
+                free(data); // free allocated pixels data
+
+                // notify dependents
+                // no dependents
+            }
+            // clean flag
+            TEXTURE_DIRTY = false;
+        }
+        return cache;
+    }
+
 };
 State state;
 
@@ -324,18 +524,19 @@ int run_gui() {
             /******************
             * Show EXR layers *
             *******************/
-            static std::string selected_layer = "";
-            if (ImGui::BeginCombo("layers", selected_layer.c_str()))
+            if (ImGui::BeginCombo("layers", state.selected_layer().c_str()))
             {
-                for (const auto& [layer_name, indices] : layers)
+                for (const auto& [layer_name, indices] : state.layer_channels())
                 {
-                    const bool is_selected = layer_name == selected_layer;
-                    if (ImGui::Selectable(layer_name.c_str(), is_selected))
-                        selected_layer = layer_name;
+                    const bool is_selected = layer_name == state.selected_layer();
+                    if (ImGui::Selectable(layer_name.c_str(), is_selected)) {
+                        state.set_selected_layer(layer_name);
+                    }
 
                     // Set the initial focus when opening the combo (scrolling + keyboard navigation focus)
-                    if (is_selected)
+                    if (is_selected) {
                         ImGui::SetItemDefaultFocus();
+                    }
                 }
                 ImGui::EndCombo();
             }
@@ -343,56 +544,54 @@ int run_gui() {
             /***************
             * Update image *
             ****************/
-            static GLuint img_texture;
-            static std::string display_layer;
+            //static GLuint img_texture;
+            //static std::string display_layer;
 
-            std::cout << state.roi().width() << std::endl;
-            
-            if (display_layer != selected_layer) {
-                display_layer = selected_layer;
-                std::cout << "update image texture..." << std::endl;
-                auto indices = layers[display_layer];
-                std::cout << "get layer img...";
-                for (auto idx : indices) {
-                    std::cout << idx << ",";
-                }; std::cout << std::endl;
+            //std::cout << state.roi().width() << std::endl;
+            //
+            //if (display_layer != state.selected_layer()) {
+            //    display_layer = state.selected_layer();
+            //    std::cout << "update image texture..." << std::endl;
+            //    auto indices = layers[display_layer];
+            //    std::cout << "get layer img...";
+            //    for (auto idx : indices) {
+            //        std::cout << idx << ",";
+            //    }; std::cout << std::endl;
 
-                // update zoom ROI
-                auto roi = OIIO::ROI(0, state.img().spec().width, 0, state.img().spec().height, 0, 1, indices[0], indices[0] + indices.size());
-                state.set_roi(roi);
-                std::cout << "get pixels..." << std::endl;
-                float* data = (float*)malloc(state.roi().width() * state.roi().height() * state.roi().nchannels() * sizeof(float));
-                auto success = state.img().get_pixels(state.roi(), OIIO::TypeDesc::FLOAT, data);
-                assert(success);
+            //    // update zoom ROI
+            //    auto roi = OIIO::ROI(0, state.img().spec().width, 0, state.img().spec().height, 0, 1, indices[0], indices[0] + indices.size());
+            //    state.set_roi(roi);
 
-                /* recreate texture */
-                glDeleteTextures(1, &img_texture);
-                img_texture = imdraw::make_texture_float(
-                    state.roi().width(), state.roi().height(),
-                    data, // data
-                    state.roi().nchannels() == 3 ? GL_RGB : GL_RED, // internal format
-                    state.roi().nchannels() == 3 ? GL_RGB : GL_RED, // format
-                    GL_FLOAT, // type
-                    GL_LINEAR, //min_filter
-                    GL_NEAREST, //mag_filter
-                    GL_REPEAT, //wrap_s
-                    GL_REPEAT //wrap_t
-                );
-                if (state.roi().nchannels() == 1) {
-                    glBindTexture(GL_TEXTURE_2D, img_texture);
-                    GLint swizzleMask[] = { GL_RED, GL_RED, GL_RED, GL_ONE };
-                    glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
-                    glBindTexture(GL_TEXTURE_2D, 0);
-                }
-                free(data);
-                std::cout << "done" << std::endl;
-            }
+
+
+            //    /* make texture */
+            //    glDeleteTextures(1, &img_texture);
+            //    img_texture = imdraw::make_texture_float(
+            //        state.roi().width(), state.roi().height(),
+            //        data, // data
+            //        state.roi().nchannels() == 3 ? GL_RGB : GL_RED, // internal format
+            //        state.roi().nchannels() == 3 ? GL_RGB : GL_RED, // format
+            //        GL_FLOAT, // type
+            //        GL_LINEAR, //min_filter
+            //        GL_NEAREST, //mag_filter
+            //        GL_REPEAT, //wrap_s
+            //        GL_REPEAT //wrap_t
+            //    );
+            //    if (state.roi().nchannels() == 1) {
+            //        glBindTexture(GL_TEXTURE_2D, img_texture);
+            //        GLint swizzleMask[] = { GL_RED, GL_RED, GL_RED, GL_ONE };
+            //        glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
+            //        glBindTexture(GL_TEXTURE_2D, 0);
+            //    }
+            //    free(data);
+            //    std::cout << "done" << std::endl;
+            //}
 
             /* display image */
             static GLuint fbo;
             static GLuint color_attachment;
             static Camera camera;
-            TextureViewer(&fbo, &color_attachment, &camera, img_texture, state.roi());
+            TextureViewer(&fbo, &color_attachment, &camera, state.image_texture(), state.roi());
             ImGui::End();
         }
 
@@ -426,10 +625,65 @@ int run_gui() {
 }
 
 int test_process() {
-    const std::filesystem::path input_path{ "C:/Users/andris/Downloads/52_06_EXAM_v06-vrayraw.0002.exr" };
+    const fs::path input_path{ "C:/Users/andris/Downloads/52_06_EXAM_v06-vrayraw.0002.exr" };
     process_file(input_path);
-    return 0;
+    return EXIT_SUCCESS;
 }
+
+std::vector<fs::path> find_sequence(fs::path input_path) {
+    std::vector<fs::path> sequence;
+    // find sequence item in folder
+    auto [input_name, input_digits] = split_digits(input_path.stem().string());
+    auto folder = input_path.parent_path();
+
+    for (std::filesystem::path const& path : fs::directory_iterator{ folder, fs::directory_options::skip_permission_denied }) {
+        try {
+            // match filename and digits count
+            auto [name, digits] = split_digits(path.stem().string());
+            std::cout << name << " <> " << input_name << std::endl;
+            if (name == input_name && input_digits.size() == digits.size()) {
+                sequence.push_back(path);
+            }
+        }
+        catch (const std::system_error& ex) {
+            std::cout << "Exception: " << ex.what() << "\n  probably std::filesystem does not support Unicode filenames" << std::endl;
+        }
+    }
+
+    return sequence;
+}
+
+bool is_sequence(std::vector<fs::path> sequence) {
+    // onlt digits are different
+
+    // collect missing frames
+    return true
+}
+
+std::string to_string(std::vector<fs::path> sequence) {
+    // collect frame numbers
+    std::cout << "Sequence items:" << std::endl;
+    std::vector<int> frame_numbers;
+    for (auto seq_item : sequence) {
+        auto [name, digits] = split_digits(seq_item.stem().string());
+        frame_numbers.push_back(std::stoi(digits));
+    }
+    sort(frame_numbers.begin(), frame_numbers.end());
+
+    // format sequence to human readable string
+    int first_frame = frame_numbers[0];
+    int last_frame = frame_numbers.back();
+
+    auto [input_name, input_digits] = split_digits(sequence[0].stem().string());
+    std::string text = input_name;
+    for (auto i = 0; i < input_digits.size(); i++) {
+        text += "#";
+    }
+    text += sequence[0].extension().string();
+    text += " [" + std::to_string(first_frame) + "-" + std::to_string(last_frame) + "]";
+    return text;
+}
+
 
 int main(int argc, char * argv[])
 {
@@ -438,10 +692,21 @@ int main(int argc, char * argv[])
         return run_cli(argc, argv);
     }
     else {
-        return run_gui();
+        const fs::path input_path{ "C:/Users/andris/Downloads/52_06_EXAM_v06-vrayraw.0002.exr" };
+        
+        auto seq = find_sequence(input_path);
+        std::cout << to_string(seq) << std::endl;
+        for (auto p : seq) {
+            std::cout << "- " << p << std::endl;
+        }
+        // end
+        return EXIT_SUCCESS;
+        //return run_gui();
+
+       
     }
 
     getchar();
-    return 0;
+    return EXIT_SUCCESS;
 }
 
