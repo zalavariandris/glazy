@@ -85,8 +85,16 @@ inline std::tuple<std::string, std::string> split_digits(const std::string & ste
     return { text, digits };
 }
 
-inline std::vector<fs::path> detect_sequence(fs::path file) {
-    
+std::string to_string(OIIO::ImageBuf::IBStorage storage) {
+    switch (storage)
+    {
+    case OpenImageIO_v2_3::ImageBuf::UNINITIALIZED: return "UNINITIALIZED";
+    case OpenImageIO_v2_3::ImageBuf::LOCALBUFFER: return "LOCALBUFFER";
+    case OpenImageIO_v2_3::ImageBuf::APPBUFFER: return "APPBUFFER";
+    case OpenImageIO_v2_3::ImageBuf::IMAGECACHE: return "IMAGECACHE";
+    default: return "[Inknown storage type]";
+    }
+
 }
 
 inline std::string insert_layer_in_path(const fs::path & path,const std::string & layer_name) {
@@ -211,7 +219,6 @@ bool process_file(const std::filesystem::path & input_file) {
         std::cout << "writing image to:  " << output_path << std::endl;
         layer.write(output_path);
     }
-
 
     /*
     auto layers = split_layers(img, channel_groups);
@@ -375,6 +382,7 @@ void TextureViewer(GLuint* fbo, GLuint* color_attachment, Camera * camera, GLuin
 
 class State {
 private:
+    int _frame;
     std::filesystem::path _input_file;
     std::string _selected_layer;
 
@@ -399,6 +407,13 @@ public:
         for (auto dep : dependants) { *dep = true; }
     }
     std::string selected_layer() const { return _selected_layer;}
+
+    void set_frame(int val) {
+        _frame = val;
+    }
+    int frame() {
+        return _frame;
+    }
 
     // process
     OIIO::ImageBuf img() const {
@@ -506,6 +521,29 @@ public:
 };
 State state;
 
+std::string to_string(OIIO::TypeDesc type) {
+    switch (type)
+    {
+        case OIIO::TypeDesc::UNKNOWN: return "UNKNOWN";
+        case OIIO::TypeDesc::NONE: return "NONE";
+        case OIIO::TypeDesc::UINT8: return "UINT8";
+        case OIIO::TypeDesc::INT8: return "INT8";
+        case OIIO::TypeDesc::UINT16: return "UINT16";
+        case OIIO::TypeDesc::INT16: return "INT16";
+        case OIIO::TypeDesc::UINT32: return "UINT32";
+        case OIIO::TypeDesc::INT32: return "INT32";
+        case OIIO::TypeDesc::UINT64: return "UINT64";
+        case OIIO::TypeDesc::INT64: return "INT64";
+        case OIIO::TypeDesc::HALF: return "HALF";
+        case OIIO::TypeDesc::FLOAT: return "FLOAT";
+        case OIIO::TypeDesc::DOUBLE: return "DOUBLE";
+        case OIIO::TypeDesc::STRING: return "STRING";
+        case OIIO::TypeDesc::PTR: return "PTR";
+        case OIIO::TypeDesc::LASTBASE: return "LASTBASE";
+        default: return "[Unknown TypeDesc type]";
+    }
+}
+
 int run_gui() {
     // start GUI
     glazy::init();
@@ -523,10 +561,24 @@ int run_gui() {
             }
             ImGui::SameLine();
             ImGui::Text("%s", state.input_file().string().c_str());
+
+            static int f = state.frame();
+            if (ImGui::SliderInt("frame", &f, 0, 100)) {
+                state.set_frame(f);
+            }
             
             if (ImGui::BeginTabBar("MyTabBar", ImGuiTabBarFlags_None))
             {
                 if (ImGui::BeginTabItem("info")) {
+                    auto spec = state.img().spec();
+                    ImGui::Text("%d x %d x %d, %d channel, %s", spec.width, spec.height, spec.depth, spec.nchannels, to_string(spec.format));
+
+                    auto info = state.img().spec().serialize(ImageSpec::SerialText);
+                    ImGui::Text("%s", info.c_str());
+                    ImGui::EndTabItem();
+                }
+
+                if (ImGui::BeginTabItem("spec log")) {
                     auto info = state.img().spec().serialize(ImageSpec::SerialText);
                     ImGui::Text("%s", info.c_str());
                     ImGui::EndTabItem();
@@ -588,52 +640,6 @@ int run_gui() {
                 ImGui::EndCombo();
             }
 
-            /***************
-            * Update image *
-            ****************/
-            //static GLuint img_texture;
-            //static std::string display_layer;
-
-            //std::cout << state.roi().width() << std::endl;
-            //
-            //if (display_layer != state.selected_layer()) {
-            //    display_layer = state.selected_layer();
-            //    std::cout << "update image texture..." << std::endl;
-            //    auto indices = layers[display_layer];
-            //    std::cout << "get layer img...";
-            //    for (auto idx : indices) {
-            //        std::cout << idx << ",";
-            //    }; std::cout << std::endl;
-
-            //    // update zoom ROI
-            //    auto roi = OIIO::ROI(0, state.img().spec().width, 0, state.img().spec().height, 0, 1, indices[0], indices[0] + indices.size());
-            //    state.set_roi(roi);
-
-
-
-            //    /* make texture */
-            //    glDeleteTextures(1, &img_texture);
-            //    img_texture = imdraw::make_texture_float(
-            //        state.roi().width(), state.roi().height(),
-            //        data, // data
-            //        state.roi().nchannels() == 3 ? GL_RGB : GL_RED, // internal format
-            //        state.roi().nchannels() == 3 ? GL_RGB : GL_RED, // format
-            //        GL_FLOAT, // type
-            //        GL_LINEAR, //min_filter
-            //        GL_NEAREST, //mag_filter
-            //        GL_REPEAT, //wrap_s
-            //        GL_REPEAT //wrap_t
-            //    );
-            //    if (state.roi().nchannels() == 1) {
-            //        glBindTexture(GL_TEXTURE_2D, img_texture);
-            //        GLint swizzleMask[] = { GL_RED, GL_RED, GL_RED, GL_ONE };
-            //        glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
-            //        glBindTexture(GL_TEXTURE_2D, 0);
-            //    }
-            //    free(data);
-            //    std::cout << "done" << std::endl;
-            //}
-
             /* display image */
             static GLuint fbo;
             static GLuint color_attachment;
@@ -671,14 +677,24 @@ int run_gui() {
     return EXIT_SUCCESS;
 }
 
+
+
 int test_process() {
-    const fs::path input_path{ "C:/Users/andris/Downloads/52_06_EXAM_v06-vrayraw.0002.exr" };
-    process_file(input_path);
+    //const fs::path input_path{ "C:/Users/andris/Downloads/52_06_EXAM_v06-vrayraw.0002.exr" };
+    auto img = OIIO::ImageBuf("C:/Users/zalav/Downloads/52_06/52_06_EXAM_v06-vrayraw.0013.exr");
+    
+
+    std::cout << "storage: " << to_string(img.storage()) << std::endl;
+    std::cout << img.spec().serialize(ImageSpec::SerialText) << std::endl;
+    //process_file(input_path);
     return EXIT_SUCCESS;
 }
 
 int main(int argc, char * argv[])
 {
+
+    //return test_process();
+
     if (argc > 1) {
         return run_cli(argc, argv);
     }

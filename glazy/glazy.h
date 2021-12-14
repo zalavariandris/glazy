@@ -592,7 +592,7 @@ namespace glazy {
 		return !glfwWindowShouldClose(window);
 	}
 
-	void new_frame(bool wait_events=false) {
+	void new_frame(bool wait_events = false) {
 		// poll events
 		if (wait_events) {
 			glfwWaitEvents();
@@ -606,32 +606,9 @@ namespace glazy {
 		*********/
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
-		
+
 		ImGui::NewFrame();
-
-		ImGui::Begin("theme");
-		static int current_item = 0;
-		if (ImGui::Combo("theme", &current_item, "photoshop\0VS\0game\0darkness")) {
-			switch (current_item) {
-				case 0:
-					ApplyPhotoshopTheme();
-					break;
-
-				case 1:
-					ApplyVisualStudioTheme();
-					break;
-
-				case 2:
-					ApplyGameEngineTheme();
-					break;
-
-				case 3:
-					ApplyEmbraceTheDarknessTheme();
-					break;
-			}
-		}
-		ImGui::End();
-	
+		
 
 		/********
 		  STYLUS
@@ -655,6 +632,79 @@ namespace glazy {
 		ImGui::DockSpaceOverViewport(NULL, ImGuiDockNodeFlags_PassthruCentralNode);
 
 		camera.aspect = (float)display_w / display_h;
+
+		// glazy windows
+		{
+			static bool themes;
+			static bool stats;
+			ImGui::BeginMainMenuBar();
+			if (ImGui::BeginMenu("glazy"))
+			{
+				ImGui::Separator();
+				ImGui::Text("Windows");
+				ImGui::Separator();
+				ImGui::MenuItem("themes", "", &themes);
+				ImGui::MenuItem("stats", "", &stats);
+				
+
+				ImGui::EndMenu();
+			}
+			ImGui::EndMainMenuBar();
+
+			// Show stats
+			if (stats && ImGui::Begin("stats")) {
+				std::vector<float> x_data;
+				static std::vector<float> fps_history;
+
+				float framerate = ImGui::GetIO().Framerate;
+
+				fps_history.push_back(framerate);
+				if (fps_history.size() >= 300) {
+					fps_history.erase(fps_history.begin());
+				}
+				for (auto i = 0; i < fps_history.size(); i++) {
+					x_data.push_back(i);
+				}
+
+				static float low_limit = 0;
+				static float high_limit = 200;
+				high_limit = std::max(high_limit, framerate);
+
+				ImGui::Text("%.1f fps", fps_history[0]);
+				ImPlot::SetNextPlotLimits(0, fps_history.size(), low_limit, high_limit, ImGuiCond_Always);
+
+				ImGui::PlotLines("fps", fps_history.data(), fps_history.size(), 0, "", 0, 120);
+
+				ImGui::End();
+
+
+			}
+
+			// Show themes window
+			if (themes && ImGui::Begin("theme")) {
+				static int current_item = 0;
+				if (ImGui::Combo("theme", &current_item, "photoshop\0VS\0game\0darkness")) {
+					switch (current_item) {
+					case 0:
+						ApplyPhotoshopTheme();
+						break;
+
+					case 1:
+						ApplyVisualStudioTheme();
+						break;
+
+					case 2:
+						ApplyGameEngineTheme();
+						break;
+
+					case 3:
+						ApplyEmbraceTheDarknessTheme();
+						break;
+					}
+				}
+				ImGui::End();
+			}
+		}
 
 		//control_camera(camera, display_w, display_h);
 	}
