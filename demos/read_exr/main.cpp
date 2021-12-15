@@ -111,6 +111,25 @@ inline std::string insert_layer_in_path(const fs::path & path,const std::string 
     return layer_path;
 }
 
+inline std::string replace_framenumber_in_path(const fs::path& path, int framenumber) {
+    auto [stem, digits] = split_digits(path.stem().string());
+    int digits_count = digits.size();
+    // add leading zeros
+    std::ostringstream oss;
+    oss << std::setw(digits_count) << std::setfill('0') << framenumber;
+    digits = oss.str();
+
+    // comose path
+    auto layer_path = join_string({
+        path.parent_path().string(),
+        "/",
+        stem,
+        digits,
+        path.extension().string()
+    }, "");
+    return layer_path;
+}
+
 std::map<std::string, std::vector<int>> group_channels(const OIIO::ImageSpec & spec) {
     std::map<std::string, std::vector<int>> channel_groups;
 
@@ -286,8 +305,8 @@ int run_cli(int argc, char* argv[]) {
     // setup cache
     ImageCache* cache = ImageCache::create(true /* shared cache */);
     cache->attribute("max_memory_MB", 1024.0f*16);
-    cache->attribute("autotile", 64);
-    //cache->attribute("forcefloat", 1);
+    //cache->attribute("autotile", 64);
+    cache->attribute("forcefloat", 1);
 
     std::cout << "Parse arguments" << std::endl;
     // collect all paths with sequences
@@ -481,10 +500,22 @@ public:
         if (TEXTURE_DIRTY) {
             /* EVALUATE */
             if (layer_channels().contains(selected_layer())) {
+                std::cout << std::endl;
                 std::cout << "Evaluate textures" << std::endl;
-                std::cout << "- get pixels..." << std::endl;
-                float* data = (float*)malloc(roi().width() * roi().height() * roi().nchannels() * sizeof(float));
+                std::cout << "- fetch pixels..." << std::endl;
+
+                std::vector<int> indices{ 0,1,2 };
+                //auto layer = OIIO::ImageBufAlgo::channels(img(), indices.size(), indices);
+                static int data_size = roi().width() * roi().height() * roi().nchannels();
+                static float* data = (float*)malloc(data_size * sizeof(float));
+                if (data_size != roi().width() * roi().height() * roi().nchannels()) {
+                    std::cout << "- reallocate pixels" << std::endl;
+                    free(data); // free allocated pixels data
+                    data = (float*)malloc(data_size * sizeof(float));
+                }
+                
                 auto success = img().get_pixels(roi(), OIIO::TypeDesc::FLOAT, data);
+                //auto success = layer.get_pixels(OIIO::ROI(), OIIO::TypeDesc::FLOAT, data);
                 assert(success);
 
                 /* make texture */
@@ -507,7 +538,7 @@ public:
                     glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
                     glBindTexture(GL_TEXTURE_2D, 0);
                 }
-                free(data); // free allocated pixels data
+                
 
                 // notify dependents
                 // no dependents
@@ -547,25 +578,74 @@ std::string to_string(OIIO::TypeDesc type) {
 int run_gui() {
     // start GUI
     glazy::init();
+
+    // setup cache
+    ImageCache* cache = ImageCache::create(true /* shared cache */);
+    cache->attribute("max_memory_MB", 1024.0f * 16);
+    cache->attribute("forcefloat", 1);
+    //cache->attribute("autotile", 64);
+
     while (glazy::is_running()) {
         glazy::new_frame();
 
         ImGui::ShowStyleEditor();
 
+        if (ImGui::Begin("Cache")) {
+            auto cache = state.img().imagecache();
+            if (cache) {
+                int max_memory;
+                cache->getattribute("max_memory_MB", TypeDesc::INT, &max_memory);
+                ImGui::Text("%d", max_memory);
+                if (ImGui::InputInt("set max memory MB", &max_memory)) {
+                    cache->attribute("max_memory_MB", max_memory);
+                }
+                auto stats = cache->getstats();
+                ImGui::Text("%s", stats.c_str());
+            }
+            ImGui::End();
+        }
+
         if (ImGui::Begin("Read")) {
+            static int START_FRAME = 10;
+            static int END_FRAME = 20;
+            static int F = state.frame();
+            static fs::path sequence_filename;
+            static std::string derived_frame_filename;
+
+            static bool play;
+            if (ImGui::Checkbox("play", &play)) {
+                std::cout << "play changed" << std::endl;
+            }
+            if (play) {
+                F++;
+                if (F > END_FRAME) {
+                    F = START_FRAME; // loop
+                }
+            }
+
+            if (ImGui::SliderInt("frame", &F, START_FRAME, END_FRAME)) {
+                
+            }
+            
+
             if (ImGui::Button("Open...")) {
                 auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0");
                 if (!filepath.empty()) {
-                    state.set_input_file(filepath);
+                    sequence_filename = filepath;
+                    //state.set_input_file(filepath);
                 }
             }
-            ImGui::SameLine();
-            ImGui::Text("%s", state.input_file().string().c_str());
 
-            static int f = state.frame();
-            if (ImGui::SliderInt("frame", &f, 0, 100)) {
-                state.set_frame(f);
+            derived_frame_filename = replace_framenumber_in_path(sequence_filename, F);
+            
+            if (state.input_file() != derived_frame_filename) {
+                state.set_input_file(derived_frame_filename);
             }
+
+            ImGui::Text("sequence filename: %s", sequence_filename.string().c_str());
+            ImGui::Text("derived frame filename: %s", derived_frame_filename.c_str());
+            ImGui::Text("actual filename: %s", state.input_file().string().c_str());
+
             
             if (ImGui::BeginTabBar("MyTabBar", ImGuiTabBarFlags_None))
             {
