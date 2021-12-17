@@ -1,0 +1,44 @@
+﻿  splitexr.cpp
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(571,55): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(1111,1): warning C4267: 'return': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(1152,44): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(1170,50): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(1174,19): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(1174,32): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(1189,19): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(1189,42): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(1245,49): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(1254,1): warning C4267: 'return': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(1474,1): warning C4267: 'return': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(1703,19): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(1716,50): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(1720,19): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(1720,32): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(1735,19): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(1735,42): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(1802,61): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(1855,55): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(1894,27): warning C4267: 'initializing': conversion from 'size_t' to 'long', possible loss of data
+C:\Users\zalav\source\repos\zalavariandris\glazy\demos\splitexr\splitexr.cpp(65,79): warning C4267: 'argument': conversion from 'size_t' to 'int', possible loss of data
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(500,22): warning C4244: 'argument': conversion from 'T' to 'uint32_t', possible loss of data
+          with
+          [
+              T=uint64_t
+          ]
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(510): message : see reference to function template instantiation 'T OpenImageIO_v2_3::farmhash::inlined::DebugTweak<uint64_t>(T)' being compiled
+          with
+          [
+              T=uint64_t
+          ]
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(502,11): warning C4244: '=': conversion from 'uint64_t' to 'T', possible loss of data
+          with
+          [
+              T=uint32_t
+          ]
+C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(2009): message : see reference to function template instantiation 'T OpenImageIO_v2_3::farmhash::inlined::DebugTweak<uint32_t>(T)' being compiled
+          with
+          [
+              T=uint32_t
+          ]
+C:\Users\zalav\source\repos\zalavariandris\glazy\demos\splitexr\splitexr.cpp(197): warning C4715: 'run_cli': not all control paths return a value
+  splitexr.vcxproj -> C:\Users\zalav\source\repos\zalavariandris\glazy\demos\splitexr\x64\Debug\splitexr.exe

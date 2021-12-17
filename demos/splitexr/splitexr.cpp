@@ -111,18 +111,18 @@ std::map<std::string, std::tuple<int, int>> group_sequences(const std::vector<fs
         else
         { // has digits
             std::stringstream ss;
-            ss << folder << stem;
-            for (auto i = 0; i < digits.size(); i++) ss << "#";
-            ss << ext;
+            ss << (folder / name).string();
+            for (auto i = 0; i < digits.size(); i++) ss << '#';
+            ss << ext.string();
             auto frame_number = std::stoi(digits);
             
             if (!sequences.contains(ss.str())) {
                 sequences[ss.str()] = std::tuple<int, int>{frame_number, frame_number};
             }
             else {
-                auto fr = sequences[ss.str()];
-                if (std::get<0>(fr) < frame_number) std::get<0>(fr) = frame_number;
-                if (std::get<1>(fr) > frame_number) std::get<1>(fr) = frame_number;
+                auto& fr = sequences[ss.str()];
+                if (std::get<0>(fr) > frame_number) std::get<0>(fr) = frame_number;
+                if (std::get<1>(fr) < frame_number) std::get<1>(fr) = frame_number;
             }
         }
     }
@@ -132,12 +132,11 @@ std::map<std::string, std::tuple<int, int>> group_sequences(const std::vector<fs
 
 int run_cli(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cout << "please provide an input path to split..." << std::endl;
+        std::cout << "drop something!" << std::endl;
+        getchar();
         return EXIT_SUCCESS;
     }
 
-    std::cout << "Parse arguments" << std::endl;
-    
     // Collect all paths with sequences
     std::vector<std::filesystem::path> paths;
 
@@ -160,7 +159,6 @@ int run_cli(int argc, char* argv[]) {
         paths.push_back(path);
 
         // find sequence
-        std::cout << "detect sequence for: " << path << std::endl;
         auto seq = find_sequence(path);
 
         // insert each item to paths
@@ -174,20 +172,20 @@ int run_cli(int argc, char* argv[]) {
     paths.erase(unique(paths.begin(), paths.end()), paths.end());
 
     // print all files
-    //std::cout << "group sequences" << std::endl;
-    //auto sequences = group_sequences(paths);
-    //std::cout << "files found: " << std::endl;
-    //for (auto [key, frame_range] : sequences) {
-    //    std::cout << key << "[" << std::get<0>(frame_range) << "-" << std::get<1>(frame_range) << "]" << std::endl;
-    //}
+    std::cout << "files: " << std::endl;
+    auto sequences = group_sequences(paths);
+    for (auto [key, frame_range] : sequences) {
+        std::cout << "- " << key << "[" << std::get<0>(frame_range) << "-" << std::get<1>(frame_range) << "]" << std::endl;
+    }
 
     // setup cache
-    std::cout << "set up image cache...";
+    std::cout << "Set up image cache...";
     ImageCache* cache = ImageCache::create(true /* shared cache */);
     cache->attribute("max_memory_MB", 1024.0f * 16);
     //cache->attribute("autotile", 64);
     cache->attribute("forcefloat", 1);
     std::cout << "done" << std::endl;
+
 
     /* process each file */
     std::cout << "Process files:" << std::endl;
@@ -195,15 +193,11 @@ int run_cli(int argc, char* argv[]) {
         process_file(path);
     }
     /* exit */
-    std::cout << "done." << "press any key to exit" << std::endl;
-
-    getchar();
-    return EXIT_SUCCESS;
+    std::cout << "finished processing files!" << std::endl << "press any key to exit" << std::endl;
 }
 
 int main(int argc, char* argv[])
 {
-
     return run_cli(argc, argv);
 }
 
