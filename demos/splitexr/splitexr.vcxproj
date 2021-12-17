@@ -21,32 +21,32 @@
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{f6c4bf9a-82e8-45e1-ad3c-1bc9755a3fac}</ProjectGuid>
-    <RootNamespace>glazy</RootNamespace>
+    <ProjectGuid>{eabf8b16-be6f-4af3-a26c-6d621aaee953}</ProjectGuid>
+    <RootNamespace>splitexr</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
-    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
-    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
-    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
-    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
@@ -86,13 +86,13 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>C:\Users\zalav\source\repos\zalavariandris\glazy\glazy</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <SubSystem>
-      </SubSystem>
+      <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
@@ -102,13 +102,13 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>C:\Users\zalav\source\repos\zalavariandris\glazy\glazy</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <SubSystem>
-      </SubSystem>
+      <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -118,14 +118,13 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Users\zalav\source\repos\zalavariandris\glazy\glazy</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <SubSystem>
-      </SubSystem>
+      <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
@@ -135,64 +134,25 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>C:\Users\zalav\source\repos\zalavariandris\glazy\glazy</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <SubSystem>
-      </SubSystem>
+      <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="glazy\imdraw\imdraw_geo.h" />
-    <ClInclude Include="glazy\OOGL\Framebuffer.h" />
-    <ClInclude Include="glazy\OOGL\ElementBuffer.h" />
-    <ClInclude Include="glazy\OOGL\ArrayBuffer.h" />
-    <ClInclude Include="glazy\Camera.h" />
-    <ClInclude Include="glazy\imdraw\imdraw.h" />
-    <ClInclude Include="glazy\imdraw\imdraw_internal.h" />
-    <ClInclude Include="glazy\imdraw\imdraw_shader.h" />
-    <ClInclude Include="glazy\imgeo\imgeo.h" />
-    <ClInclude Include="glazy\glazy.h" />
-    <ClInclude Include="glazy\imdraw\stb_image.h" />
-    <ClInclude Include="glazy\OOGL\State.h" />
-    <ClInclude Include="glazy\OOGL\stb_image.h" />
-    <ClInclude Include="glazy\pathutils.h" />
-    <ClInclude Include="glazy\stringutils.h" />
-    <ClInclude Include="glazy\Stylus.h" />
-    <ClInclude Include="glazy\OOGL\SmartGLObject.h" />
-    <ClInclude Include="glazy\OOGL\Program.h" />
-    <ClInclude Include="glazy\OOGL\Shader.h" />
-    <ClInclude Include="glazy\OOGL\VertexArray.h" />
-    <ClInclude Include="glazy\OOGL\Texture.h" />
-    <ClInclude Include="glazy\widgets\Viewport.h" />
+    <ClCompile Include="splitexr.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="glazy\OOGL\Framebuffer.cpp" />
-    <ClCompile Include="glazy\OOGL\ElementBuffer.cpp" />
-    <ClCompile Include="glazy\OOGL\ArrayBuffer.cpp" />
-    <ClCompile Include="glazy\Camera.cpp" />
-    <ClCompile Include="glazy\imdraw\imdraw.cpp" />
-    <ClCompile Include="glazy\imdraw\imdraw_internal.cpp" />
-    <ClCompile Include="glazy\imgeo\imgeo.cpp" />
-    <ClCompile Include="glazy\Stylus.cpp" />
-    <ClCompile Include="glazy\OOGL\SmartGLObject.cpp" />
-    <ClCompile Include="glazy\OOGL\Program.cpp" />
-    <ClCompile Include="glazy\OOGL\Shader.cpp" />
-    <ClCompile Include="glazy\OOGL\VertexArray.cpp" />
-    <ClCompile Include="glazy\OOGL\Texture.cpp" />
-    <ClCompile Include="glazy\widgets\Viewport.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include=".gitignore" />
-    <None Include="glazy\shaders\default.frag" />
-    <None Include="glazy\shaders\default.vert" />
-    <None Include="README.md" />
-    <None Include="SETUP.md" />
+    <ProjectReference Include="..\..\glazy.vcxproj">
+      <Project>{f6c4bf9a-82e8-45e1-ad3c-1bc9755a3fac}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

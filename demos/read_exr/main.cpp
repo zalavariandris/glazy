@@ -25,65 +25,18 @@ using namespace OIIO;
 
 #include <set>
 
+#include "stringutils.h"
+#include "pathutils.h"
+
+#include <sstream>
+
+
 
 /*
   https://github.com/OpenImageIO/oiio/blob/e058dc8c4aa36ea42b4a19e26eeb56fa1fbc8973/src/iv/ivgl.cpp
   void typespec_to_opengl(const ImageSpec& spec, int nchannels, GLenum& gltype,
     GLenum& glformat, GLenum& glinternalformat);
 */
-
-/**
-  example:
-  split_string("hello_world", "_")
-  {"hello", "world"}
-*/
-inline std::vector<std::string> split_string(std::string text, const std::string &delimiter) {
-    std::vector<std::string> tokens;
-    size_t pos = 0;
-    while ((pos = text.find(delimiter)) != std::string::npos) {
-        auto token = text.substr(0, pos);
-        tokens.push_back(token);
-        text.erase(0, pos + delimiter.length());
-    }
-    tokens.push_back(text);
-    return tokens;
-};
-
-/*
-  joint_string({"andris", "judit", "masa"}, ", ")
-  "andris, judit, masa"
-*/
-inline std::string join_string(const std::vector<std::string> & tokens, const std::string &delimiter) {
-    std::string text;
-    // chan all but last items
-    for (auto i = 0; i < tokens.size()-1; i++) {
-        text += tokens[i];
-        text += delimiter;
-    }
-    // append last item
-    text += tokens.back();
-    return text;
-}
-
-
-/*
-  split digits from the end of the string
-  split_digits("hello_4556")
-  {"hello", "4556"}
-*/
-inline std::tuple<std::string, std::string> split_digits(const std::string & stem) {
-    assert(!stem.empty());
-
-    int digits_count = 0;
-    while (std::isdigit(stem[stem.size() - 1 - digits_count])) {
-        digits_count++;
-    }
-
-    auto text = stem.substr(0, stem.size() - digits_count);
-    auto digits = stem.substr(stem.size() - digits_count, -1);
-
-    return { text, digits };
-}
 
 std::string to_string(OIIO::ImageBuf::IBStorage storage) {
     switch (storage)
@@ -249,57 +202,6 @@ bool process_file(const std::filesystem::path & input_file) {
     return true;
 }
 
-std::vector<fs::path> find_sequence(fs::path input_path) {
-    assert(std::filesystem::exists(input_path));
-
-    std::vector<fs::path> sequence;
-    // find sequence item in folder
-    auto [input_name, input_digits] = split_digits(input_path.stem().string());
-    auto folder = input_path.parent_path();
-
-    for (std::filesystem::path path : fs::directory_iterator{ folder, fs::directory_options::skip_permission_denied }) {
-        try {
-            // match filename and digits count
-            auto [name, digits] = split_digits(path.stem().string());
-            bool IsSequenceItem = (name == input_name) && (digits.size()==input_digits.size());
-            std::cout << "check file " << IsSequenceItem << " " << path << std::endl;
-            //std::cout << name << " <> " << input_name << std::endl;
-            if (IsSequenceItem) {
-                sequence.push_back(path);
-            }
-        }
-        catch (const std::system_error& ex) {
-            std::cout << "Exception: " << ex.what() << "\n  probably std::filesystem does not support Unicode filenames" << std::endl;
-        }
-    }
-
-    return sequence;
-}
-
-std::string to_string(std::vector<fs::path> sequence) {
-    // collect frame numbers
-    std::cout << "Sequence items:" << std::endl;
-    std::vector<int> frame_numbers;
-    for (auto seq_item : sequence) {
-        auto [name, digits] = split_digits(seq_item.stem().string());
-        frame_numbers.push_back(std::stoi(digits));
-    }
-    sort(frame_numbers.begin(), frame_numbers.end());
-
-    // format sequence to human readable string
-    int first_frame = frame_numbers[0];
-    int last_frame = frame_numbers.back();
-
-    auto [input_name, input_digits] = split_digits(sequence[0].stem().string());
-    std::string text = input_name;
-    for (auto i = 0; i < input_digits.size(); i++) {
-        text += "#";
-    }
-    text += sequence[0].extension().string();
-    text += " [" + std::to_string(first_frame) + "-" + std::to_string(last_frame) + "]";
-    return text;
-}
-
 
 int run_cli(int argc, char* argv[]) {
     // setup cache
@@ -331,7 +233,7 @@ int run_cli(int argc, char* argv[]) {
         paths.push_back(path);
 
         // find sequence
-        std::cout << "detect sequence for: " << path << std::endl;
+        //std::cout << "detect sequence for: " << path << std::endl;
         auto seq = find_sequence(path);
 
         // insert each item to paths
@@ -434,7 +336,7 @@ public:
         return _frame;
     }
 
-    // process
+    // computed
     OIIO::ImageBuf img() const {
         static OIIO::ImageBuf cache;
         static std::vector<bool*> dependants{ &ROI_DIRTY, &LAYER_CHANNELS_DIRTY };
@@ -504,12 +406,12 @@ public:
                 std::cout << "Evaluate textures" << std::endl;
                 std::cout << "- fetch pixels..." << std::endl;
 
-                std::vector<int> indices{ 0,1,2 };
+                std::vector<int> indices = layer_channels()[selected_layer()];
                 //auto layer = OIIO::ImageBufAlgo::channels(img(), indices.size(), indices);
                 static int data_size = roi().width() * roi().height() * roi().nchannels();
                 static float* data = (float*)malloc(data_size * sizeof(float));
                 if (data_size != roi().width() * roi().height() * roi().nchannels()) {
-                    std::cout << "- reallocate pixels" << std::endl;
+                    std::cout << "- reallocate pixels [" << roi().width() << "*" << roi().height() << "*" << roi().nchannels() << "]" << std::endl;
                     free(data); // free allocated pixels data
                     data = (float*)malloc(data_size * sizeof(float));
                 }
@@ -612,10 +514,22 @@ int run_gui() {
             static fs::path sequence_filename;
             static std::string derived_frame_filename;
 
+            if (ImGui::Button("Open...")) {
+                auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0");
+                if (!filepath.empty()) {
+                    sequence_filename = filepath;
+                    find_sequence(sequence_filename, &START_FRAME, &END_FRAME);
+                    if (F < START_FRAME) F = START_FRAME;
+                    if (F > END_FRAME) F = END_FRAME;
+                    //state.set_input_file(filepath);
+                }
+            }
+
             static bool play;
             if (ImGui::Checkbox("play", &play)) {
-                std::cout << "play changed" << std::endl;
+                std::cout << "play changed:" << play << std::endl;
             }
+
             if (play) {
                 F++;
                 if (F > END_FRAME) {
@@ -626,18 +540,10 @@ int run_gui() {
             if (ImGui::SliderInt("frame", &F, START_FRAME, END_FRAME)) {
                 
             }
-            
-
-            if (ImGui::Button("Open...")) {
-                auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0");
-                if (!filepath.empty()) {
-                    sequence_filename = filepath;
-                    //state.set_input_file(filepath);
-                }
-            }
 
             derived_frame_filename = replace_framenumber_in_path(sequence_filename, F);
             
+            // update state
             if (state.input_file() != derived_frame_filename) {
                 state.set_input_file(derived_frame_filename);
             }
