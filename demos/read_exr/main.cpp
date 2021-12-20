@@ -518,9 +518,7 @@ int run_gui() {
                 auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0");
                 if (!filepath.empty()) {
                     sequence_filename = filepath;
-                    find_sequence(sequence_filename, &START_FRAME, &END_FRAME);
-                    if (F < START_FRAME) F = START_FRAME;
-                    if (F > END_FRAME) F = END_FRAME;
+                    find_sequence(sequence_filename);
                     //state.set_input_file(filepath);
                 }
             }
