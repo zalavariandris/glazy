@@ -46,9 +46,7 @@ std::map<std::string, std::vector<int>> group_channels(const OIIO::ImageSpec& sp
 }
 
 bool process_file(const std::filesystem::path& input_file) {
-    
-
-    std::cout << "\033[4m" << "Read image" << "\033[0m"<< ": " << input_file << "..." << std::endl;
+    std::cout << "Read image" << ": " << input_file << "..." << std::endl;
     auto img = OIIO::ImageBuf(input_file.string().c_str());
     auto spec = img.spec();
 
@@ -57,7 +55,7 @@ bool process_file(const std::filesystem::path& input_file) {
     //    std::cout << "- " << "#" << i << " " << spec.channel_name(i) << std::endl;
     //}
 
-    std::cout << "\033[4m" << "Layers found" << "\033[0m" << ": " << std::endl;
+    std::cout << "Layers found"  << ": " << std::endl;
     auto channel_groups = group_channels(img.spec());
     for (auto const& [name, indices] : channel_groups) { // print channels
         std::cout << "  " << name << ": ";
@@ -69,7 +67,7 @@ bool process_file(const std::filesystem::path& input_file) {
     }
 
     /* write each layer */
-    std::cout << "\033[4m" << "Write layers" << "\033[0m"<< ": " << std::endl;
+    std::cout  << "Write layers" << ": " << std::endl;
     for (auto const& [layer_name, indices] : channel_groups) {
         auto start = std::chrono::high_resolution_clock::now();
         auto layer = OIIO::ImageBufAlgo::channels(img, indices.size(), indices);

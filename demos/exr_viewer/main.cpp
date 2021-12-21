@@ -30,6 +30,8 @@ using namespace OIIO;
 
 #include <sstream>
 
+#include <cassert>
+
 
 
 /*
@@ -96,7 +98,6 @@ std::map<std::string, std::vector<int>> group_channels(const OIIO::ImageSpec & s
         auto channel_name = spec.channelnames[i];
 
         auto channel_array = split_string(channel_name, ".");
-
         auto layer_name = channel_array.front();
         if (!channel_groups.contains(layer_name)) {
             channel_groups[layer_name] = std::vector<int>();
@@ -106,171 +107,13 @@ std::map<std::string, std::vector<int>> group_channels(const OIIO::ImageSpec & s
     return channel_groups;
 }
 
-/*
-std::map<std::string, OIIO::ImageBuf> split_layers(const OIIO::ImageBuf & img, const std::map<std::string, std::vector<int>> & channel_groups) {
-    std::cout << "Split layers..." << std::endl;
-    std::map<std::string, OIIO::ImageBuf> layers;
-    for (auto const & [layer_name, indices] : channel_groups) {
-        std::cout << "  " << layer_name << std::endl;
-        layers[layer_name] = OIIO::ImageBufAlgo::channels(img, indices.size(), indices);
-    }
-
-    return layers;
-}
-
-void write_layers(const std::filesystem::path & output_path, const std::map<std::string, OIIO::ImageBuf> & layers) {
-    for (auto const & [layer_name, img] : layers) {
-        // insert layer into filename
-        auto folder = output_path.parent_path();
-        auto [stem, digits] = split_digits(output_path.stem().string());
-        auto extension = output_path.extension();
-
-        auto output_path = join_string({
-            folder.string(),
-            "/",
-            stem,
-            layer_name,
-            digits.empty() ? "" : ".",
-            digits,
-            extension.string()
-        },"");
-
-        // normalize path
-        output_path = fs::path(output_path).lexically_normal().string();
-        
-        // write image
-        std::cout << "writing image to:  " << output_path << std::endl;
-        img.write(output_path);
-    }
-}
-*/
-
-
-
-bool process_file(const std::filesystem::path & input_file) {
-    std::cout << "Read image: " << input_file << "..." << std::endl;
-    auto img = OIIO::ImageBuf(input_file.string().c_str());
-    auto spec = img.spec();
-
-    std::cout << "List all channels: " << std::endl;
-    for (auto i = 0; i < spec.nchannels; i++) {
-        std::cout << "- " << "#" << i << " " << spec.channel_name(i) << std::endl;
-    }
-
-    std::cout << "Group channels into layers..." << std::endl;
-    auto channel_groups = group_channels(img.spec());
-    for (auto const & [name, indices] : channel_groups) { // print channels
-        std::cout << "  " << name << ": ";
-        std::vector<std::string> names;
-        for (auto i : indices) {
-            std::cout << "#" << i << split_string(spec.channel_name(i), ".").back() << ", ";
-        }
-        std::cout << std::endl;
-    }
-
-    /* write each layer */
-    for (auto const& [layer_name, indices] : channel_groups) {
-        auto layer = OIIO::ImageBufAlgo::channels(img, indices.size(), indices);
-
-        // insert layer into filename
-        auto folder = input_file.parent_path();
-        auto [stem, digits] = split_digits(input_file.stem().string());
-        auto extension = input_file.extension();
-
-        auto output_path = join_string({
-            folder.string(),
-            "/",
-            stem,
-            layer_name,
-            digits.empty() ? "" : ".",
-            digits,
-            extension.string()
-        }, "");
-
-        // write image
-        std::cout << "writing image to:  " << output_path << std::endl;
-        layer.write(output_path);
-    }
-
-    /*
-    auto layers = split_layers(img, channel_groups);
-
-    std::cout << "Write files..." << std::endl;
-    write_layers(input_file, layers);
-    */
-    std::cout << "Done!" << std::endl;
-    return true;
-}
-
-
-int run_cli(int argc, char* argv[]) {
-    // setup cache
-    ImageCache* cache = ImageCache::create(true /* shared cache */);
-    cache->attribute("max_memory_MB", 1024.0f*16);
-    //cache->attribute("autotile", 64);
-    cache->attribute("forcefloat", 1);
-
-    std::cout << "Parse arguments" << std::endl;
-    // collect all paths with sequences
-    std::vector<std::filesystem::path> paths;
-
-    for (auto i = 1; i < argc; i++) {
-        std::filesystem::path path{ argv[i] };
-        if (!std::filesystem::exists(path)) {
-            std::cout << "- " << "file does not exists: " << path;
-            continue;
-        }
-
-        if (!std::filesystem::is_regular_file(path)) {
-            std::cout << "- " << "not a file: " << path;
-        }
-
-        if (path.extension() != ".exr") {
-            std::cout << "- " << "not exr" << path;
-            continue;
-        }
-
-        paths.push_back(path);
-
-        // find sequence
-        //std::cout << "detect sequence for: " << path << std::endl;
-        auto seq = find_sequence(path);
-
-        // insert each item to paths
-        for (auto item : seq) {
-            paths.push_back(item);
-        }
-    }
-
-    // keep uniq files only
-    std::sort(paths.begin(), paths.end());
-    paths.erase(unique(paths.begin(), paths.end()), paths.end());
-
-    std::cout << "files found: " << std::endl;
-    for (auto const& path : paths) {
-        std::cout << "- " << path << std::endl;
-    }
-    
-    
-    /* process each file */
-    std::cout << "Process files:" << std::endl;
-    for (auto const & path : paths) {
-       process_file(path);
-    }
-    /* exit */
-    std::cout << "done." << "press any key to exit" << std::endl;
-    
-    getchar();
-    return EXIT_SUCCESS;
-}
-
 void TextureViewer(GLuint* fbo, GLuint* color_attachment, Camera * camera, GLuint img_texture, const OIIO::ROI & roi) {
     auto item_pos = ImGui::GetCursorPos();
     auto item_size = ImGui::GetContentRegionAvail();
     static ImVec2 display_size;
 
     if (display_size.x != item_size.x || display_size.y != item_size.y) {
-        //std::cout << "update fbo" << std::endl;
+        //std::cout << "update fbo" << "\n";
         display_size = item_size;
         glDeleteTextures(1, color_attachment);
         *color_attachment = imdraw::make_texture_float(item_size.x, item_size.y, NULL);
@@ -344,7 +187,7 @@ public:
         if (IMG_DIRTY) {
             // evaluate
             if (std::filesystem::exists(_input_file)) {
-                std::cout << "evaluate image" << std::endl;
+                std::cout << "evaluate image" << "\n";
                 cache = OIIO::ImageBuf(_input_file.string().c_str());
 
                 // notify dependants
@@ -363,7 +206,7 @@ public:
 
         if (ROI_DIRTY) {
             // evaluate
-            std::cout << "evaluate roi" << std::endl;
+            std::cout << "evaluate roi" << "\n";
             std::map<std::string, std::vector<int>> layers = group_channels(img().spec());
             if (layers.contains(selected_layer())) {
                 auto indices = layers[selected_layer()];
@@ -385,7 +228,7 @@ public:
 
         if (LAYER_CHANNELS_DIRTY) {
             // eval
-            std::cout << "Evaluate layer channels" << std::endl;
+            std::cout << "Evaluate layer channels" << "\n";
             cache = group_channels(img().spec());
 
             // notify dependants
@@ -402,16 +245,16 @@ public:
         if (TEXTURE_DIRTY) {
             /* EVALUATE */
             if (layer_channels().contains(selected_layer())) {
-                std::cout << std::endl;
-                std::cout << "Evaluate textures" << std::endl;
-                std::cout << "- fetch pixels..." << std::endl;
+                std::cout << "\n";
+                std::cout << "Evaluate textures" << "\n";
+                std::cout << "- fetch pixels..." << "\n";
 
                 std::vector<int> indices = layer_channels()[selected_layer()];
                 //auto layer = OIIO::ImageBufAlgo::channels(img(), indices.size(), indices);
                 static int data_size = roi().width() * roi().height() * roi().nchannels();
                 static float* data = (float*)malloc(data_size * sizeof(float));
                 if (data_size != roi().width() * roi().height() * roi().nchannels()) {
-                    std::cout << "- reallocate pixels [" << roi().width() << "*" << roi().height() << "*" << roi().nchannels() << "]" << std::endl;
+                    std::cout << "- reallocate pixels [" << roi().width() << "*" << roi().height() << "*" << roi().nchannels() << "]" << "\n";
                     free(data); // free allocated pixels data
                     data = (float*)malloc(data_size * sizeof(float));
                 }
@@ -419,13 +262,20 @@ public:
                 // get global cache
                 auto is_image_cache = img().cachedpixels();
                 ImageCache* image_cache = ImageCache::create(true /* global cache */);
-                
-                auto success = img().get_pixels(roi(), OIIO::TypeDesc::FLOAT, data);
+
+                ImageSpec spec;
+                image_cache->get_imagespec(OIIO::ustring(img().name()), spec);
+                int chbegin = roi().chbegin;
+                int chend = roi().chend;
+                auto success = image_cache->get_pixels(OIIO::ustring(img().name()), 0, 0, 0, spec.width, 0, spec.height, 0, 1, chbegin, chend, TypeDesc::FLOAT, data, OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, chbegin, chend);
+                assert(("cant get pixels", success));
+
+                //auto success = img().get_pixels(roi(), OIIO::TypeDesc::FLOAT, data);
                 //auto success = layer.get_pixels(OIIO::ROI(), OIIO::TypeDesc::FLOAT, data);
                 assert(success);
 
                 /* make texture */
-                std::cout << "- make texture..." << std::endl;
+                std::cout << "- make texture..." << "\n";
                 if (cache != 0) { glDeleteTextures(1, &cache); } // delete prev texture if exists
                 cache = imdraw::make_texture_float(
                     roi().width(), roi().height(),
@@ -522,14 +372,16 @@ int run_gui() {
                 auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0");
                 if (!filepath.empty()) {
                     sequence_filename = filepath;
-                    find_sequence(sequence_filename);
-                    //state.set_input_file(filepath);
+                    
+                    find_sequence(sequence_filename, &START_FRAME, &END_FRAME);
+                    if (F < START_FRAME) F = START_FRAME;
+                    if (F > END_FRAME) F = END_FRAME;
                 }
             }
 
             static bool play;
             if (ImGui::Checkbox("play", &play)) {
-                std::cout << "play changed:" << play << std::endl;
+                std::cout << "play changed:" << play << "\n";
             }
 
             if (play) {
@@ -560,13 +412,10 @@ int run_gui() {
                 if (ImGui::BeginTabItem("info")) {
                     auto spec = state.img().spec();
                     ImGui::Text("%d x %d x %d, %d channel, %s", spec.width, spec.height, spec.depth, spec.nchannels, to_string(spec.format));
-
-                    auto info = state.img().spec().serialize(ImageSpec::SerialText);
-                    ImGui::Text("%s", info.c_str());
                     ImGui::EndTabItem();
                 }
 
-                if (ImGui::BeginTabItem("spec log")) {
+                if (ImGui::BeginTabItem("details")) {
                     auto info = state.img().spec().serialize(ImageSpec::SerialText);
                     ImGui::Text("%s", info.c_str());
                     ImGui::EndTabItem();
@@ -597,7 +446,7 @@ int run_gui() {
                 ImGui::EndTabBar();
 
                 if (ImGui::Button("Save")) {
-                    std::cout << "save" << std::endl;
+                    std::cout << "save" << "\n";
                 }
             }
 
@@ -605,7 +454,6 @@ int run_gui() {
         }
 
         if (ImGui::Begin("Viewer")) {
-            std::vector<std::string> items;
             auto layers = group_channels(state.img().spec());
 
             /******************
@@ -613,9 +461,10 @@ int run_gui() {
             *******************/
             if (ImGui::BeginCombo("layers", state.selected_layer().c_str()))
             {
+                std::cout << "is combo active" << ImGui::IsItemActive() << "\n";
                 for (const auto& [layer_name, indices] : state.layer_channels())
                 {
-                    const bool is_selected = layer_name == state.selected_layer();
+                    bool is_selected = (layer_name == state.selected_layer());
                     if (ImGui::Selectable(layer_name.c_str(), is_selected)) {
                         state.set_selected_layer(layer_name);
                     }
@@ -627,7 +476,7 @@ int run_gui() {
                 }
                 ImGui::EndCombo();
             }
-
+            
             /* display image */
             static GLuint fbo;
             static GLuint color_attachment;
@@ -667,28 +516,10 @@ int run_gui() {
 
 
 
-int test_process() {
-    //const fs::path input_path{ "C:/Users/andris/Downloads/52_06_EXAM_v06-vrayraw.0002.exr" };
-    auto img = OIIO::ImageBuf("C:/Users/zalav/Downloads/52_06/52_06_EXAM_v06-vrayraw.0013.exr");
-    
-
-    std::cout << "storage: " << to_string(img.storage()) << std::endl;
-    std::cout << img.spec().serialize(ImageSpec::SerialText) << std::endl;
-    //process_file(input_path);
-    return EXIT_SUCCESS;
-}
 
 int main(int argc, char * argv[])
 {
-
-    //return test_process();
-
-    if (argc > 1) {
-        return run_cli(argc, argv);
-    }
-    else {
-        return run_gui();
-    }
+    return run_gui();
 
     return EXIT_SUCCESS;
 }

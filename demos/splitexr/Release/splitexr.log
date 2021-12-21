@@ -21,7 +21,7 @@ C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(1855,55
 C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(1894,27): warning C4267: 'initializing': conversion from 'size_t' to 'long', possible loss of data
   The contents of <ranges> are available only in c++latest mode with concepts support;
   see https://github.com/microsoft/STL/issues/1814 for details.
-C:\Users\andris\source\repos\glazy\demos\splitexr\splitexr.cpp(75,79): warning C4267: 'argument': conversion from 'size_t' to 'int', possible loss of data
+C:\Users\zalav\source\repos\zalavariandris\glazy\demos\splitexr\splitexr.cpp(75,79): warning C4267: 'argument': conversion from 'size_t' to 'int', possible loss of data
 C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(500,22): warning C4244: 'argument': conversion from 'T' to 'uint32_t', possible loss of data
           with
           [
@@ -44,6 +44,6 @@ C:\dev\vcpkg\installed\x64-windows\include\OpenImageIO\detail\farmhash.h(2009): 
           ]
   Generating code
   Previous IPDB not found, fall back to full compilation.
-  All 1084 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  All 1324 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
   Finished generating code
-  splitexr.vcxproj -> C:\Users\andris\source\repos\glazy\demos\splitexr\x64\Release\splitexr.exe
+  splitexr.vcxproj -> C:\Users\zalav\source\repos\zalavariandris\glazy\demos\splitexr\x64\Release\splitexr.exe

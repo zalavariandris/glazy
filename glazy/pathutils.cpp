@@ -3,10 +3,11 @@
 #include "stringutils.h"
 #include <cassert>
 
-std::vector<std::filesystem::path> find_sequence(std::filesystem::path input_path) {
+std::vector<std::filesystem::path> find_sequence(std::filesystem::path input_path, int * start_frame, int * end_frame) {
     assert(std::filesystem::exists(input_path));
 
     std::vector<std::filesystem::path> sequence;
+    std::vector<int> framenumbers;
 
     // find sequence item in folder
     auto [input_name, input_digits] = split_digits(input_path.stem().string());
@@ -21,6 +22,7 @@ std::vector<std::filesystem::path> find_sequence(std::filesystem::path input_pat
             //std::cout << name << " <> " << input_name << std::endl;
             if (IsSequenceItem) {
                 sequence.push_back(path);
+                framenumbers.push_back( std::stoi(digits) );
             }
         }
         catch (const std::system_error& ex) {
@@ -28,6 +30,13 @@ std::vector<std::filesystem::path> find_sequence(std::filesystem::path input_pat
         }
     }
 
+    std::sort(framenumbers.begin(), framenumbers.end());
+    if (start_frame) {
+        *start_frame = framenumbers[0];
+    }
+    if (end_frame) {
+        *end_frame = framenumbers.back();
+    }
 
     return sequence;
 }

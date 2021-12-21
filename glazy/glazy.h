@@ -645,10 +645,16 @@ namespace glazy {
 				ImGui::Separator();
 				ImGui::MenuItem("themes", "", &themes);
 				ImGui::MenuItem("stats", "", &stats);
-				
-
 				ImGui::EndMenu();
 			}
+			
+			// Show fps in the right side
+			std::stringstream ss;
+			ss << std::fixed << std::setprecision(2) << ImGui::GetIO().Framerate << "fps";
+
+			auto text_size = ImGui::CalcTextSize(ss.str().c_str());
+			ImGui::SameLine(ImGui::GetWindowContentRegionWidth() - text_size.x);
+			ImGui::Text(ss.str().c_str());
 			ImGui::EndMainMenuBar();
 
 			// Show stats
