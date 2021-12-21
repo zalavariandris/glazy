@@ -33,5 +33,6 @@
 
 # VS folder
 .vs
-
 x64/
+Release/
+Debug/

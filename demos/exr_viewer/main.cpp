@@ -415,6 +415,10 @@ public:
                     free(data); // free allocated pixels data
                     data = (float*)malloc(data_size * sizeof(float));
                 }
+
+                // get global cache
+                auto is_image_cache = img().cachedpixels();
+                ImageCache* image_cache = ImageCache::create(true /* global cache */);
                 
                 auto success = img().get_pixels(roi(), OIIO::TypeDesc::FLOAT, data);
                 //auto success = layer.get_pixels(OIIO::ROI(), OIIO::TypeDesc::FLOAT, data);

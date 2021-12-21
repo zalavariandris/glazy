@@ -179,6 +179,8 @@
     <ClCompile Include="glazy\imdraw\imdraw.cpp" />
     <ClCompile Include="glazy\imdraw\imdraw_internal.cpp" />
     <ClCompile Include="glazy\imgeo\imgeo.cpp" />
+    <ClCompile Include="glazy\pathutils.cpp" />
+    <ClCompile Include="glazy\stringutils.cpp" />
     <ClCompile Include="glazy\Stylus.cpp" />
     <ClCompile Include="glazy\OOGL\SmartGLObject.cpp" />
     <ClCompile Include="glazy\OOGL\Program.cpp" />

@@ -36,9 +36,11 @@ using namespace OIIO;
 #include <fstream>
 #include <OpenEXR/ImfStdIO.h>
 
+#include <cassert>
 
 
-std::filesystem::path test_folder{ "C:/Users/zalav/Desktop/exr_test_images" };
+
+std::filesystem::path test_folder{ "C:/Users/andris/Desktop/exr_test_images" };
 
 namespace profile {
     std::chrono::time_point<std::chrono::steady_clock> start;
@@ -59,7 +61,8 @@ namespace profile {
 
 namespace With_OIIO_ImageBuffer {
     void read_RED_from_singlelayer() {
-        std::filesystem::path filename{ "52_06_EXAM_v06-singe_RGB_color.0002.exr" };
+        auto filename = test_folder / "multichannel_sequence/52_06_EXAM_v06-vrayraw.0010.exr";
+        assert(("file does not exist", fs::exists(filename)));
 
         // setup cache
         ImageCache* cache = ImageCache::create(false /* local cache */);
@@ -67,7 +70,7 @@ namespace With_OIIO_ImageBuffer {
         //cache->attribute("autotile", 64);
         //cache->attribute("forcefloat", 1);
 
-        auto img = ImageBuf((test_folder / filename).string(), cache);
+        auto img = ImageBuf(filename.string(), cache);
         auto roi_rgb = ROI(0, img.spec().width, 0, img.spec().height, 0, 1, 0, 1);
         auto data_size = roi_rgb.width() * roi_rgb.height() * roi_rgb.nchannels();
         float* data = (float*)malloc(data_size * sizeof(float));
@@ -76,9 +79,12 @@ namespace With_OIIO_ImageBuffer {
     }
 
     void read_RGB_from_singlelayer() {
-        std::filesystem::path filename{ "52_06_EXAM_v06-singe_RGB_color.0002.exr" };
+        auto filename = test_folder / "multichannel_sequence/52_06_EXAM_v06-vrayraw.0010.exr";
+        assert(("file does not exist", fs::exists(filename)));
+
         ImageCache* cache = ImageCache::create(false /* local cache */);
-        auto img = ImageBuf((test_folder / filename).string(), cache);
+
+        auto img = ImageBuf(filename.string(), cache);
         auto roi_rgb = ROI(0, img.spec().width, 0, img.spec().height, 0, 1, 0, 3);
         auto data_size = roi_rgb.width() * roi_rgb.height() * roi_rgb.nchannels();
         static float* data = (float*)malloc(data_size * sizeof(float));
@@ -87,7 +93,7 @@ namespace With_OIIO_ImageBuffer {
     }
 
     void read_RED_from_multichannel() {
-        auto filename = (test_folder / "multichannel_sequence/52_06_EXAM_v06-vrayraw.0010.exr");
+        auto filename = test_folder / "multichannel_sequence/52_06_EXAM_v06-vrayraw.0010.exr";
         assert(("file does not exist", fs::exists(filename)));
 
         ImageCache* cache = ImageCache::create(false /* local cache */);
@@ -101,7 +107,7 @@ namespace With_OIIO_ImageBuffer {
     }
 
     void read_RGB_from_multichannel(ImageCache* cache) {
-        auto filename = (test_folder / "multichannel_sequence/52_06_EXAM_v06-vrayraw.0010.exr");
+        auto filename = test_folder / "multichannel_sequence/52_06_EXAM_v06-vrayraw.0010.exr";
         assert(("file does not exist", fs::exists(filename)));
 
         auto img = ImageBuf(filename.string(), cache);
@@ -131,7 +137,7 @@ namespace With_OIIO_ImageBuffer {
         assert(("file does not exist", fs::exists(filename)));
 
         auto img = ImageBuf(filename.string(), cache);
-        img.threads(32);
+        //img.threads(32);
 
         int chbegin = 0;
         int chend = 4;
@@ -156,6 +162,7 @@ namespace With_OIIO_ImageBuffer {
 
         assert(("when profiling ImageBuffer supposed to backed up with image cache", img.cachedpixels()));
         if (img.cachedpixels()) {
+            std::cout << "(gettin pixels from image cache)" << "\n";
             cache->get_pixels(OIIO::ustring(img.name()), 0, 0, 0, img.spec().width, 0, img.spec().height, 0, 1, 0, 3, TypeDesc::FLOAT, data, OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, 0, 3);
         }
         else {
@@ -412,7 +419,7 @@ int main()
     std::cout << "---------------------" << "\n";
     
 
-    OIIO::attribute("options", "threads=32,exr_threads=32,log_times=1");
+    //OIIO::attribute("options", "threads=32,exr_threads=32,log_times=1");
 
     std::cout << "threads: " << OIIO::get_int_attribute("threads") << "\n";
     std::cout << "exr_threads: " << OIIO::get_int_attribute("exr_threads") << "\n";
@@ -466,9 +473,9 @@ int main()
         ImageCache* cache = ImageCache::create(false /* local cache */);
         cache->attribute("max_memory_MB", 16000.0f);
         cache->attribute("forcefloat ", 1);
-        //cache->attribute("trust_file_extensions ", 1);
+        cache->attribute("trust_file_extensions ", 1);
         //cache->attribute("autoscanline", 1);
-        //cache->attribute("autotile", 64);
+        cache->attribute("autotile", 64);
         profile::begin("read RGB from multichannel USE CACHE WHEN AVAILABLE");
         With_OIIO_ImageBuffer::read_RGB_from_multichannel_USE_CACHE_WHEN_AVAILABLE(cache);
         profile::end();
