@@ -153,6 +153,7 @@ private:
     int _miplevel;
 
     mutable bool IMG_DIRTY{ true };
+    mutable bool SPEC_DIRTY{ true };
     mutable bool ROI_DIRTY{ true };
     mutable bool LAYER_CHANNELS_DIRTY{ true };
     mutable bool TEXTURE_DIRTY{ true };
@@ -177,18 +178,18 @@ public:
     void set_frame(int val) {
         _frame = val;
     }
-    int frame() {
+    int frame() const{
         return _frame;
     }
 
     void set_subimage(int val) {
-        static std::vector<bool*> dependants{ &TEXTURE_DIRTY };
+        static std::vector<bool*> dependants{ &SPEC_DIRTY, &TEXTURE_DIRTY };
         _subimage = val;
 
         // notify dependants
         for (auto dep : dependants) { *dep = true; }
     }
-    int subimage() {
+    int subimage() const{
         return _subimage;
     }
 
@@ -199,7 +200,7 @@ public:
         // notify dependants
         for (auto dep : dependants) { *dep = true; }
     }
-    int miplevel() {
+    int miplevel() const{
         return _miplevel;
     }
 
@@ -221,6 +222,25 @@ public:
             // clean flag
             IMG_DIRTY = false;
         }
+        return cache;
+    }
+
+    OIIO::ImageSpec spec() const {
+        static OIIO::ImageSpec cache;
+
+        if (SPEC_DIRTY) {
+            // get global image cache
+            auto is_image_cache = img().cachedpixels();
+            ImageCache* image_cache = ImageCache::create(true /* global cache */);
+
+            ImageSpec cache;
+            image_cache->get_imagespec(OIIO::ustring(img().name()), cache, subimage(), 0, false);
+
+            // clean flag
+            SPEC_DIRTY = false;
+        }
+
+
         return cache;
     }
 
@@ -491,7 +511,6 @@ int run_gui() {
             *******************/
             if (ImGui::BeginCombo("layers", state.selected_layer().c_str()))
             {
-                std::cout << "is combo active" << ImGui::IsItemActive() << "\n";
                 for (const auto& [layer_name, indices] : state.layer_channels())
                 {
                     bool is_selected = (layer_name == state.selected_layer());
