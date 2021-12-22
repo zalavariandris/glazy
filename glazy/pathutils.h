@@ -8,7 +8,7 @@ std::vector<std::filesystem::path> find_sequence(std::filesystem::path input_pat
 
 /*
 * find the image sequence on disk from a single frame
-return pattern like such as "image.%04d.tif", start_frame, and_frame
+return pattern such as "image.%04d.tif", start_frame, and_frame
 */
 std::tuple<std::filesystem::path, int, int> find_sequence(std::filesystem::path input_path);
 

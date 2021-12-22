@@ -47,7 +47,12 @@ namespace profile {
     std::chrono::time_point<std::chrono::steady_clock> stop;
     std::chrono::duration<float> duration;
 
+    std::string current_name="";
+    std::map<std::string, std::chrono::duration<float>> times;
+
     void begin(std::string name) {
+        assert(current_name == "");
+        current_name = name;
         std::cout << name << "...";
         start = std::chrono::high_resolution_clock::now();
     }
@@ -56,6 +61,8 @@ namespace profile {
         stop = std::chrono::high_resolution_clock::now();
         duration = stop - start;
         std::cout << duration << "\n";
+        times[current_name] = duration;
+        current_name = "";
     }
 }
 

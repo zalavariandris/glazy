@@ -149,6 +149,8 @@ private:
     int _frame;
     std::filesystem::path _input_file;
     std::string _selected_layer;
+    int _subimage;
+    int _miplevel;
 
     mutable bool IMG_DIRTY{ true };
     mutable bool ROI_DIRTY{ true };
@@ -177,6 +179,28 @@ public:
     }
     int frame() {
         return _frame;
+    }
+
+    void set_subimage(int val) {
+        static std::vector<bool*> dependants{ &TEXTURE_DIRTY };
+        _subimage = val;
+
+        // notify dependants
+        for (auto dep : dependants) { *dep = true; }
+    }
+    int subimage() {
+        return _subimage;
+    }
+
+    void set_miplevel(int val) {
+        static std::vector<bool*> dependants{ &TEXTURE_DIRTY };
+        _miplevel = val;
+
+        // notify dependants
+        for (auto dep : dependants) { *dep = true; }
+    }
+    int miplevel() {
+        return _miplevel;
     }
 
     // computed
@@ -267,7 +291,7 @@ public:
                 image_cache->get_imagespec(OIIO::ustring(img().name()), spec);
                 int chbegin = roi().chbegin;
                 int chend = roi().chend;
-                auto success = image_cache->get_pixels(OIIO::ustring(img().name()), 0, 0, 0, spec.width, 0, spec.height, 0, 1, chbegin, chend, TypeDesc::FLOAT, data, OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, chbegin, chend);
+                auto success = image_cache->get_pixels(OIIO::ustring(img().name()), subimage(), miplevel(), 0, spec.width, 0, spec.height, 0, 1, chbegin, chend, TypeDesc::FLOAT, data, OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, chbegin, chend);
                 assert(("cant get pixels", success));
 
                 //auto success = img().get_pixels(roi(), OIIO::TypeDesc::FLOAT, data);
@@ -402,16 +426,26 @@ int run_gui() {
                 state.set_input_file(derived_frame_filename);
             }
 
+            static int subimage = state.subimage();
+            if (ImGui::InputInt("subimage", &subimage)) {
+                state.set_subimage(subimage);
+            }
+
             ImGui::Text("sequence filename: %s", sequence_filename.string().c_str());
             ImGui::Text("derived frame filename: %s", derived_frame_filename.c_str());
             ImGui::Text("actual filename: %s", state.input_file().string().c_str());
 
-            
             if (ImGui::BeginTabBar("MyTabBar", ImGuiTabBarFlags_None))
             {
                 if (ImGui::BeginTabItem("info")) {
                     auto spec = state.img().spec();
                     ImGui::Text("%d x %d x %d, %d channel, %s", spec.width, spec.height, spec.depth, spec.nchannels, to_string(spec.format));
+                    ImGui::Text("deep: %s", spec.deep ? "true" : "false");
+                    ImGui::Text("nsubimage: %d", state.img().nsubimages());
+                    ImGui::Text("subimage: %d", state.img().subimage());
+                    ImGui::Text("nmiplevels: %d", state.img().nmiplevels());
+                    ImGui::Text("miplevel: %d", state.img().miplevel());
+                    
                     ImGui::EndTabItem();
                 }
 
@@ -444,10 +478,6 @@ int run_gui() {
                     ImGui::EndTabItem();
                 }
                 ImGui::EndTabBar();
-
-                if (ImGui::Button("Save")) {
-                    std::cout << "save" << "\n";
-                }
             }
 
             ImGui::End();

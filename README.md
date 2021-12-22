@@ -29,3 +29,10 @@ get pressure tilt etc from pen.
 
 ## Camera
 A simle Camera class
+
+## splitexr
+
+a command line utility to split exr to layers by drag and drop
+
+support cli options: eg: split alpha, select compression etc.
+
