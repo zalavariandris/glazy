@@ -1,6 +1,8 @@
 // splitexr.cpp : This file contains the 'main' function. Program execution begins and ends there.
 //
 
+#define VERSION 0.12
+
 #include <iostream>
 #include <OpenImageIO/imagecache.h>
 #include <OpenImageIO/imagebuf.h>
@@ -45,7 +47,7 @@ std::map<std::string, std::vector<int>> group_channels(const OIIO::ImageSpec& sp
     return channel_groups;
 }
 
-bool process_file(const std::filesystem::path& input_file) {
+bool process_file(const std::filesystem::path& input_file, bool skip_existing=true) {
     std::cout << "Read image" << ": " << input_file << "..." << std::endl;
     auto img = OIIO::ImageBuf(input_file.string().c_str());
     auto spec = img.spec();
@@ -68,9 +70,10 @@ bool process_file(const std::filesystem::path& input_file) {
 
     /* write each layer */
     std::cout  << "Write layers" << ": " << std::endl;
+    auto start = std::chrono::high_resolution_clock::now();
     for (auto const& [layer_name, indices] : channel_groups) {
-        auto start = std::chrono::high_resolution_clock::now();
-        auto layer = OIIO::ImageBufAlgo::channels(img, indices.size(), indices);
+        
+        //float channelvalues[] = { 0 /*ignore*/, 0 /*ignore*/, 0 /*ignore*/ };
 
         // insert layer into filename
         auto folder = input_file.parent_path();
@@ -85,13 +88,51 @@ bool process_file(const std::filesystem::path& input_file) {
             digits.empty() ? "" : ".",
             digits,
             extension.string()
-            }, "");
+        }, "");
+
+        if (skip_existing && std::filesystem::exists(output_path)) continue;
+
+        OIIO::ImageBuf layer;
+        std::cout << "LAYER NAME: " << layer_name << "\n";
+        if (layer_name == "RGB_color") {
+            std::cout << "!!!!!!!!!!!!!!! COLOR" << "\n";
+            for (auto i : indices) { std::cout << i; }; std::cout << "\n";
+            layer = OIIO::ImageBufAlgo::channels(img, 4, { 0,1,2,3 });
+        }
+        else if (layer_name == "Alpha") {
+            std::cout << "!!!!!!!!!!!!!!! ALPHA" << "\n";
+            for (auto i : indices) { std::cout << i; }; std::cout << "\n";
+            layer = OIIO::ImageBufAlgo::channels(img, 4, { 3,3,3,3 }, {}, { "R", "G", "B", "A" }, false, 0);
+        }
+        else if (layer_name == "ZDepth") {
+            std::cout << "!!!!!!!!!!!!!!! ZDepth" << "\n";
+            for (auto i : indices) { std::cout << i; }; std::cout << "\n";
+            //OIIO::ImageBufAlgo::channels(src, nchannels, channelorder, channelvalues, newnames, shufflenames, threads);
+            layer = OIIO::ImageBufAlgo::channels(img, 4, { 4,4,4,3 }, {}, { "R", "G", "B", "A"}, false, 0);
+        }
+        else
+        {   // AOV
+            std::vector<int> channelvalues;
+            std::vector<std::string> channelnames;
+            for (auto i : indices) {
+                channelvalues.push_back(0);
+                auto full_name = spec.channel_name(i);
+                auto channelname = split_string(full_name, ".").back();
+                if (channelname == "X") channelname = "R";
+                if (channelname == "Y") channelname = "G";
+                if (channelname == "Z") channelname = "B";
+                channelnames.push_back(channelname);
+            }
+
+            layer = OIIO::ImageBufAlgo::channels(img, indices.size(), indices, {}, OIIO::span(channelnames));
+        }
+
+
 
         // write image
         layer.write(output_path);
-        auto stop = std::chrono::high_resolution_clock::now();
-        auto duration = duration_cast<std::chrono::microseconds>(stop - start);
-        std::cout << "- "<< output_path << " [" << duration << "ms]" << "\n";
+
+        std::cout << "- "<< output_path << "\n";
         
     }
 
@@ -101,7 +142,9 @@ bool process_file(const std::filesystem::path& input_file) {
     std::cout << "Write files..." << std::endl;
     write_layers(input_file, layers);
     */
-    std::cout << "Done!" << std::endl;
+    auto stop = std::chrono::high_resolution_clock::now();
+    auto duration = duration_cast<std::chrono::microseconds>(stop - start);
+    std::cout << "Done!" << " [" << duration << "ms]" << std::endl;
     return true;
 }
 
@@ -198,13 +241,13 @@ void test_processing_files() {
 
 int main(int argc, char* argv[])
 {
+
+    std::cout << "splitexr" << " v" << VERSION << "\n";
     if (argc < 2) {
         std::cout << "drop something!" << std::endl;
         getchar();
         return EXIT_SUCCESS;
     }
-
-
 
     std::vector<fs::path> input_paths;
     
@@ -234,10 +277,11 @@ int main(int argc, char* argv[])
     /* 4.Process each file */
     std::cout << "Process files:" << std::endl;
     for (auto const& path : paths) {
-        process_file(path);
+        process_file(path, true);
     }
     /* Exit */
     std::cout << "finished processing files!" << std::endl << "press any key to exit" << "\n";
+    getchar();
     return EXIT_SUCCESS;
 }
 

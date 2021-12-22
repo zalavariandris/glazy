@@ -1,15 +1,16 @@
 #include "stringutils.h"
 #include <cassert>
 
-std::vector<std::string> split_string(std::string text, const std::string& delimiter) {
+std::vector<std::string> split_string(const std::string& text, const std::string& delimiter) {
     std::vector<std::string> tokens;
+    std::string _text(text);
     size_t pos = 0;
-    while ((pos = text.find(delimiter)) != std::string::npos) {
-        auto token = text.substr(0, pos);
+    while ((pos = _text.find(delimiter)) != std::string::npos) {
+        auto token = _text.substr(0, pos);
         tokens.push_back(token);
-        text.erase(0, pos + delimiter.length());
+        _text.erase(0, pos + delimiter.length());
     }
-    tokens.push_back(text);
+    tokens.push_back(_text);
     return tokens;
 };
 

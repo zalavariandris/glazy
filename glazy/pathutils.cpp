@@ -64,3 +64,46 @@ std::string to_string(std::vector<std::filesystem::path> sequence) {
     text += " [" + std::to_string(first_frame) + "-" + std::to_string(last_frame) + "]";
     return text;
 }
+
+std::tuple<std::filesystem::path, int, int> scan_sequence(const std::filesystem::path & input_path) {
+    assert(std::filesystem::exists(input_path));
+
+    std::vector<std::filesystem::path> sequence;
+    std::vector<int> framenumbers;
+
+    // find sequence item in folder
+    auto [input_name, input_digits] = split_digits(input_path.stem().string());
+    auto input_folder = input_path.parent_path();
+
+    std::filesystem::path sequence_pattern = input_folder / (input_name +"%0" + std::to_string(input_digits.size()) + "d" + input_path.extension().string());
+
+    for (std::filesystem::path path : std::filesystem::directory_iterator{ input_folder, std::filesystem::directory_options::skip_permission_denied }) {
+        try {
+            // match filename and digits count
+            auto [name, digits] = split_digits(path.stem().string());
+            bool IsSequenceItem = (name == input_name) && (digits.size() == input_digits.size());
+            //std::cout << "check file " << IsSequenceItem << " " << path << std::endl;
+            //std::cout << name << " <> " << input_name << std::endl;
+            if (IsSequenceItem) {
+                sequence.push_back(path);
+                framenumbers.push_back(std::stoi(digits));
+            }
+        }
+        catch (const std::system_error& ex) {
+            std::cout << "Exception: " << ex.what() << "\n-  probably std::filesystem does not support Unicode filenames" << std::endl;
+        }
+    }
+
+    std::sort(framenumbers.begin(), framenumbers.end());
+    return { sequence_pattern, framenumbers[0], framenumbers.back()};
+}
+
+std::filesystem::path sequence_item(const std::filesystem::path& pattern, int F) {
+    // copy from educative.io educative.io/edpresso/how-to-use-the-sprintf-method-in-c
+    int size_s = std::snprintf(nullptr, 0, pattern.string().c_str(), F) + 1; // Extra space for '\0'
+    if (size_s <= 0) { throw std::runtime_error("Error during formatting."); }
+    auto size = static_cast<size_t>(size_s);
+    auto buf = std::make_unique<char[]>(size);
+    std::snprintf(buf.get(), size, pattern.string().c_str(), F);
+    return std::filesystem::path(std::string(buf.get(), buf.get() + size - 1));
+}

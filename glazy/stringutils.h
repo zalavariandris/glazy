@@ -10,7 +10,7 @@
   split_string("hello_world", "_")
   {"hello", "world"}
 */
-std::vector<std::string> split_string(std::string text, const std::string& delimiter);
+std::vector<std::string> split_string(const std::string& text, const std::string& delimiter);
 
 /*
   joint_string({"andris", "judit", "masa"}, ", ")

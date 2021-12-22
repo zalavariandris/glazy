@@ -29,6 +29,7 @@ using namespace OIIO;
 #include "pathutils.h"
 
 #include <sstream>
+#include <cstdio> // printf sprintf snprintf
 
 #include <cassert>
 
@@ -144,10 +145,11 @@ void TextureViewer(GLuint* fbo, GLuint* color_attachment, Camera * camera, GLuin
 }
 
 
+
 class State {
 private:
     int _frame;
-    std::filesystem::path _input_file;
+    std::filesystem::path _input_pattern;
     std::string _selected_layer;
     int _subimage;
     int _miplevel;
@@ -158,13 +160,14 @@ private:
     mutable bool LAYER_CHANNELS_DIRTY{ true };
     mutable bool TEXTURE_DIRTY{ true };
 public:
-    void set_input_file(std::filesystem::path val) {
-        _input_file = val;
+    // State setters and getters
+    void set_input_pattern(std::filesystem::path val) {
+        _input_pattern = val;
 
         // dependents
         IMG_DIRTY = true;
     }
-    std::filesystem::path input_file() const { return _input_file; }
+    std::filesystem::path input_pattern() const { return _input_pattern; }
 
     void set_selected_layer(std::string val) {
         static std::vector<bool*> dependants{ &TEXTURE_DIRTY, &ROI_DIRTY };
@@ -176,11 +179,13 @@ public:
     std::string selected_layer() const { return _selected_layer;}
 
     void set_frame(int val) {
+        static std::vector<bool*> dependants{ &SPEC_DIRTY, &IMG_DIRTY };
         _frame = val;
+
+        // notify dependants
+        for (auto dep : dependants) { *dep = true; }
     }
-    int frame() const{
-        return _frame;
-    }
+    int frame() const{ return _frame;  }
 
     void set_subimage(int val) {
         static std::vector<bool*> dependants{ &SPEC_DIRTY, &TEXTURE_DIRTY };
@@ -189,31 +194,30 @@ public:
         // notify dependants
         for (auto dep : dependants) { *dep = true; }
     }
-    int subimage() const{
-        return _subimage;
-    }
+    int subimage() const{ return _subimage; }
 
     void set_miplevel(int val) {
-        static std::vector<bool*> dependants{ &TEXTURE_DIRTY };
+        static std::vector<bool*> dependants{ &SPEC_DIRTY, &TEXTURE_DIRTY };
         _miplevel = val;
 
         // notify dependants
         for (auto dep : dependants) { *dep = true; }
     }
-    int miplevel() const{
-        return _miplevel;
-    }
+    int miplevel() const{ return _miplevel;  }
 
-    // computed
+
+    // Computed
+
     OIIO::ImageBuf img() const {
         static OIIO::ImageBuf cache;
-        static std::vector<bool*> dependants{ &ROI_DIRTY, &LAYER_CHANNELS_DIRTY };
+        static std::vector<bool*> dependants{ &ROI_DIRTY, &LAYER_CHANNELS_DIRTY, &SPEC_DIRTY };
 
         if (IMG_DIRTY) {
             // evaluate
-            if (std::filesystem::exists(_input_file)) {
+            std::filesystem::path file = sequence_item(input_pattern(), frame());
+            if (std::filesystem::exists(file)) {
                 std::cout << "evaluate image" << "\n";
-                cache = OIIO::ImageBuf(_input_file.string().c_str());
+                cache = OIIO::ImageBuf(file.string().c_str());
 
                 // notify dependants
                 for (auto dep : dependants) { *dep = true; }
@@ -227,19 +231,21 @@ public:
 
     OIIO::ImageSpec spec() const {
         static OIIO::ImageSpec cache;
+        static std::vector<bool*> dependants{ &ROI_DIRTY, &LAYER_CHANNELS_DIRTY, &TEXTURE_DIRTY };
 
         if (SPEC_DIRTY) {
             // get global image cache
             auto is_image_cache = img().cachedpixels();
             ImageCache* image_cache = ImageCache::create(true /* global cache */);
 
-            ImageSpec cache;
             image_cache->get_imagespec(OIIO::ustring(img().name()), cache, subimage(), 0, false);
+
+            // notify dependants
+            for (auto dep : dependants) { *dep = true; }
 
             // clean flag
             SPEC_DIRTY = false;
         }
-
 
         return cache;
     }
@@ -251,10 +257,10 @@ public:
         if (ROI_DIRTY) {
             // evaluate
             std::cout << "evaluate roi" << "\n";
-            std::map<std::string, std::vector<int>> layers = group_channels(img().spec());
+            std::map<std::string, std::vector<int>> layers = group_channels(spec());
             if (layers.contains(selected_layer())) {
                 auto indices = layers[selected_layer()];
-                cache = OIIO::ROI(0, img().spec().width, 0, img().spec().height, 0, 1, indices[0], indices[0] + indices.size());
+                cache = OIIO::ROI(0, spec().width, 0, spec().height, 0, 1, indices[0], indices[0] + indices.size());
 
                 // notify dependants
                 for (auto dep : dependants) { *dep = true; }
@@ -273,7 +279,7 @@ public:
         if (LAYER_CHANNELS_DIRTY) {
             // eval
             std::cout << "Evaluate layer channels" << "\n";
-            cache = group_channels(img().spec());
+            cache = group_channels(spec());
 
             // notify dependants
             for (auto dep : dependants) { *dep = true; }
@@ -307,11 +313,11 @@ public:
                 auto is_image_cache = img().cachedpixels();
                 ImageCache* image_cache = ImageCache::create(true /* global cache */);
 
-                ImageSpec spec;
-                image_cache->get_imagespec(OIIO::ustring(img().name()), spec);
+                //ImageSpec spec;
+                //image_cache->get_imagespec(OIIO::ustring(img().name()), spec);
                 int chbegin = roi().chbegin;
                 int chend = roi().chend;
-                auto success = image_cache->get_pixels(OIIO::ustring(img().name()), subimage(), miplevel(), 0, spec.width, 0, spec.height, 0, 1, chbegin, chend, TypeDesc::FLOAT, data, OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, chbegin, chend);
+                auto success = image_cache->get_pixels(OIIO::ustring(img().name()), subimage(), miplevel(), 0, spec().width, 0, spec().height, 0, 1, chbegin, chend, TypeDesc::FLOAT, data, OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, chbegin, chend);
                 assert(("cant get pixels", success));
 
                 //auto success = img().get_pixels(roi(), OIIO::TypeDesc::FLOAT, data);
@@ -338,7 +344,6 @@ public:
                     glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
                     glBindTexture(GL_TEXTURE_2D, 0);
                 }
-                
 
                 // notify dependents
                 // no dependents
@@ -375,6 +380,8 @@ std::string to_string(OIIO::TypeDesc type) {
     }
 }
 
+
+
 int run_gui() {
     // start GUI
     glazy::init();
@@ -408,18 +415,28 @@ int run_gui() {
         if (ImGui::Begin("Read")) {
             static int START_FRAME = 10;
             static int END_FRAME = 20;
-            static int F = state.frame();
-            static fs::path sequence_filename;
-            static std::string derived_frame_filename;
+            //static fs::path sequence_filename;
+            //static std::string derived_frame_filename;
+
+            static fs::path sequence_pattern;
 
             if (ImGui::Button("Open...")) {
                 auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0");
+                //if (!filepath.empty()) {
+                //    sequence_filename = filepath;
+
+                //    find_sequence(sequence_filename, &START_FRAME, &END_FRAME);
+                //    if (F < START_FRAME) F = START_FRAME;
+                //    if (F > END_FRAME) F = END_FRAME;
+                //}
+
                 if (!filepath.empty()) {
-                    sequence_filename = filepath;
-                    
-                    find_sequence(sequence_filename, &START_FRAME, &END_FRAME);
-                    if (F < START_FRAME) F = START_FRAME;
-                    if (F > END_FRAME) F = END_FRAME;
+                    auto [pattern, first, last] = scan_sequence(filepath);
+                    state.set_input_pattern(pattern);
+                    START_FRAME = first;
+                    END_FRAME = last;
+                    if (state.frame() < START_FRAME) state.set_frame(START_FRAME);
+                    if (state.frame() > END_FRAME) state.set_frame(END_FRAME);
                 }
             }
 
@@ -429,21 +446,15 @@ int run_gui() {
             }
 
             if (play) {
-                F++;
-                if (F > END_FRAME) {
-                    F = START_FRAME; // loop
+                state.set_frame(state.frame() + 1);
+                if (state.frame() > END_FRAME ) {
+                    state.set_frame( START_FRAME ); // loop
                 }
             }
 
+            int F = state.frame();
             if (ImGui::SliderInt("frame", &F, START_FRAME, END_FRAME)) {
-                
-            }
-
-            derived_frame_filename = replace_framenumber_in_path(sequence_filename, F);
-            
-            // update state
-            if (state.input_file() != derived_frame_filename) {
-                state.set_input_file(derived_frame_filename);
+                state.set_frame(F);
             }
 
             static int subimage = state.subimage();
@@ -451,14 +462,15 @@ int run_gui() {
                 state.set_subimage(subimage);
             }
 
-            ImGui::Text("sequence filename: %s", sequence_filename.string().c_str());
-            ImGui::Text("derived frame filename: %s", derived_frame_filename.c_str());
-            ImGui::Text("actual filename: %s", state.input_file().string().c_str());
+
+            ImGui::Text("sequence pattern: %s [%d-%d]", state.input_pattern().string().c_str(), START_FRAME, END_FRAME);
+            ImGui::Text("image file: %s", state.img().name().c_str());
+
 
             if (ImGui::BeginTabBar("MyTabBar", ImGuiTabBarFlags_None))
             {
                 if (ImGui::BeginTabItem("info")) {
-                    auto spec = state.img().spec();
+                    auto spec = state.spec();
                     ImGui::Text("%d x %d x %d, %d channel, %s", spec.width, spec.height, spec.depth, spec.nchannels, to_string(spec.format));
                     ImGui::Text("deep: %s", spec.deep ? "true" : "false");
                     ImGui::Text("nsubimage: %d", state.img().nsubimages());
@@ -470,7 +482,7 @@ int run_gui() {
                 }
 
                 if (ImGui::BeginTabItem("details")) {
-                    auto info = state.img().spec().serialize(ImageSpec::SerialText);
+                    auto info = state.spec().serialize(ImageSpec::SerialText);
                     ImGui::Text("%s", info.c_str());
                     ImGui::EndTabItem();
                 }
@@ -478,7 +490,7 @@ int run_gui() {
                 if (ImGui::BeginTabItem("layers")) {
                     if (ImGui::BeginTable("table", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollX))
                     {
-                        auto layers = group_channels(state.img().spec());
+                        auto layers = group_channels(state.spec());
                         for (const auto & [name, indices] : layers)
                         {
                             ImGui::TableNextRow();
@@ -489,7 +501,7 @@ int run_gui() {
                             for (auto i : indices) {
                                 ImGui::TextColored({ 0.5,0.5,0.5,1.0 }, "#%i", i);
                                 ImGui::SameLine();
-                                ImGui::Text("%s", split_string(state.img().spec().channel_name(i), ".").back().c_str());
+                                ImGui::Text("%s", split_string(state.spec().channel_name(i), ".").back().c_str());
                                 ImGui::SameLine();
                             }
                         }
@@ -504,7 +516,7 @@ int run_gui() {
         }
 
         if (ImGui::Begin("Viewer")) {
-            auto layers = group_channels(state.img().spec());
+            auto layers = group_channels(state.spec());
 
             /******************
             * Show EXR layers *
@@ -535,11 +547,12 @@ int run_gui() {
         }
 
         /* show output filenames*/
+        /*
         if (ImGui::Begin("Split Layers")) {
             if (!state.input_file().empty()) {
                 if (ImGui::BeginTable("table", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollX)) {
 
-                    auto layers = group_channels(state.img().spec());
+                    auto layers = group_channels(state.spec());
                     for (auto const & [layer_name, indices] : layers) {
                         ImGui::TableNextRow();
                         ImGui::TableNextColumn();
@@ -555,6 +568,7 @@ int run_gui() {
             }
             ImGui::End();
         }
+        */
 
         glazy::end_frame();
     }
