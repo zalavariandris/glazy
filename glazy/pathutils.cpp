@@ -2,6 +2,7 @@
 
 #include "stringutils.h"
 #include <cassert>
+#include <cstdio> // printf sprintf snprintf
 
 std::vector<std::filesystem::path> find_sequence(std::filesystem::path input_path, int * start_frame, int * end_frame) {
     assert(std::filesystem::exists(input_path));
@@ -99,6 +100,8 @@ std::tuple<std::filesystem::path, int, int> scan_sequence(const std::filesystem:
 }
 
 std::filesystem::path sequence_item(const std::filesystem::path& pattern, int F) {
+    if (pattern.empty()) return std::filesystem::path();
+
     // copy from educative.io educative.io/edpresso/how-to-use-the-sprintf-method-in-c
     int size_s = std::snprintf(nullptr, 0, pattern.string().c_str(), F) + 1; // Extra space for '\0'
     if (size_s <= 0) { throw std::runtime_error("Error during formatting."); }

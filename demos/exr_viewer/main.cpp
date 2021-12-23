@@ -33,7 +33,41 @@ using namespace OIIO;
 
 #include <cassert>
 
+void TextureViewer(GLuint* fbo, GLuint* color_attachment, Camera* camera, GLuint img_texture, const OIIO::ROI& roi) {
+    auto item_pos = ImGui::GetCursorPos();
+    auto item_size = ImGui::GetContentRegionAvail();
+    static ImVec2 display_size;
 
+    if (display_size.x != item_size.x || display_size.y != item_size.y) {
+        //std::cout << "update fbo" << "\n";
+        display_size = item_size;
+        glDeleteTextures(1, color_attachment);
+        *color_attachment = imdraw::make_texture_float(item_size.x, item_size.y, NULL);
+        glDeleteFramebuffers(1, fbo);
+        *fbo = imdraw::make_fbo(*color_attachment);
+        camera->aspect = item_size.x / item_size.y;
+
+    }
+
+    ControlCamera(camera, item_size);
+    ImGui::SetItemAllowOverlap();
+    ImGui::SetCursorPos(item_pos);
+    ImGui::Image((ImTextureID)*color_attachment, item_size, ImVec2(0, 1), ImVec2(1, 0));
+
+    glBindFramebuffer(GL_FRAMEBUFFER, *fbo);
+    glClearColor(0.2, 0.2, 0.2, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glViewport(0, 0, item_size.x, item_size.y);
+    imdraw::set_projection(camera->getProjection());
+    imdraw::set_view(camera->getView());
+
+    imdraw::quad(img_texture,
+        { (float)roi.xbegin / 1000,  (float)roi.ybegin / 1000 },
+        { -(float)roi.width() / 1000, -(float)roi.height() / 1000 }
+    );
+    imdraw::grid();
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
 
 /*
   https://github.com/OpenImageIO/oiio/blob/e058dc8c4aa36ea42b4a19e26eeb56fa1fbc8973/src/iv/ivgl.cpp
@@ -41,52 +75,7 @@ using namespace OIIO;
     GLenum& glformat, GLenum& glinternalformat);
 */
 
-std::string to_string(OIIO::ImageBuf::IBStorage storage) {
-    switch (storage)
-    {
-    case OpenImageIO_v2_3::ImageBuf::UNINITIALIZED: return "UNINITIALIZED";
-    case OpenImageIO_v2_3::ImageBuf::LOCALBUFFER: return "LOCALBUFFER";
-    case OpenImageIO_v2_3::ImageBuf::APPBUFFER: return "APPBUFFER";
-    case OpenImageIO_v2_3::ImageBuf::IMAGECACHE: return "IMAGECACHE";
-    default: return "[Inknown storage type]";
-    }
-
-}
-
-inline std::string insert_layer_in_path(const fs::path & path,const std::string & layer_name) {
-    auto [stem, digits] = split_digits(path.stem().string());
-    auto layer_path = join_string({
-        path.parent_path().string(),
-        "/",
-        stem,
-        digits,
-        digits.empty() ? "" : ".",
-        layer_name,
-        path.extension().string()
-       }, "");
-    return layer_path;
-}
-
-inline std::string replace_framenumber_in_path(const fs::path& path, int framenumber) {
-    auto [stem, digits] = split_digits(path.stem().string());
-    int digits_count = digits.size();
-    // add leading zeros
-    std::ostringstream oss;
-    oss << std::setw(digits_count) << std::setfill('0') << framenumber;
-    digits = oss.str();
-
-    // comose path
-    auto layer_path = join_string({
-        path.parent_path().string(),
-        "/",
-        stem,
-        digits,
-        path.extension().string()
-    }, "");
-    return layer_path;
-}
-
-std::map<std::string, std::vector<int>> group_channels(const OIIO::ImageSpec & spec) {
+std::map<std::string, std::vector<int>> group_channels(const OIIO::ImageSpec& spec) {
     std::map<std::string, std::vector<int>> channel_groups;
 
     // main channels
@@ -107,44 +96,6 @@ std::map<std::string, std::vector<int>> group_channels(const OIIO::ImageSpec & s
     }
     return channel_groups;
 }
-
-void TextureViewer(GLuint* fbo, GLuint* color_attachment, Camera * camera, GLuint img_texture, const OIIO::ROI & roi) {
-    auto item_pos = ImGui::GetCursorPos();
-    auto item_size = ImGui::GetContentRegionAvail();
-    static ImVec2 display_size;
-
-    if (display_size.x != item_size.x || display_size.y != item_size.y) {
-        //std::cout << "update fbo" << "\n";
-        display_size = item_size;
-        glDeleteTextures(1, color_attachment);
-        *color_attachment = imdraw::make_texture_float(item_size.x, item_size.y, NULL);
-        glDeleteFramebuffers(1, fbo);
-        *fbo = imdraw::make_fbo(*color_attachment);
-        camera->aspect = item_size.x / item_size.y;
-        
-    }
-
-    ControlCamera(camera, item_size);
-    ImGui::SetItemAllowOverlap();
-    ImGui::SetCursorPos(item_pos);
-    ImGui::Image((ImTextureID)*color_attachment, item_size, ImVec2(0, 1), ImVec2(1, 0));
-
-    glBindFramebuffer(GL_FRAMEBUFFER, *fbo);
-    glClearColor(0.2, 0.2, 0.2, 1);
-    glClear(GL_COLOR_BUFFER_BIT);
-    glViewport(0, 0, item_size.x, item_size.y);
-    imdraw::set_projection(camera->getProjection());
-    imdraw::set_view(camera->getView());
-            
-    imdraw::quad(img_texture, 
-        { (float)roi.xbegin/1000,  (float)roi.ybegin  /1000 }, 
-        { -(float)roi.width()/1000, -(float)roi.height()/1000}
-    );
-    imdraw::grid();
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-}
-
-
 
 class State {
 private:
@@ -214,6 +165,7 @@ public:
 
         if (IMG_DIRTY) {
             // evaluate
+
             std::filesystem::path file = sequence_item(input_pattern(), frame());
             if (std::filesystem::exists(file)) {
                 std::cout << "evaluate image" << "\n";
@@ -357,30 +309,16 @@ public:
 };
 State state;
 
+/**
+* convert OIIO typedesc to string
+*/
 std::string to_string(OIIO::TypeDesc type) {
-    switch (type)
-    {
-        case OIIO::TypeDesc::UNKNOWN: return "UNKNOWN";
-        case OIIO::TypeDesc::NONE: return "NONE";
-        case OIIO::TypeDesc::UINT8: return "UINT8";
-        case OIIO::TypeDesc::INT8: return "INT8";
-        case OIIO::TypeDesc::UINT16: return "UINT16";
-        case OIIO::TypeDesc::INT16: return "INT16";
-        case OIIO::TypeDesc::UINT32: return "UINT32";
-        case OIIO::TypeDesc::INT32: return "INT32";
-        case OIIO::TypeDesc::UINT64: return "UINT64";
-        case OIIO::TypeDesc::INT64: return "INT64";
-        case OIIO::TypeDesc::HALF: return "HALF";
-        case OIIO::TypeDesc::FLOAT: return "FLOAT";
-        case OIIO::TypeDesc::DOUBLE: return "DOUBLE";
-        case OIIO::TypeDesc::STRING: return "STRING";
-        case OIIO::TypeDesc::PTR: return "PTR";
-        case OIIO::TypeDesc::LASTBASE: return "LASTBASE";
-        default: return "[Unknown TypeDesc type]";
-    }
+    /* does not wor with switch for some reason. */
+    if (type == OIIO::TypeHalf) return "half";
+    if (type == OIIO::TypeFloat) return "float";
+    if (type == OIIO::TypeUInt8) return "uint8";
+    return "[Unknown TypeDesc type]";
 }
-
-
 
 int run_gui() {
     // start GUI
@@ -471,7 +409,13 @@ int run_gui() {
             {
                 if (ImGui::BeginTabItem("info")) {
                     auto spec = state.spec();
-                    ImGui::Text("%d x %d x %d, %d channel, %s", spec.width, spec.height, spec.depth, spec.nchannels, to_string(spec.format));
+                    std::string image_format="initial format";
+                    
+
+                    ImGui::Text("%d x %d x %d, %d channel, %s", spec.width, spec.height, spec.depth, spec.nchannels, to_string(spec.format).c_str());
+
+
+
                     ImGui::Text("deep: %s", spec.deep ? "true" : "false");
                     ImGui::Text("nsubimage: %d", state.img().nsubimages());
                     ImGui::Text("subimage: %d", state.img().subimage());
@@ -577,13 +521,9 @@ int run_gui() {
     return EXIT_SUCCESS;
 }
 
-
-
-
 int main(int argc, char * argv[])
 {
     return run_gui();
-
     return EXIT_SUCCESS;
 }
 

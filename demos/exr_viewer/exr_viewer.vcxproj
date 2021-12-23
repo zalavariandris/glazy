@@ -152,7 +152,9 @@
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="helpers.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="textureviewer.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="read_exr.rc" />

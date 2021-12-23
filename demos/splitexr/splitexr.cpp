@@ -1,7 +1,7 @@
 // splitexr.cpp : This file contains the 'main' function. Program execution begins and ends there.
 //
 
-#define VERSION 0.12
+#define VERSION 0.13
 
 #include <iostream>
 #include <OpenImageIO/imagecache.h>
@@ -90,22 +90,25 @@ bool process_file(const std::filesystem::path& input_file, bool skip_existing=tr
             extension.string()
         }, "");
 
-        if (skip_existing && std::filesystem::exists(output_path)) continue;
+        if (skip_existing && std::filesystem::exists(output_path)) {
+            std::cout << output_path << " exists: " << "skipping!" << "\n";
+            continue;
+        }
 
         OIIO::ImageBuf layer;
         std::cout << "LAYER NAME: " << layer_name << "\n";
         if (layer_name == "RGB_color") {
-            std::cout << "!!!!!!!!!!!!!!! COLOR" << "\n";
+            //std::cout << "!!!!!!!!!!!!!!! COLOR" << "\n";
             for (auto i : indices) { std::cout << i; }; std::cout << "\n";
             layer = OIIO::ImageBufAlgo::channels(img, 4, { 0,1,2,3 });
         }
         else if (layer_name == "Alpha") {
-            std::cout << "!!!!!!!!!!!!!!! ALPHA" << "\n";
+            //std::cout << "!!!!!!!!!!!!!!! ALPHA" << "\n";
             for (auto i : indices) { std::cout << i; }; std::cout << "\n";
             layer = OIIO::ImageBufAlgo::channels(img, 4, { 3,3,3,3 }, {}, { "R", "G", "B", "A" }, false, 0);
         }
         else if (layer_name == "ZDepth") {
-            std::cout << "!!!!!!!!!!!!!!! ZDepth" << "\n";
+            //std::cout << "!!!!!!!!!!!!!!! ZDepth" << "\n";
             for (auto i : indices) { std::cout << i; }; std::cout << "\n";
             //OIIO::ImageBufAlgo::channels(src, nchannels, channelorder, channelvalues, newnames, shufflenames, threads);
             layer = OIIO::ImageBufAlgo::channels(img, 4, { 4,4,4,3 }, {}, { "R", "G", "B", "A"}, false, 0);
