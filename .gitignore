@@ -36,3 +36,8 @@
 x64/
 Release/
 Debug/
+
+*.pdb
+*.log
+*.tlog
+*.iobj

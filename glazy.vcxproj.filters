@@ -81,6 +81,9 @@
     <ClInclude Include="glazy\pathutils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="glazy\imageio.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="glazy\imdraw\imdraw.cpp">
@@ -129,6 +132,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="glazy\pathutils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="glazy\imageio.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

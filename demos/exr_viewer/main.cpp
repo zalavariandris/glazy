@@ -33,7 +33,10 @@ using namespace OIIO;
 
 #include <cassert>
 
-void TextureViewer(GLuint* fbo, GLuint* color_attachment, Camera* camera, GLuint img_texture, const OIIO::ROI& roi) {
+#include "imageio.h"
+
+void TextureViewer(GLuint* fbo, GLuint* color_attachment, Camera* camera, GLuint img_texture, ImVec2 pos = { 0,0 }, ImVec2 size = { 1, 1 }) {
+    
     auto item_pos = ImGui::GetCursorPos();
     auto item_size = ImGui::GetContentRegionAvail();
     static ImVec2 display_size;
@@ -62,8 +65,10 @@ void TextureViewer(GLuint* fbo, GLuint* color_attachment, Camera* camera, GLuint
     imdraw::set_view(camera->getView());
 
     imdraw::quad(img_texture,
-        { (float)roi.xbegin / 1000,  (float)roi.ybegin / 1000 },
-        { -(float)roi.width() / 1000, -(float)roi.height() / 1000 }
+        { pos.x, pos.y },
+        {size.x, size.y}
+        //{ (float)roi.xbegin / 1000,  (float)roi.ybegin / 1000 },
+        //{ -(float)roi.width() / 1000, -(float)roi.height() / 1000 }
     );
     imdraw::grid();
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -75,6 +80,7 @@ void TextureViewer(GLuint* fbo, GLuint* color_attachment, Camera* camera, GLuint
     GLenum& glformat, GLenum& glinternalformat);
 */
 
+/*
 std::map<std::string, std::vector<int>> group_channels(const OIIO::ImageSpec& spec) {
     std::map<std::string, std::vector<int>> channel_groups;
 
@@ -96,6 +102,28 @@ std::map<std::string, std::vector<int>> group_channels(const OIIO::ImageSpec& sp
     }
     return channel_groups;
 }
+*/
+
+template <typename T>
+class StateVar {
+private:
+    mutable bool dirty;
+    std::function<T()> evaluate;
+    T cache;
+    std::vector<T*> dependants;
+public:
+    StateVar(std::function<T()> f) :evaluate(f){};
+    T get() {
+        if (dirty) {
+            cache = evaluate(); // evaluate
+            dirty = false; // clear dirty flag
+            for (auto dep : dependants) dep->dirty = true; // notify dependants
+        }
+        return cache;
+    }
+};
+
+auto myvar = StateVar<int>([]() {return 4; });
 
 class State {
 private:
@@ -105,41 +133,103 @@ private:
     int _subimage;
     int _miplevel;
 
-    mutable bool IMG_DIRTY{ true };
-    mutable bool SPEC_DIRTY{ true };
-    mutable bool ROI_DIRTY{ true };
-    mutable bool LAYER_CHANNELS_DIRTY{ true };
+    mutable bool INPUT_FILE_DIRTY{ true };
+    mutable bool LAYERS_DIRTY{ true };
+    mutable bool CHANNELS_DIRTY{ true };
     mutable bool TEXTURE_DIRTY{ true };
 public:
     // State setters and getters
     void set_input_pattern(std::filesystem::path val) {
+        static std::vector<bool*> dependants{ &INPUT_FILE_DIRTY };
         _input_pattern = val;
-
-        // dependents
-        IMG_DIRTY = true;
+        for (auto dep : dependants) *dep = true; // notify dependants
     }
     std::filesystem::path input_pattern() const { return _input_pattern; }
 
-    void set_selected_layer(std::string val) {
-        static std::vector<bool*> dependants{ &TEXTURE_DIRTY, &ROI_DIRTY };
-        _selected_layer = val;
-
-        // notify dependants
-        for (auto dep : dependants) { *dep = true; }
-    }
-    std::string selected_layer() const { return _selected_layer;}
-
     void set_frame(int val) {
-        static std::vector<bool*> dependants{ &SPEC_DIRTY, &IMG_DIRTY };
+        static std::vector<bool*> dependants{ &INPUT_FILE_DIRTY};
         _frame = val;
-
-        // notify dependants
-        for (auto dep : dependants) { *dep = true; }
+        for (auto dep : dependants) *dep = true; // notify dependants
     }
     int frame() const{ return _frame;  }
 
+    void set_selected_layer(std::string val) {
+        static std::vector<bool*> dependants{ &CHANNELS_DIRTY, &TEXTURE_DIRTY };
+        _selected_layer = val;
+        for (auto dep : dependants) *dep = true; // notify dependants
+    }
+    std::string selected_layer() const { return _selected_layer; }
+
+    // computed
+    std::filesystem::path input_file() {
+        static std::vector<bool*> dependants{ &LAYERS_DIRTY, &CHANNELS_DIRTY, &TEXTURE_DIRTY };
+        static std::filesystem::path cache;
+        if (INPUT_FILE_DIRTY) {
+            cache = sequence_item(input_pattern(), frame()); // evaluate
+            INPUT_FILE_DIRTY = false; // clear dirty flag
+            for (auto dep : dependants) *dep = true; // notify dependants
+        }
+        return cache;
+    }
+
+    std::vector<std::string> layers() {
+        static std::vector<bool*> dependants{ };
+        static std::vector<std::string> cache;
+        if (LAYERS_DIRTY) {
+            cache = ImageIO::get_layers(input_file()); // evaluate
+            LAYERS_DIRTY = false; // clear dirty flag
+            for (auto dep : dependants) *dep = true; // notify dependants
+        }
+        return cache;
+    }
+
+    std::vector<std::string> channels() {
+        static std::vector<bool*> dependants{ };
+        static std::vector<std::string> cache;
+        if (CHANNELS_DIRTY) {
+            cache = ImageIO::get_channels(input_file(), selected_layer()); // evaluate
+            CHANNELS_DIRTY = false; // clear dirty flag
+            for (auto dep : dependants) *dep = true; // notify dependants
+        }
+        return cache;
+    }
+
+    GLuint texture() {
+        static GLuint cache;
+        if (TEXTURE_DIRTY) {            
+            OIIO::ImageSpec spec;
+            OIIO::ImageInput::open(input_file().string(), &spec);
+            float* data = (float*)malloc(spec.width * spec.height * spec.nchannels * sizeof(float));
+            ImageIO::get_pixels(input_file(), selected_layer(), data);
+            
+            cache = imdraw::make_texture_float(
+                spec.width, spec.height,
+                data, // data
+                spec.nchannels == 3 ? GL_RGB : GL_RED, // internal format
+                spec.nchannels == 3 ? GL_RGB : GL_RED, // format
+                GL_FLOAT, // type
+                GL_LINEAR, //min_filter
+                GL_NEAREST, //mag_filter
+                GL_REPEAT, //wrap_s
+                GL_REPEAT //wrap_t
+            );
+            if (spec.nchannels == 1) {
+                glBindTexture(GL_TEXTURE_2D, cache);
+                GLint swizzleMask[] = { GL_RED, GL_RED, GL_RED, GL_ONE };
+                glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
+                glBindTexture(GL_TEXTURE_2D, 0);
+            }
+
+            free(data);
+        }
+
+        return cache;
+    }
+
+    /*
+
     void set_subimage(int val) {
-        static std::vector<bool*> dependants{ &SPEC_DIRTY, &TEXTURE_DIRTY };
+        static std::vector<bool*> dependants{ &IMG_DIRTY, &SPEC_DIRTY, &TEXTURE_DIRTY };
         _subimage = val;
 
         // notify dependants
@@ -188,7 +278,7 @@ public:
         if (SPEC_DIRTY) {
             // get global image cache
             auto is_image_cache = img().cachedpixels();
-            ImageCache* image_cache = ImageCache::create(true /* global cache */);
+            ImageCache* image_cache = ImageCache::create(true); // global cache
 
             image_cache->get_imagespec(OIIO::ustring(img().name()), cache, subimage(), 0, false);
 
@@ -245,7 +335,7 @@ public:
     GLuint image_texture() {
         static GLuint cache = 0;
         if (TEXTURE_DIRTY) {
-            /* EVALUATE */
+            // EVALUATE
             if (layer_channels().contains(selected_layer())) {
                 std::cout << "\n";
                 std::cout << "Evaluate textures" << "\n";
@@ -263,7 +353,7 @@ public:
 
                 // get global cache
                 auto is_image_cache = img().cachedpixels();
-                ImageCache* image_cache = ImageCache::create(true /* global cache */);
+                ImageCache* image_cache = ImageCache::create(true); // global cache
 
                 //ImageSpec spec;
                 //image_cache->get_imagespec(OIIO::ustring(img().name()), spec);
@@ -276,7 +366,7 @@ public:
                 //auto success = layer.get_pixels(OIIO::ROI(), OIIO::TypeDesc::FLOAT, data);
                 assert(success);
 
-                /* make texture */
+                // Make texture
                 std::cout << "- make texture..." << "\n";
                 if (cache != 0) { glDeleteTextures(1, &cache); } // delete prev texture if exists
                 cache = imdraw::make_texture_float(
@@ -305,6 +395,7 @@ public:
         }
         return cache;
     }
+    */
 
 };
 State state;
@@ -320,12 +411,66 @@ std::string to_string(OIIO::TypeDesc type) {
     return "[Unknown TypeDesc type]";
 }
 
+struct TreeNode{
+    std::map<std::string, TreeNode> children;
+
+    bool contains(std::string key) {
+        return children.contains(key);
+    }
+
+    TreeNode& operator[](std::string key) {
+        return children[key];
+    }
+
+    std::string repr(int indent = 0) {
+        std::stringstream ss;
+        for (auto [key, value] : children) {
+            for (auto i = 0; i < indent; i++) ss << "  ";
+            ss << key << "\n";
+            ss << value.repr(indent + 2);
+        }
+        return ss.str();
+    }
+};
+
+
+TreeNode get_channel_tree(const OIIO::ImageSpec & spec) {
+    TreeNode tree;
+    for (auto c = 0; c < spec.nchannels; c++) {
+        auto segments = split_string(spec.channel_name(c), ".");
+
+        TreeNode* current_node;
+        current_node = &tree;
+        for (auto segment : segments) {
+            if (!current_node->contains(segment)) {
+                (*current_node)[segment] = TreeNode();
+            }
+            current_node = &(*current_node)[segment];
+        }
+    }
+    return tree;
+}
+
+void BuildImGuiTree(TreeNode* node) {
+    for (auto &[key, child] : node->children) {
+        if (child.children.empty()) {
+            ImGui::SameLine();
+            ImGui::Text("  %s", key.c_str());
+        }else{
+            if (ImGui::TreeNode(key.c_str())) {
+                BuildImGuiTree(&child);
+                ImGui::TreePop();
+            }
+        }
+    }
+}
+
 int run_gui() {
     // start GUI
     glazy::init();
 
     // setup cache
-    ImageCache* cache = ImageCache::create(true /* shared cache */);
+    ImageCache* cache = ImageCache::create(true); // global cache
     cache->attribute("max_memory_MB", 1024.0f * 16);
     cache->attribute("forcefloat", 1);
     //cache->attribute("autotile", 64);
@@ -333,18 +478,16 @@ int run_gui() {
     while (glazy::is_running()) {
         glazy::new_frame();
 
-        ImGui::ShowStyleEditor();
-
         if (ImGui::Begin("Cache")) {
-            auto cache = state.img().imagecache();
-            if (cache) {
+            ImageCache* image_cache = ImageCache::create(true); // global cache
+            if (image_cache) {
                 int max_memory;
-                cache->getattribute("max_memory_MB", TypeDesc::INT, &max_memory);
+                image_cache->getattribute("max_memory_MB", TypeDesc::INT, &max_memory);
                 ImGui::Text("%d", max_memory);
                 if (ImGui::InputInt("set max memory MB", &max_memory)) {
-                    cache->attribute("max_memory_MB", max_memory);
+                    image_cache->attribute("max_memory_MB", max_memory);
                 }
-                auto stats = cache->getstats();
+                auto stats = image_cache->getstats();
                 ImGui::Text("%s", stats.c_str());
             }
             ImGui::End();
@@ -395,59 +538,68 @@ int run_gui() {
                 state.set_frame(F);
             }
 
-            static int subimage = state.subimage();
-            if (ImGui::InputInt("subimage", &subimage)) {
-                state.set_subimage(subimage);
-            }
-
 
             ImGui::Text("sequence pattern: %s [%d-%d]", state.input_pattern().string().c_str(), START_FRAME, END_FRAME);
-            ImGui::Text("image file: %s", state.img().name().c_str());
+            ImGui::Text("image file: %s", state.input_file().string().c_str());
 
 
             if (ImGui::BeginTabBar("MyTabBar", ImGuiTabBarFlags_None))
             {
+                //if (ImGui::BeginTabItem("channel tree")) {
+                //    auto root = get_channel_tree(state.spec());
+                //    //ImGui::Text("%s", root.repr().c_str());
+                //    ImGui::NewLine();
+                //    BuildImGuiTree(&root);
+
+
+                //    ImGui::EndTabItem();
+                //}
                 if (ImGui::BeginTabItem("info")) {
-                    auto spec = state.spec();
+                    OIIO::ImageSpec spec;
+                    auto in = OIIO::ImageInput::open(state.input_file().string(), &spec);
                     std::string image_format="initial format";
                     
 
+        
                     ImGui::Text("%d x %d x %d, %d channel, %s", spec.width, spec.height, spec.depth, spec.nchannels, to_string(spec.format).c_str());
 
-
-
-                    ImGui::Text("deep: %s", spec.deep ? "true" : "false");
-                    ImGui::Text("nsubimage: %d", state.img().nsubimages());
-                    ImGui::Text("subimage: %d", state.img().subimage());
-                    ImGui::Text("nmiplevels: %d", state.img().nmiplevels());
-                    ImGui::Text("miplevel: %d", state.img().miplevel());
-                    
+                    //ImGui::Text("deep: %s", spec.deep ? "true" : "false");
+                    //ImGui::Text("nsubimage: %d", state.img().nsubimages());
+                    //ImGui::Text("subimage: %d", state.img().subimage());
+                    //ImGui::Text("nmiplevels: %d", state.img().nmiplevels());
+                    //ImGui::Text("miplevel: %d", state.img().miplevel());
+                    if(in) in->close();
                     ImGui::EndTabItem();
                 }
 
                 if (ImGui::BeginTabItem("details")) {
-                    auto info = state.spec().serialize(ImageSpec::SerialText);
+                    OIIO::ImageSpec spec;
+                    auto in = OIIO::ImageInput::open(state.input_file().string(), &spec);
+                    auto info = spec.serialize(ImageSpec::SerialText);
                     ImGui::Text("%s", info.c_str());
+                    in->close();
                     ImGui::EndTabItem();
                 }
 
                 if (ImGui::BeginTabItem("layers")) {
                     if (ImGui::BeginTable("table", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollX))
                     {
-                        auto layers = group_channels(state.spec());
-                        for (const auto & [name, indices] : layers)
+                        auto layers = state.layers();
+                        for (const auto & name : layers)
                         {
                             ImGui::TableNextRow();
                             ImGui::TableNextColumn();
                             ImGui::Text(name.c_str());
                             ImGui::TableNextColumn();
 
-                            for (auto i : indices) {
-                                ImGui::TextColored({ 0.5,0.5,0.5,1.0 }, "#%i", i);
-                                ImGui::SameLine();
-                                ImGui::Text("%s", split_string(state.spec().channel_name(i), ".").back().c_str());
-                                ImGui::SameLine();
-                            }
+
+
+                            //for (auto i : indices) {
+                            //    ImGui::TextColored({ 0.5,0.5,0.5,1.0 }, "#%i", i);
+                            //    ImGui::SameLine();
+                            //    ImGui::Text("%s", split_string(state.spec().channel_name(i), ".").back().c_str());
+                            //    ImGui::SameLine();
+                            //}
                         }
                         ImGui::EndTable();
                     }
@@ -460,14 +612,14 @@ int run_gui() {
         }
 
         if (ImGui::Begin("Viewer")) {
-            auto layers = group_channels(state.spec());
+            auto layers = state.layers();
 
             /******************
             * Show EXR layers *
             *******************/
             if (ImGui::BeginCombo("layers", state.selected_layer().c_str()))
             {
-                for (const auto& [layer_name, indices] : state.layer_channels())
+                for (const auto& layer_name : state.layers())
                 {
                     bool is_selected = (layer_name == state.selected_layer());
                     if (ImGui::Selectable(layer_name.c_str(), is_selected)) {
@@ -486,7 +638,7 @@ int run_gui() {
             static GLuint fbo;
             static GLuint color_attachment;
             static Camera camera;
-            TextureViewer(&fbo, &color_attachment, &camera, state.image_texture(), state.roi());
+            TextureViewer(&fbo, &color_attachment, &camera, state.texture(), {0,0}, {1,1});
             ImGui::End();
         }
 

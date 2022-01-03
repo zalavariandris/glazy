@@ -504,8 +504,15 @@ namespace glazy {
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();
 		ImGuiIO& io = ImGui::GetIO();
+		io.ConfigFlags |= ImGuiConfigFlags_DockingEnable; // enable docking
+		io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable; // enable multiviewports
 		
 		
+		ImGuiStyle& style = ImGui::GetStyle();
+		if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+			style.WindowRounding = 0.0f;
+			style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+		}
 
 		ImGui_ImplGlfw_InitForOpenGL(window, true);
 		ImGui_ImplOpenGL3_Init();
@@ -518,12 +525,12 @@ namespace glazy {
 		//io.Fonts->AddFontFromFileTTF("C:/WINDOWS/FONTS/ARIAL.ttf", 13*xscale);
 		std::cout << "dpi scale: " << xscale << std::endl;
 		io.Fonts->AddFontFromFileTTF("C:/WINDOWS/FONTS/SEGUIVAR.ttf", 16 * xscale, &cfg);
-		
+
 		ImGui::GetStyle().ScaleAllSizes(xscale);
 
 		//io.Fonts->GetTexDataAsRGBA32();// or GetTexDataAsAlpha8()
 
-		ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable; // enable docking
+		
 		
 		ImPlot::CreateContext();
 
@@ -637,6 +644,8 @@ namespace glazy {
 		{
 			static bool themes;
 			static bool stats;
+			static bool imgui_demo;
+			static bool imgui_style;
 			ImGui::BeginMainMenuBar();
 			if (ImGui::BeginMenu("glazy"))
 			{
@@ -645,6 +654,8 @@ namespace glazy {
 				ImGui::Separator();
 				ImGui::MenuItem("themes", "", &themes);
 				ImGui::MenuItem("stats", "", &stats);
+				ImGui::MenuItem("imgui demo", "", &imgui_demo);
+				ImGui::MenuItem("imgui style", "", &imgui_style);
 				ImGui::EndMenu();
 			}
 			
@@ -658,7 +669,7 @@ namespace glazy {
 			ImGui::EndMainMenuBar();
 
 			// Show stats
-			if (stats && ImGui::Begin("stats")) {
+			if (stats && ImGui::Begin("stats", &stats)) {
 				std::vector<float> x_data;
 				static std::vector<float> fps_history;
 
@@ -687,9 +698,9 @@ namespace glazy {
 			}
 
 			// Show themes window
-			if (themes && ImGui::Begin("theme")) {
+			if (themes && ImGui::Begin("themes", &themes)) {
 				static int current_item = 0;
-				if (ImGui::Combo("theme", &current_item, "photoshop\0VS\0game\0darkness")) {
+				if (ImGui::Combo("themes", &current_item, "photoshop\0VS\0game\0darkness")) {
 					switch (current_item) {
 					case 0:
 						ApplyPhotoshopTheme();
@@ -710,6 +721,15 @@ namespace glazy {
 				}
 				ImGui::End();
 			}
+
+			if (imgui_demo) {
+				ImGui::ShowDemoWindow();
+			}
+			if (imgui_style) {
+				ImGui::Begin("StyleEditor", &imgui_style);
+				ImGui::ShowStyleEditor();
+				ImGui::End();
+			}
 		}
 
 		//control_camera(camera, display_w, display_h);
@@ -720,6 +740,13 @@ namespace glazy {
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		ImGui::Render(); // render imgui
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData()); // draw imgui to screen
+
+		if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+			GLFWwindow* backup_current_context = glfwGetCurrentContext();
+			ImGui::UpdatePlatformWindows();
+			ImGui::RenderPlatformWindowsDefault();
+			glfwMakeContextCurrent(backup_current_context);
+		}
 
 		/* SWAP BUFFERS */
 		glfwSwapBuffers(window);
