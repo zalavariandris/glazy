@@ -14,16 +14,19 @@ std::vector<std::string> split_string(const std::string& text, const std::string
     return tokens;
 };
 
-std::string join_string(const std::vector<std::string>& tokens, const std::string& delimiter) {
-    std::string text;
-    // chan all but last items
-    for (auto i = 0; i < tokens.size() - 1; i++) {
-        text += tokens[i];
-        text += delimiter;
+std::string join_string(const std::vector<std::string>& segments, const std::string& delimiter, int range_start, int range_end) {
+    if (range_end < 0) range_end = segments.size();
+    assert(("invalid range", range_start < range_end));
+    std::string result;
+
+    // append all +delimiter but last item
+    for (auto i = range_start; i < range_end-1; i++) {
+        result += segments[i];
+        result += delimiter;
     }
     // append last item
-    text += tokens.back();
-    return text;
+    result += segments[range_end-1];
+    return result;
 }
 
 std::tuple<std::string, std::string> split_digits(const std::string& stem) {

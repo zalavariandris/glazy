@@ -5,6 +5,8 @@
 
 #include "glazy.h"
 #include "pathutils.h"
+#include "stringutils.h"
+
 #include "OpenImageIO/imageio.h""
 #include "OpenImageIO/imagecache.h"
 #include <set>
@@ -58,7 +60,7 @@ public:
         name = _name;
     };
 
-    T get() const {
+    const T get() const {
         if (!depstack.empty()) {
             dependants.insert(depstack.back());
         }
@@ -74,9 +76,9 @@ public:
     }
 };
 
-auto state_pattern = State<std::filesystem::path>("C:/Users/andris/Desktop/openexr-images-master/Beachball/singlepart.%04d.exr", "pattern");
+auto state_pattern = State<std::filesystem::path>("C:/Users/zalav/Desktop/openexr-images-master/Beachball/singlepart.%04d.exr", "pattern");
 auto state_frame = State<int>(1, "frame");
-auto selected_group = State<int>(0, "selected\ngroup");
+auto selected_group = State<std::string>("color", "selected\ngroup");
 auto selected_subimage = State<int>(0, "selected\nsubimage");
 
 auto computed_input_frame = Lazy<std::filesystem::path>([]() {
@@ -100,17 +102,56 @@ auto subimages = Lazy<std::vector<std::string>>([]() {
     return result;
 }, "subimages");
 
-auto groups = Lazy<std::vector<std::string>>([]()->std::vector<std::string> {
+auto groups = Lazy<std::map<std::string, std::tuple<int, int>>>([]()->std::map<std::string, std::tuple<int, int>> {
     if (!std::filesystem::exists(computed_input_frame.get())) return {};
 
     auto name = computed_input_frame.get().string();
-    auto spec = OIIO::ImageSpec();
-    auto in = OIIO::ImageInput::open(name, &spec);
-    if (in->seek_subimage(selected_subimage.get(), 0)) {
-        std::vector<std::string> channel_names;
+    
+    auto in = OIIO::ImageInput::open(name);
+    if (in->seek_subimage(selected_subimage.get(), 0))
+    {
+        auto image_cache = OIIO::ImageCache::create(true);
+        OIIO::ImageSpec spec;
+        image_cache->get_imagespec(OIIO::ustring(computed_input_frame.get().string()), spec, selected_subimage.get(), 0);
+
+        std::map<std::string, std::tuple<int, int>> channel_names;
         for (auto c = 0; c < in->spec().nchannels; c++) {
             auto channel_name = in->spec().channel_name(c);
-            channel_names.push_back(channel_name);
+            std::string group_name = "other";
+            if (channel_name == "R" || channel_name == "G" || channel_name == "B" || channel_name == "A") {
+                group_name = "color";
+            }
+            else if (channel_name == "Z") {
+                group_name = "depth";
+            }
+            else {
+                auto channel_segments = split_string(channel_name, ".");
+                if (channel_segments.size() > 1) {
+                    std::cout << channel_name << ": ";
+                    for (auto seg : channel_segments) std::cout << seg << ",";
+                    group_name = join_string(channel_segments, ".", 0, channel_segments.size() - 1);
+                    std::cout << " ->" << group_name;
+                    std::cout << "\n";
+                }
+                else {
+                    group_name = "other";
+                }
+            }
+            
+            if (!channel_names.contains(group_name)) {
+                channel_names[group_name] = { c, c+1 };
+            }
+            else {
+                auto& chrange = channel_names[group_name];
+
+                if (c < std::get<0>(chrange)) {
+                    std::get<0>(chrange) = c;
+                }
+                if (c > std::get<1>(chrange)) {
+                    std::get<1>(chrange) = c+1;
+                }
+            }
+
         }
         return channel_names;
     }
@@ -119,18 +160,91 @@ auto groups = Lazy<std::vector<std::string>>([]()->std::vector<std::string> {
 }, "groups");
 
 auto texture = Lazy<GLuint>([]()->GLuint {
+    auto name = computed_input_frame.get().string();
+    auto in = OIIO::ImageInput::open(name);
+    if (in->seek_subimage(selected_subimage.get(), 0))
+    {
 
+        std::cout << "get pixels" << "\n";
+        auto image_cache = OIIO::ImageCache::create(true);
+        OIIO::ImageSpec spec;
+        image_cache->get_imagespec(OIIO::ustring(name), spec, selected_subimage.get(), 0);
+
+        std::map<std::string, std::tuple<int, int>> group_map = groups.get();
+        auto [chbegin, chend] = group_map[selected_group.get()];
+        int nchannels = chend - chbegin;
+        assert(("cannot display more than 4 channels", nchannels <= 4));
+
+        std::cout << selected_group.get() << ": " << chbegin << "-" << chend << " #" << nchannels << "\n";
+        auto x = spec.x;
+        auto y = spec.y;
+        int w = spec.width;
+        int h = spec.height;
+        float* data = (float*)malloc(spec.width * spec.height * nchannels * sizeof(float));
+        image_cache->get_pixels(OIIO::ustring(name), selected_subimage.get(), 0, x, x+w, y, y+h, 0, 1, chbegin, chend,
+            OIIO::TypeFloat,
+            data,
+            OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride,
+            chbegin, chend);
+
+        int format = GL_RGB;
+        switch (nchannels) {
+            case 1:
+                format = GL_RED;
+                break;
+            case 2:
+                format = GL_RG;
+                break;
+            case 3:
+                format = GL_RGB;
+                break;
+            case 4:
+                format = GL_RGBA;
+        }
+        std::cout << "make texture" << "\n";
+        GLuint tex = imdraw::make_texture_float(
+            spec.width, spec.height,
+            data, // data
+            format, // internal format
+            format, // format
+            GL_FLOAT, // type
+            GL_LINEAR, //min_filter
+            GL_NEAREST, //mag_filter
+            GL_REPEAT, //wrap_s
+            GL_REPEAT //wrap_t
+        );
+
+
+        if (nchannels == 1) {
+            std::cout << "swizzle R" << "\n";
+            glBindTexture(GL_TEXTURE_2D, tex);
+            GLint swizzleMask[] = { GL_RED, GL_RED, GL_RED, GL_ONE };
+            glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
+            glBindTexture(GL_TEXTURE_2D, 0);
+        }
+        if(nchannels==2){
+            std::cout << "swizzle RG" << "\n";
+            glBindTexture(GL_TEXTURE_2D, tex);
+            GLint swizzleMask[] = { GL_RED, GL_GREEN, GL_ZERO, GL_ONE };
+            glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
+            glBindTexture(GL_TEXTURE_2D, 0);
+        }
+
+        free(data);
+
+        return tex;
+    }
     return 0;
 }, "texture");
 
 //std::filesystem::path INPUT_PATTERN = "C:/Users/andris/Desktop/openexr-images-master/Beachball/singlepart.%04d.exr";
 int START_FRAME = 1;
 int END_FRAME = 8;
-int SELECTED_SUBIMAGE = 0;
-int WIDTH = 0;
-int HEIGHT = 0;
-std::vector<std::string> SUBIMAGES;
-int SELECTED_GROUP = 0;
+//int SELECTED_SUBIMAGE = 0;
+//int WIDTH = 0;
+//int HEIGHT = 0;
+//std::vector<std::string> SUBIMAGES;
+//int SELECTED_GROUP = 0;
 
 void layout_nodes() {
     // collect edges
@@ -179,7 +293,7 @@ void layout_nodes() {
     for (auto [u, layer]:layers) {
         int v = 0;
         for (auto node : layer) {
-            node->pos = { v*150.f+100, u*120.f+300 };
+            node->pos = { v*150.f+50, u*120.f+50 };
             v += 1;
         }
     }
@@ -192,7 +306,6 @@ void layout_nodes() {
 
 int main()
 {
-
     glazy::init();
     while (glazy::is_running())
     {
@@ -201,7 +314,6 @@ int main()
         if (ImGui::Begin("DAG")) {
             layout_nodes();
             auto drawlist = ImGui::GetWindowDrawList();
-            drawlist->AddCallback
             auto windowpos = ImGui::GetWindowPos();
 
             int i = 0;
@@ -213,11 +325,22 @@ int main()
 
             // draw edges
             for (auto node : nodes) {
-                ImVec2 P1 = { windowpos.x + node->pos.x, windowpos.y + node->pos.y };
+                glm::vec2 P1 = {windowpos.x + node->pos.x, windowpos.y + node->pos.y};
                 for (auto dep : node->dependants) {
-                    ImVec2 P2 = { windowpos.x + dep->pos.x, windowpos.y + dep->pos.y };
-                    drawlist->AddLine(ImVec2(P1.x-(P1.x-P2.x)*0.2, P1.y - (P1.y - P2.y) * 0.2), P2, ImColor(200, 200, 200), 1.0);
-                    
+                    glm::vec2 P2 = { windowpos.x + dep->pos.x, windowpos.y + dep->pos.y };
+
+                    const float offset = 13.0f;
+                    const float head_size = 5.0f;
+                    auto forward = glm::normalize(P2 - P1);
+                    auto right = glm::vec2(forward.y, -forward.x);
+                    auto head = P2 - forward * offset;
+                    auto tail = P1 + forward * offset;
+                    auto right_wing = head - (forward * head_size) + (right * head_size);
+                    auto left_wing = head - (forward * head_size) - (right * head_size);
+
+                    drawlist->AddLine(ImVec2(tail.x, tail.y), ImVec2(head.x, head.y), ImColor(200, 200, 200), 1.0);
+                    drawlist->AddLine(ImVec2(head.x, head.y), ImVec2(left_wing.x, left_wing.y), ImColor(200, 200, 200), 1.0);
+                    drawlist->AddLine(ImVec2(head.x, head.y), ImVec2(right_wing.x, right_wing.y), ImColor(200, 200, 200), 1.0);
                 }
             }
             
@@ -249,11 +372,11 @@ int main()
             ImGui::Text("frame filename: %s", computed_input_frame.get().string().c_str());
 
             if (!subimages.get().empty()) {
-                if (ImGui::BeginCombo("subimage", subimages.get()[SELECTED_SUBIMAGE].c_str())) {
+                if (ImGui::BeginCombo("subimage", subimages.get()[selected_subimage.get()].c_str())) {
                     for (auto s = 0; s < subimages.get().size(); s++) {
-                        bool is_selected = s == SELECTED_SUBIMAGE;
+                        bool is_selected = s == selected_subimage.get();
                         if (ImGui::Selectable(subimages.get()[s].c_str(), is_selected)) {
-                            SELECTED_SUBIMAGE = s;
+                            selected_subimage.set(s);
                         }
 
                         if (is_selected) ImGui::SetItemDefaultFocus();
@@ -261,12 +384,58 @@ int main()
                     ImGui::EndCombo();
                 }
             }
-            
+
+            if (!groups.get().empty()) {
+                if (ImGui::BeginCombo("group", selected_group.get().c_str())) {
+
+                    for (auto& [group, chrange] : groups.get()) {
+                        bool is_selected = group == selected_group.get();
+
+                        if (ImGui::Selectable(group.c_str(), is_selected)) {
+                            selected_group.set(group);
+                        }
+
+                        if (is_selected) ImGui::SetItemDefaultFocus();
+                    }
+
+                    ImGui::EndCombo();
+                }
+            }
+
+            if (ImGui::BeginTabBar("MyTabBar", ImGuiTabBarFlags_None)) {
+                auto image_cache = OIIO::ImageCache::create(true);
+                OIIO::ImageSpec spec;
+                image_cache->get_imagespec(OIIO::ustring(computed_input_frame.get().string()), spec, selected_subimage.get(), 0);
+                if (ImGui::BeginTabItem("info")) {
+                    const auto & group_map = groups.get();
+                    for (const auto& [group, chrange] : group_map) {
+                        auto [chbegin, chend] = chrange;
+                        ImGui::Text("%s %d-%d (%d)", group.c_str(), chbegin, chend, chend-chbegin);
+                    }
+                    const char* multiView;
+                    bool is_multiview = spec.getattribute("multiView", OIIO::TypeString, &multiView);
+                    ImGui::Text("multiview: %s", is_multiview ? multiView : "false");
+
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("spec")) {
+
+                    auto info = spec.serialize(OIIO::ImageSpec::SerialText);
+                    ImGui::Text("%s", info.c_str());
+                    ImGui::EndTabItem();
+                }
+                
+            }
 
             ImGui::End();
         }
 
-
+        if (ImGui::Begin("Viewer")) {
+            auto tex = texture.get();
+            ImGui::Text("tex: %d", texture.get());
+            ImGui::Image((ImTextureID)tex, {100,100});
+            ImGui::End();
+        }
         glazy::end_frame();
     }
     glazy::destroy();

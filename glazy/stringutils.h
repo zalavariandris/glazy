@@ -16,7 +16,7 @@ std::vector<std::string> split_string(const std::string& text, const std::string
   joint_string({"andris", "judit", "masa"}, ", ")
   "andris, judit, masa"
 */
-std::string join_string(const std::vector<std::string>& tokens, const std::string& delimiter);
+std::string join_string(const std::vector<std::string>& segments, const std::string& delimiter, int range_start=0, int range_end=-1);
 
 
 /*
