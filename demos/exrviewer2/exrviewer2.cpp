@@ -2,21 +2,57 @@
 //
 
 #include <iostream>
+#include <set>
+#include <deque>
+#include <any>
 
+// glazy
 #include "glazy.h"
 #include "pathutils.h"
 #include "stringutils.h"
 
+// OpenImageIO
 #include "OpenImageIO/imageio.h""
 #include "OpenImageIO/imagecache.h"
-#include <set>
-#include <deque>
 
-#include <nlohmann/json.hpp>
+// OpenEXR
+#include <OpenEXR/ImfHeader.h>
+#include <OpenEXR/ImfPixelType.h>
+#include <OpenEXR/ImfChannelList.h>
+#include <OpenEXR/ImfInputFile.h>
+#include <OpenEXR/ImfHeader.h>
+#include <OpenEXR/ImfCompression.h>
+#include <OpenEXR/ImfFrameBuffer.h>
+#include <OpenEXR/ImathBox.h>
+#include <OpenEXR/IlmThreadPool.h>
+#include <OpenEXR/ImfVersion.h>
+#include <OpenEXR/ImfStdIO.h>
 
-// for convenience
-using json = nlohmann::json;
+#include <OpenEXR/ImfMultiPartInputFile.h>
+#include <OpenEXR/ImfBoxAttribute.h>
+#include <OpenEXR/ImfChannelListAttribute.h>
+#include <OpenEXR/ImfChromaticitiesAttribute.h>
+#include <OpenEXR/ImfCompressionAttribute.h>
+#include <OpenEXR/ImfDoubleAttribute.h>
+#include <OpenEXR/ImfEnvmapAttribute.h>
+#include <OpenEXR/ImfFloatAttribute.h>
+#include <OpenEXR/ImfIntAttribute.h>
+#include <OpenEXR/ImfKeyCodeAttribute.h>
+#include <OpenEXR/ImfLineOrderAttribute.h>
+#include <OpenEXR/ImfMatrixAttribute.h>
+#include <OpenEXR/ImfPreviewImageAttribute.h>
+#include <OpenEXR/ImfRationalAttribute.h>
+#include <OpenEXR/ImfStringAttribute.h>
 #include <OpenEXR/ImfStringVectorAttribute.h>
+#include <OpenEXR/ImfTileDescriptionAttribute.h>
+#include <OpenEXR/ImfTimeCodeAttribute.h>
+#include <OpenEXR/ImfVecAttribute.h>
+#include <OpenEXR/ImfVersion.h>
+#include <OpenEXR/ImfHeader.h>
+
+// json
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
 
 
 class BaseVar {
@@ -82,7 +118,7 @@ public:
     }
 };
 
-auto state_pattern = State<std::filesystem::path>("C:/Users/zalav/Desktop/openexr-images-master/Beachball/singlepart.%04d.exr", "pattern");
+auto state_pattern = State<std::filesystem::path>("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/multipart.%04d.exr", "pattern");
 auto state_frame = State<int>(1, "frame");
 auto selected_group = State<std::string>("color", "selected\ngroup");
 auto selected_subimage = State<int>(0, "selected\nsubimage");
@@ -107,6 +143,18 @@ auto subimages = Lazy<std::vector<std::string>>([]() {
     }
     return result;
 }, "subimages");
+
+auto channels = Lazy<std::vector<std::string>>([]() {
+    return std::vector<std::string>();
+}, "channels");
+
+std::map<std::string, std::any> read_exr_header(std::filesystem::path filename);
+auto state_views = Lazy<std::vector<std::string>>([]() {
+    auto attributes = read_exr_header(computed_input_frame.get());
+    if (!attributes.contains("multiView")) return std::vector<std::string>();
+
+    return std::any_cast<std::vector<std::string>>(attributes["multiView"]);
+}, "views");
 
 auto groups = Lazy<std::map<std::string, std::tuple<int, int>>>([]()->std::map<std::string, std::tuple<int, int>> {
     if (!std::filesystem::exists(computed_input_frame.get())) return {};
@@ -166,6 +214,9 @@ auto groups = Lazy<std::map<std::string, std::tuple<int, int>>>([]()->std::map<s
 }, "groups");
 
 auto texture = Lazy<GLuint>([]()->GLuint {
+
+
+
     auto name = computed_input_frame.get().string();
     auto in = OIIO::ImageInput::open(name);
     if (in->seek_subimage(selected_subimage.get(), 0))
@@ -309,6 +360,221 @@ void layout_nodes() {
     //}
 }
 
+#if defined(_WIN32) || defined(__WIN32__) || defined(WIN32)
+inline std::wstring s2ws(const std::string& s)
+{
+    int len;
+    int slength = (int)s.length() + 1;
+
+    len = MultiByteToWideChar(CP_ACP, 0, s.c_str(), slength, 0, 0);
+    wchar_t* buf = new wchar_t[len];
+    MultiByteToWideChar(CP_ACP, 0, s.c_str(), slength, buf, len);
+    std::wstring r(buf);
+    delete[] buf;
+
+    return r;
+}
+#endif
+
+
+std::map<std::string, std::any> read_exr_header(std::filesystem::path filename) {
+    // open exr
+    //     
+    #if (defined(_WIN32) || defined(__WIN32__) || defined(WIN32)) && !defined(__MINGW32__)
+    auto inputStr = new std::ifstream(s2ws(filename.string()), std::ios_base::binary);
+    auto inputStdStream = new Imf::StdIFStream(*inputStr, filename.string().c_str());
+    auto file = new Imf::InputFile(*inputStdStream);
+    #else
+    auto file = new Imf::InputFile(filename.c_str());
+    #endif
+
+    // read openexr header
+    // ref: https://github.com/AcademySoftwareFoundation/openexr/blob/master/src/bin/exrheader/main.cpp
+
+    std::map<std::string, std::any> result;
+    auto h = file->header();
+    for (auto i = h.begin(); i != h.end(); i++) {
+        const Imf::Attribute* a = &i.attribute();
+
+        if (const Imf::StringVectorAttribute* ta = dynamic_cast <const Imf::StringVectorAttribute*> (a))
+        {
+            std::vector<std::string> value;
+            for (const auto val : ta->value()) value.push_back(val);
+            result[i.name()] = value;
+        }
+    }
+
+    // cleanup
+    #if (defined(_WIN32) || defined(__WIN32__) || defined(WIN32)) && !defined(__MINGW32__)
+    delete file;
+    delete inputStdStream;
+    delete inputStr;
+    #else
+    delete file;
+    #endif
+    return result;
+}
+
+/**
+parse exr channel names with format: layer.view.channel
+return a tuple in the nabove order.
+
+tests:
+- R; right,left -> color right R
+- Z; right,left  -> depth right Z
+- left.R; right,left  -> color left R
+- left.Z; right,left  -> depth left Z
+- disparityR.x -> disparityL _ R
+*/
+std::tuple<std::string, std::string, std::string> parse_channel_name(std::string channel_name, std::vector<std::string> views) {
+    bool isMultiView = !views.empty();
+
+    auto channel_segments = split_string(channel_name, ".");
+
+    std::tuple<std::string, std::string, std::string> result; 
+
+    if (channel_segments.size() == 1) {
+        std::string channel = channel_segments.back();
+        bool isColor = std::string("RGBA").find(channel) != std::string::npos;
+        bool isDepth = channel == "Z";
+        std::string layer = "other";
+        if (isColor) layer = "color";
+        if (isDepth) layer = "depth";
+        std::string view = isMultiView ? views[0] : "";
+        return std::tuple<std::string, std::string, std::string>({ layer,view,channel });
+    }
+
+    if (channel_segments.size() == 2) {
+        // find a view name right before the final channel name. If not found this channel is not associated with any view
+        bool IsInView = std::find(views.begin(), views.end(), channel_segments.end()[-2]) != views.end();
+
+        if (IsInView) {
+            std::string channel = channel_segments.back();
+            bool isColor = std::string("RGBA").find(channel) != std::string::npos;
+            bool isDepth = channel == "Z";
+            std::string layer = "other";
+            if (isColor) layer = "color";
+            if (isDepth) layer = "depth";
+            return { layer, channel_segments.end()[-2], channel_segments.back() };
+        }
+        else {
+            return { channel_segments[0], "", channel_segments.back() };
+        }
+    }
+
+    if (channel_segments.size() == 3) {
+        // find a view name right before the final channel name. If not found this channel is not associated with any view
+        bool IsInView = std::find(views.begin(), views.end(), channel_segments.end()[-2]) != views.end();
+
+        if (IsInView) {
+            // this channel is in a view
+            // this is the format descriped in oenexr docs: https://www.openexr.com/documentation/MultiViewOpenEXR.pdf
+            //{layer}.{view}.{final channels}
+            return { channel_segments[0], channel_segments.end()[-2], channel_segments.back() };
+        }
+        else {
+            // this channel is not in a view, but the layer name contains a dot
+            //{layer.name}.{final channels}
+            auto layer = join_string(channel_segments, ".", 0, channel_segments.size() - 2);
+            return { layer, "", channel_segments.back() };
+        }
+    }
+
+    if (channel_segments.size() > 3) {
+        // find a view name right before the final channel name. If not found this channel is not associated with any view
+        bool IsInView = std::find(views.begin(), views.end(), channel_segments.end()[-2]) != views.end();
+
+        if (IsInView) {
+            auto layer = join_string(channel_segments, ".", 0, channel_segments.size() - 3);
+            auto view = channel_segments.end()[-2];
+            auto channel = channel_segments.end()[-1];
+            return { layer, view, channel };
+        }
+        else {
+            auto layer = join_string(channel_segments, ".", 0, channel_segments.size() - 2);
+            auto view = "";
+            auto channel = channel_segments.end()[-1];
+            return { layer, view, channel };
+        }
+    }
+}
+
+
+void TestEXRLayers() {
+    std::filesystem::path filename = "C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr";
+
+    // collect views froma ttributes
+    auto attributes = read_exr_header(filename);
+    std::vector<std::string> views;
+    if (!attributes.contains("multiView")) {
+        views = std::vector<std::string>();
+    }
+    else {
+        views = std::any_cast<std::vector<std::string>>(attributes["multiView"]);
+    }
+
+
+    // create a dataframe from all available channels
+    // subimage <name,channelname> -> <layer,view,channel>
+    std::map<std::tuple<std::string, std::string>, std::tuple<std::string, std::string, std::string>> layers_dataframe;
+    {
+        auto in = OIIO::ImageInput::open(filename.string());
+        int nsubimages = 0;
+
+        while (in->seek_subimage(nsubimages, 0)) {
+            auto spec = in->spec();
+            std::string subimage_name = spec.get_string_attribute("name");
+            for (auto c = 0; c < spec.nchannels; c++) {
+                std::string channel_name = spec.channel_name(c);
+                const auto& [layer, view, channel] = parse_channel_name(spec.channel_name(c), views);
+                std::tuple<std::string, std::string> key{ subimage_name, channel_name };
+                layers_dataframe[key] = { layer, view, channel };
+            }
+            ++nsubimages;
+        }
+    }
+
+    // Show filename
+    ImGui::Text("filename: %s", filename.string().c_str());
+    ImGui::Separator();
+
+    // Show Views
+    ImGui::TextColored(views == std::vector<std::string>({ "right", "left" }) ? ImColor(0,255,0) : ImColor(255,0,0), "views: "); ImGui::SameLine();
+    for (const auto& view : views) {
+        ImGui::Text("%s", view.c_str()); ImGui::SameLine();
+    }
+    ImGui::NewLine();
+
+    ImGui::Separator();
+
+    // Show DataFrame
+    if (ImGui::BeginTable("channels table", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders)) {
+        ImGui::TableSetupColumn("subimage");
+        ImGui::TableSetupColumn("channelname");
+        ImGui::TableSetupColumn("layer");
+        ImGui::TableSetupColumn("view");
+        ImGui::TableSetupColumn("channel");
+        ImGui::TableHeadersRow();
+        for (auto [subimage_channelname, layer_view_channel] : layers_dataframe) {
+            auto [subimage, channelname] = subimage_channelname;
+            auto [layer, view, channel] = layer_view_channel;
+
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", subimage.c_str());
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", channelname.c_str());
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", layer.c_str());
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", view.c_str());
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", channel.c_str());
+        }
+        ImGui::EndTable();
+    }
+}
+
 int main()
 {
     glazy::init();
@@ -323,14 +589,14 @@ int main()
 
             int i = 0;
             for (auto node : nodes) {
-                drawlist->AddCircleFilled({windowpos.x+node->pos.x, windowpos.y+node->pos.y}, 10, ImColor(255, 255, 255));
-                drawlist->AddText({ windowpos.x+node->pos.x+10, windowpos.y+node->pos.y-20 }, ImColor(255, 255, 255), node->name.c_str());
+                drawlist->AddCircleFilled({ windowpos.x + node->pos.x, windowpos.y + node->pos.y }, 10, ImColor(255, 255, 255));
+                drawlist->AddText({ windowpos.x + node->pos.x + 10, windowpos.y + node->pos.y - 20 }, ImColor(255, 255, 255), node->name.c_str());
                 i++;
             }
 
             // draw edges
             for (auto node : nodes) {
-                glm::vec2 P1 = {windowpos.x + node->pos.x, windowpos.y + node->pos.y};
+                glm::vec2 P1 = { windowpos.x + node->pos.x, windowpos.y + node->pos.y };
                 for (auto dep : node->dependants) {
                     glm::vec2 P2 = { windowpos.x + dep->pos.x, windowpos.y + dep->pos.y };
 
@@ -348,7 +614,7 @@ int main()
                     drawlist->AddLine(ImVec2(head.x, head.y), ImVec2(right_wing.x, right_wing.y), ImColor(200, 200, 200), 1.0);
                 }
             }
-            
+
             ImGui::End();
         }
 
@@ -368,7 +634,7 @@ int main()
                 }
             }
 
-            static int slider_val=state_frame.get();
+            static int slider_val = state_frame.get();
             if (ImGui::SliderInt("frame", &slider_val, START_FRAME, END_FRAME)) {
                 state_frame.set(slider_val);
             }
@@ -407,35 +673,25 @@ int main()
                 }
             }
 
-            if (ImGui::BeginTabBar("MyTabBar", ImGuiTabBarFlags_None)) {
-                auto image_cache = OIIO::ImageCache::create(true);
-                OIIO::ImageSpec spec;
-                image_cache->get_imagespec(OIIO::ustring(computed_input_frame.get().string()), spec, selected_subimage.get(), 0);
-                if (ImGui::BeginTabItem("info")) {
-                    const auto & group_map = groups.get();
-                    for (const auto& [group, chrange] : group_map) {
-                        auto [chbegin, chend] = chrange;
-                        ImGui::Text("%s %d-%d (%d)", group.c_str(), chbegin, chend, chend-chbegin);
-                    }
-                    std::vector<OIIO::ustring> multiView(2);
-                    OIIO::TypeDesc sv(OIIO::TypeDesc::STRING, 2);
-                    bool is_multiview = spec.getattribute("multiView", sv, &multiView);
-                    
-                    ImGui::Text("multiview: "); ImGui::SameLine();
-                    if (is_multiview) {
-                        ImGui::Text("  %s", multiView[0]);
-                        ImGui::Text("  %s", multiView[1]);
-                    }
+            // create a dataframe from all available channels
+            // subimage <name,channelname> -> <layer,view,channel>
 
-                    ImGui::EndTabItem();
+            if (ImGui::Begin("tests")) {
+                if (ImGui::CollapsingHeader("TestEXRLayers")) {
+                    TestEXRLayers();
                 }
-                if (ImGui::BeginTabItem("spec")) {
+                ImGui::End();
+            }
 
+            if (ImGui::BeginTabBar("MyTabBar", ImGuiTabBarFlags_None)) {
+                if (ImGui::BeginTabItem("spec")) {
+                    auto imagecache = OIIO::ImageCache::create(true);
+                    OIIO::ImageSpec spec;
+                    imagecache->get_imagespec(OIIO::ustring(computed_input_frame.get().string()), spec, selected_subimage.get(), 0);
                     auto info = spec.serialize(OIIO::ImageSpec::SerialText);
                     ImGui::Text("%s", info.c_str());
                     ImGui::EndTabItem();
                 }
-                
             }
 
             ImGui::End();

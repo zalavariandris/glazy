@@ -26,6 +26,21 @@ std::vector<std::string> split_string(const std::string& str, char delimiter) {
 	return segments;
 }
 
+std::string join_string(const std::vector<std::string>& segments, const std::string& delimiter, int range_start, int range_end) {
+	if (range_end < 0) range_end = segments.size();
+	assert(("invalid range", range_start < range_end));
+	std::string result;
+
+	// append all +delimiter but last item
+	for (auto i = range_start; i < range_end - 1; i++) {
+		result += segments[i];
+		result += delimiter;
+	}
+	// append last item
+	result += segments[range_end - 1];
+	return result;
+}
+
 /*
 * if image has subimages
 * subimage->[subimage.name, subimage.view, full_cahnnel_name]
@@ -317,6 +332,73 @@ namespace ImageIO {
 				/*cached channels*/chbegin, chend
 			);
 			if (!success) std::cout << "ERROR: can't read pixels" << "\n";
+		}
+	}
+
+	std::tuple<std::string, std::string, std::string> parse_channel_name(std::string channel_name, std::vector<std::string> views) {
+		bool isMultiView = !views.empty();
+
+		auto channel_segments = split_string(channel_name, '.');
+
+		std::tuple<std::string, std::string, std::string> result; // layer.view.channel
+
+		if (channel_segments.size() == 1) {
+			std::string channel = channel_segments.back();
+			bool isColor = std::string("RGBA").find(channel) == std::string::npos;
+			bool isDepth = channel == "Z";
+			std::string layer = "other";
+			if (isColor) layer = "color";
+			if (isDepth) layer = "depth";
+			std::string view = isMultiView ? views[0] : "";
+			return std::tuple<std::string, std::string, std::string>({ "","",channel });
+		}
+
+		if (channel_segments.size() == 2) {
+			// find a view name right before the final channel name. If not found this channel is not associated with any view
+			bool IsInView = std::find(channel_segments.begin(), channel_segments.end(), channel_segments.end()[-2]) != channel_segments.end();
+
+			if (IsInView) {
+				return { "", channel_segments.end()[-2], channel_segments.back() };
+			}
+			else {
+				return { channel_segments[0], "", channel_segments.back() };
+			}
+		}
+
+		if (channel_segments.size() == 3) {
+			// find a view name right before the final channel name. If not found this channel is not associated with any view
+			bool IsInView = std::find(channel_segments.begin(), channel_segments.end(), channel_segments.end()[-2]) != channel_segments.end();
+
+			if (IsInView) {
+				// this channel is in a view
+				// this is the format descriped in oenexr docs: https://www.openexr.com/documentation/MultiViewOpenEXR.pdf
+				//{layer}.{view}.{final channels}
+				return { channel_segments[0], channel_segments.end()[-2], channel_segments.back() };
+			}
+			else {
+				// this channel is not in a view, but the layer name contains a dot
+				//{layer.name}.{final channels}
+				auto layer = join_string(channel_segments, ".", 0, channel_segments.size() - 2);
+				return { layer, "", channel_segments.back() };
+			}
+		}
+
+		if (channel_segments.size() > 3) {
+			// find a view name right before the final channel name. If not found this channel is not associated with any view
+			bool IsInView = std::find(channel_segments.begin(), channel_segments.end(), channel_segments.end()[-2]) != channel_segments.end();
+
+			if (IsInView) {
+				auto layer = join_string(channel_segments, ".", 0, channel_segments.size() - 3);
+				auto view = channel_segments.end()[-2];
+				auto channel = channel_segments.end()[-1];
+				return { layer, view, channel };
+			}
+			else {
+				auto layer = join_string(channel_segments, ".", 0, channel_segments.size() - 2);
+				auto view = "";
+				auto channel = channel_segments.end()[-1];
+				return { layer, view, channel };
+			}
 		}
 	}
 }
