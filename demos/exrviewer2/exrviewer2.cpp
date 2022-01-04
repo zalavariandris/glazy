@@ -12,6 +12,12 @@
 #include <set>
 #include <deque>
 
+#include <nlohmann/json.hpp>
+
+// for convenience
+using json = nlohmann::json;
+#include <OpenEXR/ImfStringVectorAttribute.h>
+
 
 class BaseVar {
 protected:
@@ -214,7 +220,6 @@ auto texture = Lazy<GLuint>([]()->GLuint {
             GL_REPEAT //wrap_t
         );
 
-
         if (nchannels == 1) {
             std::cout << "swizzle R" << "\n";
             glBindTexture(GL_TEXTURE_2D, tex);
@@ -412,9 +417,15 @@ int main()
                         auto [chbegin, chend] = chrange;
                         ImGui::Text("%s %d-%d (%d)", group.c_str(), chbegin, chend, chend-chbegin);
                     }
-                    const char* multiView;
-                    bool is_multiview = spec.getattribute("multiView", OIIO::TypeString, &multiView);
-                    ImGui::Text("multiview: %s", is_multiview ? multiView : "false");
+                    std::vector<OIIO::ustring> multiView(2);
+                    OIIO::TypeDesc sv(OIIO::TypeDesc::STRING, 2);
+                    bool is_multiview = spec.getattribute("multiView", sv, &multiView);
+                    
+                    ImGui::Text("multiview: "); ImGui::SameLine();
+                    if (is_multiview) {
+                        ImGui::Text("  %s", multiView[0]);
+                        ImGui::Text("  %s", multiView[1]);
+                    }
 
                     ImGui::EndTabItem();
                 }
