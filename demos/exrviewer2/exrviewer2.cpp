@@ -5,6 +5,8 @@
 #include <set>
 #include <deque>
 #include <any>
+#include <cassert>
+#include <ranges>
 
 // glazy
 #include "glazy.h"
@@ -55,6 +57,168 @@
 using json = nlohmann::json;
 
 
+/* EXR helpers */
+using AttributeVariant = std::variant<std::string, std::vector<std::string>>;
+using ChannelKey = std::tuple<int, int>;
+using ChannelRecord = std::tuple<std::string, std::string, std::string>;
+using ChannelsDataframe = std::map<ChannelKey, ChannelRecord>;
+
+#if defined(_WIN32) || defined(__WIN32__) || defined(WIN32)
+inline std::wstring s2ws(const std::string& s)
+{
+    int len;
+    int slength = (int)s.length() + 1;
+
+    len = MultiByteToWideChar(CP_ACP, 0, s.c_str(), slength, 0, 0);
+    wchar_t* buf = new wchar_t[len];
+    MultiByteToWideChar(CP_ACP, 0, s.c_str(), slength, buf, len);
+    std::wstring r(buf);
+    delete[] buf;
+
+    return r;
+}
+#endif
+
+std::map<std::string, AttributeVariant> read_exr_attributes(std::filesystem::path filename) {
+    // open exr
+    //     
+#if (defined(_WIN32) || defined(__WIN32__) || defined(WIN32)) && !defined(__MINGW32__)
+    auto inputStr = new std::ifstream(s2ws(filename.string()), std::ios_base::binary);
+    auto inputStdStream = new Imf::StdIFStream(*inputStr, filename.string().c_str());
+    auto file = new Imf::InputFile(*inputStdStream);
+#else
+    auto file = new Imf::InputFile(filename.c_str());
+#endif
+
+    // read openexr header
+    // ref: https://github.com/AcademySoftwareFoundation/openexr/blob/master/src/bin/exrheader/main.cpp
+
+    std::map<std::string, AttributeVariant> result;
+    auto h = file->header();
+    for (auto i = h.begin(); i != h.end(); i++) {
+        const Imf::Attribute* a = &i.attribute();
+        if (const Imf::StringVectorAttribute* ta = dynamic_cast <const Imf::StringVectorAttribute*> (a))
+        {
+            std::vector<std::string> value;
+            for (const auto val : ta->value()) value.push_back(val);
+            result[i.name()] = value;
+        }
+    }
+
+    // cleanup
+#if (defined(_WIN32) || defined(__WIN32__) || defined(WIN32)) && !defined(__MINGW32__)
+    delete file;
+    delete inputStdStream;
+    delete inputStr;
+#else
+    delete file;
+#endif
+    return result;
+}
+
+ChannelRecord parse_channel_name(std::string channel_name, std::vector<std::string> views_hint) {
+    bool isMultiView = !views_hint.empty();
+
+    auto channel_segments = split_string(channel_name, ".");
+
+    std::tuple<std::string, std::string, std::string> result;
+
+    if (channel_segments.size() == 1) {
+        std::string channel = channel_segments.back();
+        bool isColor = std::string("RGBA").find(channel) != std::string::npos;
+        bool isDepth = channel == "Z";
+        std::string layer = "other";
+        if (isColor) layer = "color";
+        if (isDepth) layer = "depth";
+        std::string view = isMultiView ? views_hint[0] : "";
+        return std::tuple<std::string, std::string, std::string>({ layer,view,channel });
+    }
+
+    if (channel_segments.size() == 2) {
+        // find a view name right before the final channel name. If not found this channel is not associated with any view
+        bool IsInView = std::find(views_hint.begin(), views_hint.end(), channel_segments.end()[-2]) != views_hint.end();
+
+        if (IsInView) {
+            std::string channel = channel_segments.back();
+            bool isColor = std::string("RGBA").find(channel) != std::string::npos;
+            bool isDepth = channel == "Z";
+            std::string layer = "other";
+            if (isColor) layer = "color";
+            if (isDepth) layer = "depth";
+            return { layer, channel_segments.end()[-2], channel_segments.back() };
+        }
+        else {
+            return { channel_segments[0], "", channel_segments.back() };
+        }
+    }
+
+    if (channel_segments.size() == 3) {
+        // find a view name right before the final channel name. If not found this channel is not associated with any view
+        bool IsInView = std::find(views_hint.begin(), views_hint.end(), channel_segments.end()[-2]) != views_hint.end();
+
+        if (IsInView) {
+            // this channel is in a view
+            // this is the format descriped in oenexr docs: https://www.openexr.com/documentation/MultiViewOpenEXR.pdf
+            //{layer}.{view}.{final channels}
+            return { channel_segments[0], channel_segments.end()[-2], channel_segments.back() };
+        }
+        else {
+            // this channel is not in a view, but the layer name contains a dot
+            //{layer.name}.{final channels}
+            auto layer = join_string(channel_segments, ".", 0, channel_segments.size() - 2);
+            return { layer, "", channel_segments.back() };
+        }
+    }
+
+    if (channel_segments.size() > 3) {
+        // find a view name right before the final channel name. If not found this channel is not associated with any view
+        bool IsInView = std::find(views_hint.begin(), views_hint.end(), channel_segments.end()[-2]) != views_hint.end();
+
+        if (IsInView) {
+            auto layer = join_string(channel_segments, ".", 0, channel_segments.size() - 3);
+            auto view = channel_segments.end()[-2];
+            auto channel = channel_segments.end()[-1];
+            return { layer, view, channel };
+        }
+        else {
+            auto layer = join_string(channel_segments, ".", 0, channel_segments.size() - 2);
+            auto view = "";
+            auto channel = channel_segments.end()[-1];
+            return { layer, view, channel };
+        }
+    }
+}
+
+ChannelsDataframe get_channels_dataframe(std::filesystem::path filename, std::vector<std::string> views) {
+    // create a dataframe from all available channels
+    // subimage <name,channelname> -> <layer,view,channel>
+    std::map<std::tuple<int, int>, std::tuple<std::string, std::string, std::string>> layers_dataframe;
+    {
+        auto in = OIIO::ImageInput::open(filename.string());
+        int nsubimages = 0;
+
+        while (in->seek_subimage(nsubimages, 0)) {
+            auto spec = in->spec();
+            std::string subimage_name = spec.get_string_attribute("name");
+            for (auto chan = 0; chan < spec.nchannels; chan++) {
+
+                std::string channel_name = spec.channel_name(chan);
+                const auto& [layer, view, channel] = parse_channel_name(spec.channel_name(chan), views);
+                std::tuple<int, int> key{ nsubimages, chan };
+                layers_dataframe[key] = { layer, view, channel };
+            }
+            ++nsubimages;
+        }
+    }
+
+    return layers_dataframe;
+}
+
+
+
+/*
+ * Reactive lazy vars
+ */
 class BaseVar {
 protected:
     mutable bool dirty=true;
@@ -92,12 +256,12 @@ public:
 };
 
 template <typename T>
-class Lazy : public BaseVar{
+class Computed : public BaseVar{
 private:
     mutable T cache;
     std::function<T()> evaluate;
 public:
-    Lazy(std::function<T()> f, std::string _name="") : evaluate(f) {
+    Computed(std::function<T()> f, std::string _name="") : evaluate(f) {
         nodes.insert(this);
         name = _name;
     };
@@ -118,17 +282,27 @@ public:
     }
 };
 
+/*********
+ * Store * 
+ *********/
+
+/* state */
 auto state_pattern = State<std::filesystem::path>("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/multipart.%04d.exr", "pattern");
 auto state_frame = State<int>(1, "frame");
 auto selected_group = State<std::string>("color", "selected\ngroup");
 auto selected_subimage = State<int>(0, "selected\nsubimage");
 
-auto computed_input_frame = Lazy<std::filesystem::path>([]() {
+// non reactive state
+int START_FRAME = 1;
+int END_FRAME = 8;
+
+/* getters */
+auto computed_input_frame = Computed<std::filesystem::path>([]() {
     std::cout << "evaluate input_frame" << "\n";
     return sequence_item(state_pattern.get(), state_frame.get());
 }, "input frame");
 
-auto subimages = Lazy<std::vector<std::string>>([]() {
+auto subimages = Computed<std::vector<std::string>>([]() {
     std::vector<std::string> result;
     if(!std::filesystem::exists(computed_input_frame.get())) return result;
 
@@ -144,19 +318,18 @@ auto subimages = Lazy<std::vector<std::string>>([]() {
     return result;
 }, "subimages");
 
-auto channels = Lazy<std::vector<std::string>>([]() {
+auto channels = Computed<std::vector<std::string>>([]() {
     return std::vector<std::string>();
 }, "channels");
 
-std::map<std::string, std::any> read_exr_header(std::filesystem::path filename);
-auto state_views = Lazy<std::vector<std::string>>([]() {
-    auto attributes = read_exr_header(computed_input_frame.get());
+auto state_views = Computed<std::vector<std::string>>([]() {
+    auto attributes = read_exr_attributes(computed_input_frame.get());
     if (!attributes.contains("multiView")) return std::vector<std::string>();
 
     return std::any_cast<std::vector<std::string>>(attributes["multiView"]);
 }, "views");
 
-auto groups = Lazy<std::map<std::string, std::tuple<int, int>>>([]()->std::map<std::string, std::tuple<int, int>> {
+auto groups = Computed<std::map<std::string, std::tuple<int, int>>>([]()->std::map<std::string, std::tuple<int, int>> {
     if (!std::filesystem::exists(computed_input_frame.get())) return {};
 
     auto name = computed_input_frame.get().string();
@@ -213,15 +386,13 @@ auto groups = Lazy<std::map<std::string, std::tuple<int, int>>>([]()->std::map<s
     return {};
 }, "groups");
 
-auto texture = Lazy<GLuint>([]()->GLuint {
-
-
-
+auto texture = Computed<GLuint>([]()->GLuint {
     auto name = computed_input_frame.get().string();
+    assert(("file does not exist", std::filesystem::exists(computed_input_frame.get())));
+
     auto in = OIIO::ImageInput::open(name);
     if (in->seek_subimage(selected_subimage.get(), 0))
     {
-
         std::cout << "get pixels" << "\n";
         auto image_cache = OIIO::ImageCache::create(true);
         OIIO::ImageSpec spec;
@@ -293,15 +464,7 @@ auto texture = Lazy<GLuint>([]()->GLuint {
     return 0;
 }, "texture");
 
-//std::filesystem::path INPUT_PATTERN = "C:/Users/andris/Desktop/openexr-images-master/Beachball/singlepart.%04d.exr";
-int START_FRAME = 1;
-int END_FRAME = 8;
-//int SELECTED_SUBIMAGE = 0;
-//int WIDTH = 0;
-//int HEIGHT = 0;
-//std::vector<std::string> SUBIMAGES;
-//int SELECTED_GROUP = 0;
-
+// widget helpers
 void layout_nodes() {
     // collect edges
     std::set<std::tuple<BaseVar*, BaseVar*>> edges;
@@ -360,61 +523,6 @@ void layout_nodes() {
     //}
 }
 
-#if defined(_WIN32) || defined(__WIN32__) || defined(WIN32)
-inline std::wstring s2ws(const std::string& s)
-{
-    int len;
-    int slength = (int)s.length() + 1;
-
-    len = MultiByteToWideChar(CP_ACP, 0, s.c_str(), slength, 0, 0);
-    wchar_t* buf = new wchar_t[len];
-    MultiByteToWideChar(CP_ACP, 0, s.c_str(), slength, buf, len);
-    std::wstring r(buf);
-    delete[] buf;
-
-    return r;
-}
-#endif
-
-
-std::map<std::string, std::any> read_exr_header(std::filesystem::path filename) {
-    // open exr
-    //     
-    #if (defined(_WIN32) || defined(__WIN32__) || defined(WIN32)) && !defined(__MINGW32__)
-    auto inputStr = new std::ifstream(s2ws(filename.string()), std::ios_base::binary);
-    auto inputStdStream = new Imf::StdIFStream(*inputStr, filename.string().c_str());
-    auto file = new Imf::InputFile(*inputStdStream);
-    #else
-    auto file = new Imf::InputFile(filename.c_str());
-    #endif
-
-    // read openexr header
-    // ref: https://github.com/AcademySoftwareFoundation/openexr/blob/master/src/bin/exrheader/main.cpp
-
-    std::map<std::string, std::any> result;
-    auto h = file->header();
-    for (auto i = h.begin(); i != h.end(); i++) {
-        const Imf::Attribute* a = &i.attribute();
-
-        if (const Imf::StringVectorAttribute* ta = dynamic_cast <const Imf::StringVectorAttribute*> (a))
-        {
-            std::vector<std::string> value;
-            for (const auto val : ta->value()) value.push_back(val);
-            result[i.name()] = value;
-        }
-    }
-
-    // cleanup
-    #if (defined(_WIN32) || defined(__WIN32__) || defined(WIN32)) && !defined(__MINGW32__)
-    delete file;
-    delete inputStdStream;
-    delete inputStr;
-    #else
-    delete file;
-    #endif
-    return result;
-}
-
 /**
 parse exr channel names with format: layer.view.channel
 return a tuple in the nabove order.
@@ -426,113 +534,21 @@ tests:
 - left.Z; right,left  -> depth left Z
 - disparityR.x -> disparityL _ R
 */
-std::tuple<std::string, std::string, std::string> parse_channel_name(std::string channel_name, std::vector<std::string> views) {
-    bool isMultiView = !views.empty();
-
-    auto channel_segments = split_string(channel_name, ".");
-
-    std::tuple<std::string, std::string, std::string> result; 
-
-    if (channel_segments.size() == 1) {
-        std::string channel = channel_segments.back();
-        bool isColor = std::string("RGBA").find(channel) != std::string::npos;
-        bool isDepth = channel == "Z";
-        std::string layer = "other";
-        if (isColor) layer = "color";
-        if (isDepth) layer = "depth";
-        std::string view = isMultiView ? views[0] : "";
-        return std::tuple<std::string, std::string, std::string>({ layer,view,channel });
-    }
-
-    if (channel_segments.size() == 2) {
-        // find a view name right before the final channel name. If not found this channel is not associated with any view
-        bool IsInView = std::find(views.begin(), views.end(), channel_segments.end()[-2]) != views.end();
-
-        if (IsInView) {
-            std::string channel = channel_segments.back();
-            bool isColor = std::string("RGBA").find(channel) != std::string::npos;
-            bool isDepth = channel == "Z";
-            std::string layer = "other";
-            if (isColor) layer = "color";
-            if (isDepth) layer = "depth";
-            return { layer, channel_segments.end()[-2], channel_segments.back() };
-        }
-        else {
-            return { channel_segments[0], "", channel_segments.back() };
-        }
-    }
-
-    if (channel_segments.size() == 3) {
-        // find a view name right before the final channel name. If not found this channel is not associated with any view
-        bool IsInView = std::find(views.begin(), views.end(), channel_segments.end()[-2]) != views.end();
-
-        if (IsInView) {
-            // this channel is in a view
-            // this is the format descriped in oenexr docs: https://www.openexr.com/documentation/MultiViewOpenEXR.pdf
-            //{layer}.{view}.{final channels}
-            return { channel_segments[0], channel_segments.end()[-2], channel_segments.back() };
-        }
-        else {
-            // this channel is not in a view, but the layer name contains a dot
-            //{layer.name}.{final channels}
-            auto layer = join_string(channel_segments, ".", 0, channel_segments.size() - 2);
-            return { layer, "", channel_segments.back() };
-        }
-    }
-
-    if (channel_segments.size() > 3) {
-        // find a view name right before the final channel name. If not found this channel is not associated with any view
-        bool IsInView = std::find(views.begin(), views.end(), channel_segments.end()[-2]) != views.end();
-
-        if (IsInView) {
-            auto layer = join_string(channel_segments, ".", 0, channel_segments.size() - 3);
-            auto view = channel_segments.end()[-2];
-            auto channel = channel_segments.end()[-1];
-            return { layer, view, channel };
-        }
-        else {
-            auto layer = join_string(channel_segments, ".", 0, channel_segments.size() - 2);
-            auto view = "";
-            auto channel = channel_segments.end()[-1];
-            return { layer, view, channel };
-        }
-    }
-}
-
 
 void TestEXRLayers() {
     std::filesystem::path filename = "C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr";
 
-    // collect views froma ttributes
-    auto attributes = read_exr_header(filename);
+    // collect views from attributes
+    auto attributes = read_exr_attributes(filename);
     std::vector<std::string> views;
     if (!attributes.contains("multiView")) {
         views = std::vector<std::string>();
     }
     else {
-        views = std::any_cast<std::vector<std::string>>(attributes["multiView"]);
+        views = *std::get_if<std::vector<std::string>>(&attributes["multiView"]);
     }
 
-
-    // create a dataframe from all available channels
-    // subimage <name,channelname> -> <layer,view,channel>
-    std::map<std::tuple<std::string, std::string>, std::tuple<std::string, std::string, std::string>> layers_dataframe;
-    {
-        auto in = OIIO::ImageInput::open(filename.string());
-        int nsubimages = 0;
-
-        while (in->seek_subimage(nsubimages, 0)) {
-            auto spec = in->spec();
-            std::string subimage_name = spec.get_string_attribute("name");
-            for (auto c = 0; c < spec.nchannels; c++) {
-                std::string channel_name = spec.channel_name(c);
-                const auto& [layer, view, channel] = parse_channel_name(spec.channel_name(c), views);
-                std::tuple<std::string, std::string> key{ subimage_name, channel_name };
-                layers_dataframe[key] = { layer, view, channel };
-            }
-            ++nsubimages;
-        }
-    }
+    ChannelsDataframe layers_dataframe = get_channels_dataframe(filename, views);
 
     // Show filename
     ImGui::Text("filename: %s", filename.string().c_str());
@@ -548,22 +564,19 @@ void TestEXRLayers() {
     ImGui::Separator();
 
     // Show DataFrame
-    if (ImGui::BeginTable("channels table", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders)) {
-        ImGui::TableSetupColumn("subimage");
-        ImGui::TableSetupColumn("channelname");
+    if (ImGui::BeginTable("channels table", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders)) {
+        ImGui::TableSetupColumn("subimage/chan");
         ImGui::TableSetupColumn("layer");
         ImGui::TableSetupColumn("view");
         ImGui::TableSetupColumn("channel");
         ImGui::TableHeadersRow();
         for (auto [subimage_channelname, layer_view_channel] : layers_dataframe) {
-            auto [subimage, channelname] = subimage_channelname;
+            auto [subimage, chan] = subimage_channelname;
             auto [layer, view, channel] = layer_view_channel;
 
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
-            ImGui::Text("%s", subimage.c_str());
-            ImGui::TableNextColumn();
-            ImGui::Text("%s", channelname.c_str());
+            ImGui::Text("%d/%d", subimage, chan);
             ImGui::TableNextColumn();
             ImGui::Text("%s", layer.c_str());
             ImGui::TableNextColumn();
@@ -572,6 +585,28 @@ void TestEXRLayers() {
             ImGui::Text("%s", channel.c_str());
         }
         ImGui::EndTable();
+    }
+
+    // query color layer
+    auto color_layer = layers_dataframe | std::views::filter([](std::pair<std::tuple<int, int>, std::tuple<std::string, std::string, std::string>> row) {
+        auto& [key, record] = row;
+        auto& [layer, view, channel] = record;
+        return layer == "color" && view == "right";
+    });
+
+    // get unique layers
+    auto layer_column = layers_dataframe | std::views::transform([](std::pair<std::tuple<int, int>, std::tuple<std::string, std::string, std::string>> row) {
+        auto& [key, record] = row;
+        auto& [layer, view, channel] = record;
+        return layer;
+        });
+    std::set<std::string> layers;
+    for (auto layer : layer_column) layers.insert(layer);
+
+    ImGui::Separator();
+    ImGui::Text("Layers");
+    for (auto layer : layers) {
+        ImGui::Text("%s", layer);
     }
 }
 
