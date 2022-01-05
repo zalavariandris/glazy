@@ -58,10 +58,24 @@ using json = nlohmann::json;
 
 
 /* EXR helpers */
-using AttributeVariant = std::variant<std::string, std::vector<std::string>>;
-using ChannelKey = std::tuple<int, int>;
-using ChannelRecord = std::tuple<std::string, std::string, std::string>;
-using ChannelsDataframe = std::map<ChannelKey, ChannelRecord>;
+using AttributeVariant = std::variant<                                   // either a string or a vector of strings | int, vector of int... | float, vector of float | 
+    std::string, std::vector<std::string>, 
+    int, std::vector<int>, 
+    float, std::vector<float>>;
+using ChannelKey = std::tuple<int, int>;                                 // subimage, channel index
+using ChannelRecord = std::tuple<std::string, std::string, std::string>; // layer.view.channel
+using ChannelsTable = std::map<ChannelKey, ChannelRecord>;
+
+using Channel = std::tuple<int, int>;               // subimage, channel index
+using View = std::string;                           // view name or empty string
+using Layer = std::map<View, std::vector<Channel>>; // vector of channels by views
+using FrameRange = std::tuple<int, int>;            // firstFrame-lastFrame
+
+struct Image {
+    std::string name;
+    FrameRange framerange;
+    std::map<std::string, Layer> layers;
+};
 
 #if defined(_WIN32) || defined(__WIN32__) || defined(WIN32)
 inline std::wstring s2ws(const std::string& s)
@@ -79,6 +93,7 @@ inline std::wstring s2ws(const std::string& s)
 }
 #endif
 
+/** Read the attributes of an exr file */
 std::map<std::string, AttributeVariant> read_exr_attributes(std::filesystem::path filename) {
     // open exr
     //     
@@ -116,6 +131,17 @@ std::map<std::string, AttributeVariant> read_exr_attributes(std::filesystem::pat
     return result;
 }
 
+/**
+parse exr channel names with format: layer.view.channel
+return a tuple in the above order.
+
+tests:
+- R; right,left -> color right R
+- Z; right,left  -> depth right Z
+- left.R; right,left  -> color left R
+- left.Z; right,left  -> depth left Z
+- disparityR.x -> disparityL _ R
+*/
 ChannelRecord parse_channel_name(std::string channel_name, std::vector<std::string> views_hint) {
     bool isMultiView = !views_hint.empty();
 
@@ -148,7 +174,7 @@ ChannelRecord parse_channel_name(std::string channel_name, std::vector<std::stri
             return { layer, channel_segments.end()[-2], channel_segments.back() };
         }
         else {
-            return { channel_segments[0], "", channel_segments.back() };
+            return { channel_segments[0], "-no view-", channel_segments.back() };
         }
     }
 
@@ -166,7 +192,7 @@ ChannelRecord parse_channel_name(std::string channel_name, std::vector<std::stri
             // this channel is not in a view, but the layer name contains a dot
             //{layer.name}.{final channels}
             auto layer = join_string(channel_segments, ".", 0, channel_segments.size() - 2);
-            return { layer, "", channel_segments.back() };
+            return { layer, "-no view-", channel_segments.back() };
         }
     }
 
@@ -182,14 +208,15 @@ ChannelRecord parse_channel_name(std::string channel_name, std::vector<std::stri
         }
         else {
             auto layer = join_string(channel_segments, ".", 0, channel_segments.size() - 2);
-            auto view = "";
+            auto view = "-no view-";
             auto channel = channel_segments.end()[-1];
             return { layer, view, channel };
         }
     }
 }
 
-ChannelsDataframe get_channels_dataframe(std::filesystem::path filename, std::vector<std::string> views) {
+/** Read ChannelsTable from an exr file */
+ChannelsTable get_channels_dataframe(std::filesystem::path filename, std::vector<std::string> views) {
     // create a dataframe from all available channels
     // subimage <name,channelname> -> <layer,view,channel>
     std::map<std::tuple<int, int>, std::tuple<std::string, std::string, std::string>> layers_dataframe;
@@ -214,11 +241,269 @@ ChannelsDataframe get_channels_dataframe(std::filesystem::path filename, std::ve
     return layers_dataframe;
 }
 
+/** Get layers Column */
+std::vector<std::string> get_layers_column(ChannelsTable df) {
+    std::vector<std::string> layers;
+    for (auto&& [subimage_chan, layer_view_channel] : df) {
+        auto&& [subimage, chan] = subimage_chan;
+        auto&& [layer, view, channel] = layer_view_channel;
+
+        layers.push_back(layer);
+    }
+    return layers;
+}
+
+/** Get views Column */
+std::vector<std::string> get_views_column(ChannelsTable df) {
+    std::vector<std::string> views;
+    for (auto&& [subimage_chan, layer_view_channel] : df) {
+        auto&& [subimage, chan] = subimage_chan;
+        auto&& [layer, view, channel] = layer_view_channel;
+
+        views.push_back(layer);
+    }
+    return views;
+}
+
+/** Get channels Column */
+std::vector<std::string> get_channels_column(ChannelsTable df) {
+    std::vector<std::string> channels;
+    for (auto&& [subimage_chan, layer_view_channel] : df) {
+        auto&& [subimage, chan] = subimage_chan;
+        auto&& [layer, view, channel] = layer_view_channel;
+
+        channels.push_back(channel);
+    }
+    return channels;
+}
+
+/* Group by */
+/** Group channels by layer and view */
+std::map<std::tuple<std::string, std::string>, ChannelsTable> group_by_layer_view(const ChannelsTable & df) {
+    std::map<std::tuple<std::string, std::string>, ChannelsTable> layer_view_groups;
+    for (auto&& [subimage_chan, layer_view_channel] : df) {
+        auto&& [subimage, chan] = subimage_chan;
+        auto&& [layer, view, channel] = layer_view_channel;
+
+        std::tuple<std::string, std::string> key{ layer, view };
+        if (!layer_view_groups.contains(key)) layer_view_groups[key] = ChannelsTable();
+
+        layer_view_groups[key][subimage_chan] = layer_view_channel;
+    }
+    return layer_view_groups;
+}
+
+/** Group channels by layer */
+std::map<std::string, ChannelsTable> group_by_layer(ChannelsTable df) {
+    std::map<std::string, ChannelsTable> layer_groups;
+    for (auto&& [subimage_chan, layer_view_channel] : df) {
+        auto&& [subimage, chan] = subimage_chan;
+        auto&& [layer, view, channel] = layer_view_channel;
 
 
-/*
- * Reactive lazy vars
- */
+        if (!layer_groups.contains(layer)) layer_groups[layer] = ChannelsTable();
+
+        layer_groups[layer][subimage_chan] = layer_view_channel;
+    }
+    return layer_groups;
+}
+
+/** Group channels by view */
+std::map<std::string, ChannelsTable> group_by_view(ChannelsTable df) {
+    std::map<std::string, ChannelsTable> view_groups;
+    for (auto&& [subimage_chan, layer_view_channel] : df) {
+        auto&& [subimage, chan] = subimage_chan;
+        auto&& [layer, view, channel] = layer_view_channel;
+
+
+        if (!view_groups.contains(view)) view_groups[view] = ChannelsTable();
+
+        view_groups[view][subimage_chan] = layer_view_channel;
+    }
+    return view_groups;
+}
+
+/** Gui for ChannelsTable */
+void ImGui_ChannelsDataframe(const ChannelsTable& channels_dataframe) {
+    if (ImGui::BeginTable("channels table", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders)) {
+        ImGui::TableSetupColumn("subimage/chan");
+        ImGui::TableSetupColumn("layer");
+        ImGui::TableSetupColumn("view");
+        ImGui::TableSetupColumn("channel");
+        ImGui::TableHeadersRow();
+        for (const auto& [subimage_channelname, layer_view_channel] : channels_dataframe) {
+            auto [subimage, chan] = subimage_channelname;
+            auto [layer, view, channel] = layer_view_channel;
+
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::Text("%d/%d", subimage, chan);
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", layer.c_str());
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", view.c_str());
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", channel.c_str());
+        }
+        ImGui::EndTable();
+    }
+}
+
+void TestEXRLayers() {
+    std::filesystem::path filename = "C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr";
+
+    // collect views from attributes
+    auto attributes = read_exr_attributes(filename);
+    std::vector<std::string> views;
+    if (!attributes.contains("multiView")) {
+        views = std::vector<std::string>();
+    }
+    else {
+        views = *std::get_if<std::vector<std::string>>(&attributes["multiView"]);
+    }
+
+    // Read channels dataframe
+    ChannelsTable channels_table = get_channels_dataframe(filename, views);
+
+    // Group by layers and views
+    std::map<std::tuple<std::string, std::string>, ChannelsTable> layer_view_groups = group_by_layer_view(channels_table);
+    std::map<std::string, ChannelsTable> layer_groups = group_by_layer(channels_table); // split channels to layers
+    std::map<std::string, ChannelsTable> view_groups = group_by_view(channels_table);   // split channels to layers
+    std::map<std::string, std::map<std::string, ChannelsTable>> layer_view_map; // split channels to layers with views
+    for (const auto &[layer, channels] : group_by_layer(channels_table)) {
+        layer_view_map[layer] = group_by_view(channels);
+    }
+
+    // Show filename
+    ImGui::Text("filename: %s", filename.string().c_str());
+    ImGui::Separator();
+
+    // Show Views
+    ImGui::TextColored(views == std::vector<std::string>({ "right", "left" }) ? ImColor(0, 255, 0) : ImColor(255, 0, 0), "views: "); ImGui::SameLine();
+    for (const auto& view : views) {
+        ImGui::Text("%s", view.c_str()); ImGui::SameLine();
+    }
+    ImGui::NewLine();
+
+    ImGui::Separator();
+
+    // Show DataFrame
+    ImGui::BeginTabBar("image header");
+    if (ImGui::BeginTabItem("channels dataframe")) {
+        ImGui_ChannelsDataframe(channels_table);
+        ImGui::EndTabItem();
+    }
+
+    if (ImGui::BeginTabItem("layer-view")) {
+        for (const auto& [layer_view, df] : layer_view_groups) {
+            auto [layer, view] = layer_view;
+            ImGui::Text("%s-%s", layer.c_str(), view.c_str());
+            ImGui_ChannelsDataframe(df);
+        }
+        ImGui::EndTabItem();
+    }
+
+    if (ImGui::BeginTabItem("layers")) {
+        for (const auto& [layer, df] : layer_groups) {
+            ImGui::Text("%s", layer.c_str());
+            ImGui_ChannelsDataframe(df);
+        }
+        ImGui::EndTabItem();
+    }
+
+    if (ImGui::BeginTabItem("views")) {
+        for (const auto& [view, df] : view_groups) {
+            ImGui::Text("%s", view.c_str());
+            ImGui_ChannelsDataframe(df);
+        }
+        ImGui::EndTabItem();
+    }
+
+    if (ImGui::BeginTabItem("layer -> view")) {
+        for (auto [layer, view_groups] : layer_view_map) {
+            ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+            if (ImGui::TreeNode(layer.c_str())) {
+                for (auto [view, df] : view_groups) {
+                    ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+                    if (ImGui::TreeNode(view.c_str())) {
+                        ImGui_ChannelsDataframe(df);
+                        ImGui::TreePop();
+                    }
+                }
+                ImGui::TreePop();
+            }
+        }
+        ImGui::EndTabItem();
+    }
+
+    if (ImGui::BeginTabItem("select")) {
+        static std::string selected_layer;
+        static std::string selected_view;
+
+        auto widget_width = ImGui::GetContentRegionAvailWidth();
+        auto style = ImGui::GetStyle();
+        
+        auto item_width = widget_width / 3 - 2*style.ItemSpacing.x;
+
+        // list available layers
+        ImGui::SetNextItemWidth(item_width);
+        ImGui::BeginGroup();
+        ImGui::Text("layers");
+        if (ImGui::BeginListBox("##layers", {item_width, 0})) {
+            for (auto key : std::views::keys(layer_view_map)) {
+                if (ImGui::Selectable(key.c_str(), selected_layer == key))
+                    selected_layer = key;
+            }
+            ImGui::EndListBox();
+        }
+        ImGui::EndGroup();
+        ImGui::SameLine();
+
+        ImGui::SetNextItemWidth(item_width);
+        ImGui::BeginGroup();
+        ImGui::Text("views");
+        if (ImGui::BeginListBox("##views", { item_width, 0 })) {
+            if (layer_view_map.contains(selected_layer)) {
+                auto view_table = layer_view_map[selected_layer];
+
+                    for (auto key : std::views::keys(view_table)) {
+                        if (ImGui::Selectable(key.c_str(), selected_view == key))
+                            selected_view = key;
+                    }
+            }
+            ImGui::EndListBox();
+        }
+        ImGui::EndGroup();
+        ImGui::SameLine();
+
+        ImGui::SetNextItemWidth(item_width);
+        ImGui::BeginGroup();
+        ImGui::Text("channels");
+        if (ImGui::BeginListBox("##channels", { item_width, 0 })) {
+            if (layer_view_map.contains(selected_layer) && layer_view_map[selected_layer].contains(selected_view)) {
+                auto channels_table = layer_view_map[selected_layer][selected_view];
+                for (auto [subimage_chan, record] : channels_table) {
+                    auto [subimage, chan] = subimage_chan;
+                    auto [layer, view, channel] = record;
+                    ImGui::Text("%s, #%d/%d", channel.c_str(), subimage, chan);
+                }
+            }
+            ImGui::EndListBox();
+        }
+        ImGui::EndGroup();
+        ImGui::SameLine();
+
+        ImGui::EndTabItem();
+    }
+
+    ImGui::EndTabBar();
+}
+
+
+
+/**********************
+ * Reactive lazy vars *
+ **********************/
 class BaseVar {
 protected:
     mutable bool dirty=true;
@@ -521,93 +806,6 @@ void layout_nodes() {
     //    node->pos.x = (float)rand() / RAND_MAX * 300 + 50;
     //    node->pos.y = (float)rand() / RAND_MAX * 300 + 50;
     //}
-}
-
-/**
-parse exr channel names with format: layer.view.channel
-return a tuple in the nabove order.
-
-tests:
-- R; right,left -> color right R
-- Z; right,left  -> depth right Z
-- left.R; right,left  -> color left R
-- left.Z; right,left  -> depth left Z
-- disparityR.x -> disparityL _ R
-*/
-
-void TestEXRLayers() {
-    std::filesystem::path filename = "C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr";
-
-    // collect views from attributes
-    auto attributes = read_exr_attributes(filename);
-    std::vector<std::string> views;
-    if (!attributes.contains("multiView")) {
-        views = std::vector<std::string>();
-    }
-    else {
-        views = *std::get_if<std::vector<std::string>>(&attributes["multiView"]);
-    }
-
-    ChannelsDataframe layers_dataframe = get_channels_dataframe(filename, views);
-
-    // Show filename
-    ImGui::Text("filename: %s", filename.string().c_str());
-    ImGui::Separator();
-
-    // Show Views
-    ImGui::TextColored(views == std::vector<std::string>({ "right", "left" }) ? ImColor(0,255,0) : ImColor(255,0,0), "views: "); ImGui::SameLine();
-    for (const auto& view : views) {
-        ImGui::Text("%s", view.c_str()); ImGui::SameLine();
-    }
-    ImGui::NewLine();
-
-    ImGui::Separator();
-
-    // Show DataFrame
-    if (ImGui::BeginTable("channels table", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders)) {
-        ImGui::TableSetupColumn("subimage/chan");
-        ImGui::TableSetupColumn("layer");
-        ImGui::TableSetupColumn("view");
-        ImGui::TableSetupColumn("channel");
-        ImGui::TableHeadersRow();
-        for (auto [subimage_channelname, layer_view_channel] : layers_dataframe) {
-            auto [subimage, chan] = subimage_channelname;
-            auto [layer, view, channel] = layer_view_channel;
-
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            ImGui::Text("%d/%d", subimage, chan);
-            ImGui::TableNextColumn();
-            ImGui::Text("%s", layer.c_str());
-            ImGui::TableNextColumn();
-            ImGui::Text("%s", view.c_str());
-            ImGui::TableNextColumn();
-            ImGui::Text("%s", channel.c_str());
-        }
-        ImGui::EndTable();
-    }
-
-    // query color layer
-    auto color_layer = layers_dataframe | std::views::filter([](std::pair<std::tuple<int, int>, std::tuple<std::string, std::string, std::string>> row) {
-        auto& [key, record] = row;
-        auto& [layer, view, channel] = record;
-        return layer == "color" && view == "right";
-    });
-
-    // get unique layers
-    auto layer_column = layers_dataframe | std::views::transform([](std::pair<std::tuple<int, int>, std::tuple<std::string, std::string, std::string>> row) {
-        auto& [key, record] = row;
-        auto& [layer, view, channel] = record;
-        return layer;
-        });
-    std::set<std::string> layers;
-    for (auto layer : layer_column) layers.insert(layer);
-
-    ImGui::Separator();
-    ImGui::Text("Layers");
-    for (auto layer : layers) {
-        ImGui::Text("%s", layer);
-    }
 }
 
 int main()
