@@ -153,9 +153,9 @@ ChannelRecord parse_channel_name(std::string channel_name, std::vector<std::stri
         std::string channel = channel_segments.back();
         bool isColor = std::string("RGBA").find(channel) != std::string::npos;
         bool isDepth = channel == "Z";
-        std::string layer = "other";
-        if (isColor) layer = "color";
-        if (isDepth) layer = "depth";
+        std::string layer = "[other]";
+        if (isColor) layer = "[color]";
+        if (isDepth) layer = "[depth]";
         std::string view = isMultiView ? views_hint[0] : "";
         return std::tuple<std::string, std::string, std::string>({ layer,view,channel });
     }
@@ -168,13 +168,13 @@ ChannelRecord parse_channel_name(std::string channel_name, std::vector<std::stri
             std::string channel = channel_segments.back();
             bool isColor = std::string("RGBA").find(channel) != std::string::npos;
             bool isDepth = channel == "Z";
-            std::string layer = "other";
-            if (isColor) layer = "color";
-            if (isDepth) layer = "depth";
+            std::string layer = "[other]";
+            if (isColor) layer = "[color]";
+            if (isDepth) layer = "[depth]";
             return { layer, channel_segments.end()[-2], channel_segments.back() };
         }
         else {
-            return { channel_segments[0], "-no view-", channel_segments.back() };
+            return { channel_segments[0], "[data]", channel_segments.back() };
         }
     }
 
@@ -192,7 +192,7 @@ ChannelRecord parse_channel_name(std::string channel_name, std::vector<std::stri
             // this channel is not in a view, but the layer name contains a dot
             //{layer.name}.{final channels}
             auto layer = join_string(channel_segments, ".", 0, channel_segments.size() - 2);
-            return { layer, "-no view-", channel_segments.back() };
+            return { layer, "[data]", channel_segments.back() };
         }
     }
 
@@ -208,14 +208,20 @@ ChannelRecord parse_channel_name(std::string channel_name, std::vector<std::stri
         }
         else {
             auto layer = join_string(channel_segments, ".", 0, channel_segments.size() - 2);
-            auto view = "-no view-";
+            auto view = "[data]";
             auto channel = channel_segments.end()[-1];
             return { layer, view, channel };
         }
     }
 }
 
-/** Read ChannelsTable from an exr file */
+/** Read ChannelsTable from an exr file
+ test file formats: exr1, exr2, dpx, jpg
+ test single part singleview
+ test single part multiview
+ test multipart singleview
+ test multipart multiview
+*/
 ChannelsTable get_channels_dataframe(std::filesystem::path filename, std::vector<std::string> views) {
     // create a dataframe from all available channels
     // subimage <name,channelname> -> <layer,view,channel>
@@ -324,7 +330,7 @@ std::map<std::string, ChannelsTable> group_by_view(ChannelsTable df) {
 }
 
 /** Gui for ChannelsTable */
-bool ImGui_ChannelsTable(const ChannelsTable& channels_dataframe, Channel * selected_channel) {
+bool ImGui_ChannelsTable(const ChannelsTable& channels_dataframe) {
     if (ImGui::BeginTable("channels table", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders)) {
         ImGui::TableSetupColumn("subimage/chan");
         ImGui::TableSetupColumn("layer");
@@ -343,13 +349,21 @@ bool ImGui_ChannelsTable(const ChannelsTable& channels_dataframe, Channel * sele
             ImGui::TableNextColumn();
             ImGui::Text("%s", view.c_str());
             ImGui::TableNextColumn();
-            if (ImGui::Selectable(channel.c_str(), *selected_channel == subimage_chan, ImGuiSelectableFlags_SpanAllColumns)) {
-                *selected_channel = subimage_chan;
-            }
+            ImGui::Text(channel.c_str());
             //ImGui::Text("%s", channel.c_str());
         }
         ImGui::EndTable();
     }
+}
+
+void ImGui_Display(std::vector<int> values) {
+    ImGui::BeginGroup();
+    for (auto val : values) {
+        ImGui::Text("%d", val);
+        ImGui::SameLine();
+    }
+    ImGui::NewLine();
+    ImGui::EndGroup();
 }
 
 void TestEXRLayers() {
@@ -391,10 +405,9 @@ void TestEXRLayers() {
     ImGui::Separator();
 
     // Show DataFrame
-    static Channel selected_channel;
     ImGui::BeginTabBar("image header");
     if (ImGui::BeginTabItem("channels dataframe")) {
-        ImGui_ChannelsTable(channels_table, &selected_channel);
+        ImGui_ChannelsTable(channels_table);
         ImGui::EndTabItem();
     }
 
@@ -402,7 +415,7 @@ void TestEXRLayers() {
         for (const auto& [layer_view, df] : layer_view_groups) {
             auto [layer, view] = layer_view;
             ImGui::Text("%s-%s", layer.c_str(), view.c_str());
-            ImGui_ChannelsTable(df, &selected_channel);
+            ImGui_ChannelsTable(df);
         }
         ImGui::EndTabItem();
     }
@@ -410,7 +423,7 @@ void TestEXRLayers() {
     if (ImGui::BeginTabItem("layers")) {
         for (const auto& [layer, df] : layer_groups) {
             ImGui::Text("%s", layer.c_str());
-            ImGui_ChannelsTable(df, &selected_channel);
+            ImGui_ChannelsTable(df);
         }
         ImGui::EndTabItem();
     }
@@ -418,7 +431,7 @@ void TestEXRLayers() {
     if (ImGui::BeginTabItem("views")) {
         for (const auto& [view, df] : view_groups) {
             ImGui::Text("%s", view.c_str());
-            ImGui_ChannelsTable(df, &selected_channel);
+            ImGui_ChannelsTable(df);
         }
         ImGui::EndTabItem();
     }
@@ -430,7 +443,7 @@ void TestEXRLayers() {
                 for (auto [view, df] : view_groups) {
                     ImGui::SetNextItemOpen(true, ImGuiCond_Once);
                     if (ImGui::TreeNode(view.c_str())) {
-                        ImGui_ChannelsTable(df, &selected_channel);
+                        ImGui_ChannelsTable(df);
                         ImGui::TreePop();
                     }
                 }
@@ -443,6 +456,7 @@ void TestEXRLayers() {
     if (ImGui::BeginTabItem("select")) {
         static std::string selected_layer;
         static std::string selected_view;
+        static std::vector<Channel> selected_channels;
         
 
         auto widget_width = ImGui::GetContentRegionAvailWidth();
@@ -481,7 +495,9 @@ void TestEXRLayers() {
         ImGui::EndGroup();
         ImGui::SameLine();
 
+
         ImGui::SetNextItemWidth(item_width);
+
         ImGui::BeginGroup();
         ImGui::Text("channels");
         if (ImGui::BeginListBox("##channels", { item_width, 0 })) {
@@ -490,8 +506,16 @@ void TestEXRLayers() {
                 for (auto [subimage_chan, record] : channels_table) {
                     auto [subimage, chan] = subimage_chan;
                     auto [layer, view, channel] = record;
-                    if (ImGui::Selectable(channel.c_str(), selected_channel == subimage_chan)) {
-                        selected_channel = subimage_chan;
+
+                    bool is_selected = std::find(selected_channels.begin(), selected_channels.end(), subimage_chan) != selected_channels.end();
+                    if (ImGui::Selectable(channel.c_str(), is_selected )) {
+                        if (is_selected) {
+                            auto it = std::find(selected_channels.begin(), selected_channels.end(), subimage_chan);
+                            selected_channels.erase(it);
+                        }
+                        else {
+                            selected_channels.push_back(subimage_chan);
+                        }
                     }
                     
                     ImGui::SameLine();
@@ -501,11 +525,106 @@ void TestEXRLayers() {
             ImGui::EndListBox();
         }
         ImGui::EndGroup();
-        ImGui::SameLine();
+
+        // show selected channels
+        ImGui::BeginGroup();
+        ImGui::Text("%s", "display channels");
+        for (auto selected_channel : selected_channels) {
+            ChannelRecord channel_record = channels_table[selected_channel];
+            auto [layer, view, channel] = channel_record;
+            ImGui::Text("%s.%s.%s", layer, view, channel);
+        }
+
+        /* Collect channelsand validate for display */
+        std::vector<int> subimages;
+        std::vector<int> channels;
+        for (auto [subimage, chan] : selected_channels) {
+            subimages.push_back(subimage);
+            channels.push_back(chan);
+        }
+        std::sort(channels.begin(), channels.end());
+
+        ImGui::Text("subimages:");
+        bool AreTheSameSubmages = std::all_of(subimages.begin(), subimages.end(), [&](int i) {return i == subimages[0]; });
+        ImGui_Display(subimages); ImGui::TextColored(AreTheSameSubmages ? ImColor(0, 255, 0) : ImColor(255, 0, 0), AreTheSameSubmages ? "SameSubimage" : "Channels shoud come from the same subimage");
+        ImGui::Text("channels:");
+
+        bool IsConsecutive = true;
+        for (int i = 1; i < channels.size(); ++i) {
+            if (channels[i] != channels[i - 1] + 1) {
+                IsConsecutive = false;
+                break;
+            }
+        }
+
+        bool WithinMaximumChannels = channels.size() <= 4;
+        ImGui_Display(channels);
+        ImGui::TextColored(IsConsecutive ? ImColor(0, 255, 0) : ImColor(255, 0, 0), IsConsecutive ? "Channels are in order" : "Channels shoud be in order!");
+        ImGui::TextColored(WithinMaximumChannels ? ImColor(0, 255, 0) : ImColor(255, 0, 0), WithinMaximumChannels ? "Channels can be displayed in RGBA" : "Maximum four channels can be displayed: RGBA");
+
+
+        ImGui::EndGroup();
+
+        if (subimages.size()>0 && AreTheSameSubmages && channels.size()>0 && IsConsecutive && WithinMaximumChannels) {
+            ImGui::Text("DISPLAY IMAGE");
+            // read header
+            auto image_cache = OIIO::ImageCache::create(true);
+            OIIO::ImageSpec spec;
+            image_cache->get_imagespec(OIIO::ustring(filename.string()), spec, subimages[0], 0);
+            auto x = spec.x;
+            auto y = spec.y;
+            int w = spec.width;
+            int h = spec.height;
+            int chbegin = channels[0];
+            int chend = channels[channels.size() - 1]+1; // channel range is exclusive [0-3)
+            int nchannels = chend - chbegin;
+            ImGui::Text("pos: %d %d, size: %dx%d, channels: %d-%d #%d", x, y, w, h, chbegin, chend, nchannels);
+
+            // read pixels
+            float* data = (float*)malloc(w * h * nchannels * sizeof(float));
+            image_cache->get_pixels(OIIO::ustring(filename.string()), subimages[0], 0, x, x+w, y, y+h, 0, 1, chbegin, chend, OIIO::TypeFloat, data, OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, chbegin, chend);
+            
+            // create texture
+            static GLuint tex;
+            if (glIsTexture(tex)) {
+                glDeleteTextures(1, &tex);
+            }
+
+            glGenTextures(1, &tex);
+            glBindTexture(GL_TEXTURE_2D, tex);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            GLint internalformat;
+            GLint format;
+            if (nchannels == 1) {
+                format = GL_RED;
+                internalformat = GL_RGBA;
+            }
+            if (nchannels == 2) {
+                format = GL_RG;
+                internalformat = GL_RGBA;
+            }
+            if (nchannels == 3) {
+                format = GL_RGB;
+                internalformat = GL_RGBA;
+            }
+            if (nchannels == 4) {
+                format = GL_RGBA;
+                internalformat = GL_RGBA;
+            }
+            GLint type = GL_FLOAT;
+            glTexImage2D(GL_TEXTURE_2D, 0, internalformat, w, h, 0, format, type, data);
+            glBindTexture(GL_TEXTURE_2D, 0);
+            
+            // free data from memory after uploaded to gpu
+            free(data);
+            ImGui::Image((ImTextureID)tex, ImVec2(256, 256));
+        }
 
         ImGui::EndTabItem();
     }
-
     ImGui::EndTabBar();
 }
 
