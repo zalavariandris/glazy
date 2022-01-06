@@ -324,15 +324,15 @@ std::map<std::string, ChannelsTable> group_by_view(ChannelsTable df) {
 }
 
 /** Gui for ChannelsTable */
-void ImGui_ChannelsDataframe(const ChannelsTable& channels_dataframe) {
+bool ImGui_ChannelsTable(const ChannelsTable& channels_dataframe, Channel * selected_channel) {
     if (ImGui::BeginTable("channels table", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders)) {
         ImGui::TableSetupColumn("subimage/chan");
         ImGui::TableSetupColumn("layer");
         ImGui::TableSetupColumn("view");
         ImGui::TableSetupColumn("channel");
         ImGui::TableHeadersRow();
-        for (const auto& [subimage_channelname, layer_view_channel] : channels_dataframe) {
-            auto [subimage, chan] = subimage_channelname;
+        for (const auto& [subimage_chan, layer_view_channel] : channels_dataframe) {
+            auto [subimage, chan] = subimage_chan;
             auto [layer, view, channel] = layer_view_channel;
 
             ImGui::TableNextRow();
@@ -343,7 +343,10 @@ void ImGui_ChannelsDataframe(const ChannelsTable& channels_dataframe) {
             ImGui::TableNextColumn();
             ImGui::Text("%s", view.c_str());
             ImGui::TableNextColumn();
-            ImGui::Text("%s", channel.c_str());
+            if (ImGui::Selectable(channel.c_str(), *selected_channel == subimage_chan, ImGuiSelectableFlags_SpanAllColumns)) {
+                *selected_channel = subimage_chan;
+            }
+            //ImGui::Text("%s", channel.c_str());
         }
         ImGui::EndTable();
     }
@@ -388,9 +391,10 @@ void TestEXRLayers() {
     ImGui::Separator();
 
     // Show DataFrame
+    static Channel selected_channel;
     ImGui::BeginTabBar("image header");
     if (ImGui::BeginTabItem("channels dataframe")) {
-        ImGui_ChannelsDataframe(channels_table);
+        ImGui_ChannelsTable(channels_table, &selected_channel);
         ImGui::EndTabItem();
     }
 
@@ -398,7 +402,7 @@ void TestEXRLayers() {
         for (const auto& [layer_view, df] : layer_view_groups) {
             auto [layer, view] = layer_view;
             ImGui::Text("%s-%s", layer.c_str(), view.c_str());
-            ImGui_ChannelsDataframe(df);
+            ImGui_ChannelsTable(df, &selected_channel);
         }
         ImGui::EndTabItem();
     }
@@ -406,7 +410,7 @@ void TestEXRLayers() {
     if (ImGui::BeginTabItem("layers")) {
         for (const auto& [layer, df] : layer_groups) {
             ImGui::Text("%s", layer.c_str());
-            ImGui_ChannelsDataframe(df);
+            ImGui_ChannelsTable(df, &selected_channel);
         }
         ImGui::EndTabItem();
     }
@@ -414,7 +418,7 @@ void TestEXRLayers() {
     if (ImGui::BeginTabItem("views")) {
         for (const auto& [view, df] : view_groups) {
             ImGui::Text("%s", view.c_str());
-            ImGui_ChannelsDataframe(df);
+            ImGui_ChannelsTable(df, &selected_channel);
         }
         ImGui::EndTabItem();
     }
@@ -426,7 +430,7 @@ void TestEXRLayers() {
                 for (auto [view, df] : view_groups) {
                     ImGui::SetNextItemOpen(true, ImGuiCond_Once);
                     if (ImGui::TreeNode(view.c_str())) {
-                        ImGui_ChannelsDataframe(df);
+                        ImGui_ChannelsTable(df, &selected_channel);
                         ImGui::TreePop();
                     }
                 }
@@ -439,6 +443,7 @@ void TestEXRLayers() {
     if (ImGui::BeginTabItem("select")) {
         static std::string selected_layer;
         static std::string selected_view;
+        
 
         auto widget_width = ImGui::GetContentRegionAvailWidth();
         auto style = ImGui::GetStyle();
@@ -485,7 +490,12 @@ void TestEXRLayers() {
                 for (auto [subimage_chan, record] : channels_table) {
                     auto [subimage, chan] = subimage_chan;
                     auto [layer, view, channel] = record;
-                    ImGui::Text("%s, #%d/%d", channel.c_str(), subimage, chan);
+                    if (ImGui::Selectable(channel.c_str(), selected_channel == subimage_chan)) {
+                        selected_channel = subimage_chan;
+                    }
+                    
+                    ImGui::SameLine();
+                    ImGui::Text("#%d/%d", subimage, chan);
                 }
             }
             ImGui::EndListBox();
