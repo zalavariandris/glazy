@@ -20,7 +20,13 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="exr_attributes_helper.h">
+    <ClInclude Include="UNUSED_exr_attributes_helper.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ChannelsTable.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Store.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

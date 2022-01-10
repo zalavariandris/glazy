@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cstdio> // printf sprintf snprintf
 
+/*
 std::vector<std::filesystem::path> find_sequence(std::filesystem::path input_path, int * start_frame, int * end_frame) {
     assert(std::filesystem::exists(input_path));
 
@@ -41,6 +42,7 @@ std::vector<std::filesystem::path> find_sequence(std::filesystem::path input_pat
 
     return sequence;
 }
+*/
 
 std::string to_string(std::vector<std::filesystem::path> sequence) {
     // collect frame numbers
@@ -66,7 +68,7 @@ std::string to_string(std::vector<std::filesystem::path> sequence) {
     return text;
 }
 
-std::tuple<std::filesystem::path, int, int> scan_sequence(const std::filesystem::path & input_path) {
+std::tuple<std::filesystem::path, int, int> scan_for_sequence(const std::filesystem::path & input_path) {
     assert(std::filesystem::exists(input_path));
 
     std::vector<std::filesystem::path> sequence;

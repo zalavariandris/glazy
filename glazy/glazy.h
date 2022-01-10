@@ -642,31 +642,37 @@ namespace glazy {
 
 		// glazy windows
 		{
+
+
 			static bool themes;
 			static bool stats;
 			static bool imgui_demo;
 			static bool imgui_style;
-			ImGui::BeginMainMenuBar();
-			if (ImGui::BeginMenu("glazy"))
-			{
-				ImGui::Separator();
-				ImGui::Text("Windows");
-				ImGui::Separator();
-				ImGui::MenuItem("themes", "", &themes);
-				ImGui::MenuItem("stats", "", &stats);
-				ImGui::MenuItem("imgui demo", "", &imgui_demo);
-				ImGui::MenuItem("imgui style", "", &imgui_style);
-				ImGui::EndMenu();
-			}
-			
-			// Show fps in the right side
-			std::stringstream ss;
-			ss << std::fixed << std::setprecision(2) << ImGui::GetIO().Framerate << "fps";
+			if (ImGui::BeginMainMenuBar()) {
+				if (ImGui::BeginMenu("glazy"))
+				{
+					ImGui::Separator();
+					ImGui::Text("Windows");
+					ImGui::Separator();
+					ImGui::MenuItem("themes", "", &themes);
+					ImGui::MenuItem("stats", "", &stats);
+					ImGui::MenuItem("imgui demo", "", &imgui_demo);
+					ImGui::MenuItem("imgui style", "", &imgui_style);
+					ImGui::EndMenu();
+				}
 
-			auto text_size = ImGui::CalcTextSize(ss.str().c_str());
-			ImGui::SameLine(ImGui::GetWindowContentRegionWidth() - text_size.x);
-			ImGui::Text(ss.str().c_str());
-			ImGui::EndMainMenuBar();
+				// Show fps in the right side
+				auto left_cursor = ImGui::GetCursorPos(); // store cursor
+				std::stringstream ss; // compose text to calculate size
+				ss << std::fixed << std::setprecision(2) << ImGui::GetIO().Framerate << "fps";
+				auto text_size = ImGui::CalcTextSize(ss.str().c_str());
+				ImGui::SameLine(ImGui::GetWindowContentRegionWidth() - text_size.x);
+				ImGui::Text(ss.str().c_str());
+				ImGui::SetCursorPos(left_cursor); // restore cursor to the left side
+
+				// end menubar
+				ImGui::EndMainMenuBar();
+			}
 
 			// Show stats
 			if (stats && ImGui::Begin("stats", &stats)) {

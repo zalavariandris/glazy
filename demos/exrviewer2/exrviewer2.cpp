@@ -1,14 +1,17 @@
 // exrviewer2.cpp : This file contains the 'main' function. Program execution begins and ends there.
 //
 
+// std libraries
 #include <iostream>
 #include <set>
-#include <deque>
-#include <any>
 #include <cassert>
-#include <ranges>
+#include <filesystem>
 
-// glazy
+// std data structures
+#include <vector>
+#include <string>
+
+// from glazy
 #include "glazy.h"
 #include "pathutils.h"
 #include "stringutils.h"
@@ -17,272 +20,19 @@
 #include "OpenImageIO/imageio.h""
 #include "OpenImageIO/imagecache.h"
 
-/* EXR helpers */
-using AttributeVariant = std::variant<                                   // either a string or a vector of strings | int, vector of int... | float, vector of float | 
-    std::string, std::vector<std::string>, 
-    int, std::vector<int>, 
-    float, std::vector<float>>;
-using ChannelKey = std::tuple<int, int>;                                 // subimage, channel index
-using ChannelRecord = std::tuple<std::string, std::string, std::string>; // layer.view.channel
-using ChannelsTable = std::map<ChannelKey, ChannelRecord>;
+// utilities
+#include "ChannelsTable.h"
+#include "Store.h"
 
-// subimage, channel index
-using View = std::string;                           // view name or empty string
-using Layer = std::map<View, std::vector<ChannelKey>>; // vector of channels by views
-using FrameRange = std::tuple<int, int>;            // firstFrame-lastFrame
-
-struct Image {
-    std::string name;
-    FrameRange framerange;
-    std::map<std::string, Layer> layers;
-};
-
-/// Retrieve any metadata attribute, converted to a stringvector./
-/// If no such metadata exists, the `defaultval` will be returned.
-std::vector<std::string> get_stringvector_attribute(const OIIO::ImageSpec& spec, std::string name, std::vector<std::string> default_value = std::vector<std::string>()) {
-    // TODO: handle errors: cant find attribute. attribute is not a stringvector
-    std::vector<std::string> result;
-    auto attribute_type = spec.getattributetype(name);
-    if (attribute_type.is_sized_array()) {
-        const char** data = (const char**)malloc(attribute_type.basesize() * attribute_type.basevalues());
-        if (data) {
-            spec.getattribute(name, attribute_type, data);
-            for (auto i = 0; i < attribute_type.arraylen; i++) {
-                result.push_back(data[i]);
-            }
-            free(data);
-        }
-    }
-    return result;
-}
-
-
-
-/// parse exr channel names with format: layer.view.channel
-/// return a tuple in the above order.
-/// 
-/// tests:
-/// - R; right,left -> color right R
-/// - Z; right,left  -> depth right Z
-/// - left.R; right,left  -> color left R
-/// - left.Z; right,left  -> depth left Z
-/// - disparityR.x -> disparityL _ R
-ChannelRecord parse_channel_name(std::string channel_name, std::vector<std::string> views_hint) {
-    bool isMultiView = !views_hint.empty();
-
-    auto channel_segments = split_string(channel_name, ".");
-
-    std::tuple<std::string, std::string, std::string> result;
-
-    if (channel_segments.size() == 1) {
-        std::string channel = channel_segments.back();
-        bool isColor = std::string("RGBA").find(channel) != std::string::npos;
-        bool isDepth = channel == "Z";
-        std::string layer = "[other]";
-        if (isColor) layer = "[color]";
-        if (isDepth) layer = "[depth]";
-        std::string view = isMultiView ? views_hint[0] : "";
-        return std::tuple<std::string, std::string, std::string>({ layer,view,channel });
-    }
-
-    if (channel_segments.size() == 2) {
-        // find a view name right before the final channel name. If not found this channel is not associated with any view
-        bool IsInView = std::find(views_hint.begin(), views_hint.end(), channel_segments.end()[-2]) != views_hint.end();
-
-        if (IsInView) {
-            std::string channel = channel_segments.back();
-            bool isColor = std::string("RGBA").find(channel) != std::string::npos;
-            bool isDepth = channel == "Z";
-            std::string layer = "[other]";
-            if (isColor) layer = "[color]";
-            if (isDepth) layer = "[depth]";
-            return { layer, channel_segments.end()[-2], channel_segments.back() };
-        }
-        else {
-            return { channel_segments[0], "[data]", channel_segments.back() };
-        }
-    }
-
-    if (channel_segments.size() == 3) {
-        // find a view name right before the final channel name. If not found this channel is not associated with any view
-        bool IsInView = std::find(views_hint.begin(), views_hint.end(), channel_segments.end()[-2]) != views_hint.end();
-
-        if (IsInView) {
-            // this channel is in a view
-            // this is the format descriped in oenexr docs: https://www.openexr.com/documentation/MultiViewOpenEXR.pdf
-            //{layer}.{view}.{final channels}
-            return { channel_segments[0], channel_segments.end()[-2], channel_segments.back() };
-        }
-        else {
-            // this channel is not in a view, but the layer name contains a dot
-            //{layer.name}.{final channels}
-            auto layer = join_string(channel_segments, ".", 0, channel_segments.size() - 2);
-            return { layer, "[data]", channel_segments.back() };
-        }
-    }
-
-    if (channel_segments.size() > 3) {
-        // find a view name right before the final channel name. If not found this channel is not associated with any view
-        bool IsInView = std::find(views_hint.begin(), views_hint.end(), channel_segments.end()[-2]) != views_hint.end();
-
-        if (IsInView) {
-            auto layer = join_string(channel_segments, ".", 0, channel_segments.size() - 3);
-            auto view = channel_segments.end()[-2];
-            auto channel = channel_segments.end()[-1];
-            return { layer, view, channel };
-        }
-        else {
-            auto layer = join_string(channel_segments, ".", 0, channel_segments.size() - 2);
-            auto view = "[data]";
-            auto channel = channel_segments.end()[-1];
-            return { layer, view, channel };
-        }
-    }
-}
-
-/// Read ChannelsTable from an exr file
-///  test file formats: exr1, exr2, dpx, jpg
-///  test single part singleview
-///  test single part multiview
-///  test multipart singleview
-///  test multipart multiview
-ChannelsTable get_channels_dataframe(std::filesystem::path filename)
-{
-
-    auto image_cache = OIIO::ImageCache::create(true);
-
-    // create a dataframe from all available channels
-    // subimage <name,channelname> -> <layer,view,channel>
-    std::map<std::tuple<int, int>, std::tuple<std::string, std::string, std::string>> layers_dataframe;
-    
-    auto in = OIIO::ImageInput::open(filename.string());
-    auto spec = in->spec();
-    std::vector<std::string> views = get_stringvector_attribute(spec, "multiView");
-    int nsubimages = 0;
-
-    while (in->seek_subimage(nsubimages, 0)) {
-        auto spec = in->spec();
-        std::string subimage_name = spec.get_string_attribute("name");
-        for (auto chan = 0; chan < spec.nchannels; chan++) {
-
-            std::string channel_name = spec.channel_name(chan);
-            const auto& [layer, view, channel] = parse_channel_name(spec.channel_name(chan), views);
-            std::tuple<int, int> key{ nsubimages, chan };
-            layers_dataframe[key] = { layer, view, channel };
-        }
-        ++nsubimages;
-    }
-
-    return layers_dataframe;
-}
-
-/// Get index-subimage Column
-std::vector<int> get_subimage_idx_column(ChannelsTable df) {
-    std::vector<int> subimages;
-    for (auto&& [subimage_chan, layer_view_channel] : df) {
-        auto&& [subimage, chan] = subimage_chan;
-
-        subimages.push_back(subimage);
-    }
-    return subimages;
-}
-
-/// Get index-chan Column
-std::vector<int> get_chan_idx_column(ChannelsTable df) {
-    std::vector<int> chans;
-    for (auto&& [subimage_chan, layer_view_channel] : df) {
-        auto&& [subimage, chan] = subimage_chan;
-
-        chans.push_back(chan);
-    }
-    return chans;
-}
-
-/// Get layers Column
-std::vector<std::string> get_layers_column(ChannelsTable df) {
-    std::vector<std::string> layers;
-    for (auto&& [subimage_chan, layer_view_channel] : df) {
-        auto&& [subimage, chan] = subimage_chan;
-        auto&& [layer, view, channel] = layer_view_channel;
-
-        layers.push_back(layer);
-    }
-    return layers;
-}
-
-/// Get views Column
-std::vector<std::string> get_views_column(ChannelsTable df) {
-    std::vector<std::string> views;
-    for (auto&& [subimage_chan, layer_view_channel] : df) {
-        auto&& [subimage, chan] = subimage_chan;
-        auto&& [layer, view, channel] = layer_view_channel;
-
-        views.push_back(layer);
-    }
-    return views;
-}
-
-/// Get channels Column
-std::vector<std::string> get_channels_column(ChannelsTable df) {
-    std::vector<std::string> channels;
-    for (auto&& [subimage_chan, layer_view_channel] : df) {
-        auto&& [subimage, chan] = subimage_chan;
-        auto&& [layer, view, channel] = layer_view_channel;
-
-        channels.push_back(channel);
-    }
-    return channels;
-}
-
-/* Group by */
-/// Group channels by layer and view
-std::map<std::tuple<std::string, std::string>, ChannelsTable> group_by_layer_view(const ChannelsTable & df) {
-    std::map<std::tuple<std::string, std::string>, ChannelsTable> layer_view_groups;
-    for (auto&& [subimage_chan, layer_view_channel] : df) {
-        auto&& [subimage, chan] = subimage_chan;
-        auto&& [layer, view, channel] = layer_view_channel;
-
-        std::tuple<std::string, std::string> key{ layer, view };
-        if (!layer_view_groups.contains(key)) layer_view_groups[key] = ChannelsTable();
-
-        layer_view_groups[key][subimage_chan] = layer_view_channel;
-    }
-    return layer_view_groups;
-}
-
-/// Group channels by layer
-std::map<std::string, ChannelsTable> group_by_layer(ChannelsTable df) {
-    std::map<std::string, ChannelsTable> layer_groups;
-    for (auto&& [subimage_chan, layer_view_channel] : df) {
-        auto&& [subimage, chan] = subimage_chan;
-        auto&& [layer, view, channel] = layer_view_channel;
-
-
-        if (!layer_groups.contains(layer)) layer_groups[layer] = ChannelsTable();
-
-        layer_groups[layer][subimage_chan] = layer_view_channel;
-    }
-    return layer_groups;
-}
-
-/// Group channels by view
-std::map<std::string, ChannelsTable> group_by_view(ChannelsTable df) {
-    std::map<std::string, ChannelsTable> view_groups;
-    for (auto&& [subimage_chan, layer_view_channel] : df) {
-        auto&& [subimage, chan] = subimage_chan;
-        auto&& [layer, view, channel] = layer_view_channel;
-
-
-        if (!view_groups.contains(view)) view_groups[view] = ChannelsTable();
-
-        view_groups[view][subimage_chan] = layer_view_channel;
-    }
-    return view_groups;
+std::set<GLuint> textures_to_delete;
+void delete_texture_later(GLuint tex) {
+    textures_to_delete.insert(tex);
 }
 
 /// Gui for ChannelsTable
 bool ImGui_ChannelsTable(const ChannelsTable& channels_dataframe) {
-    if (ImGui::BeginTable("channels table", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders)) {
+    ImGui::BeginGroup();
+    if (ImGui::BeginTable("channels table", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_NoHostExtendX |ImGuiTableFlags_SizingFixedFit)) {
         ImGui::TableSetupColumn("subimage/chan");
         ImGui::TableSetupColumn("layer");
         ImGui::TableSetupColumn("view");
@@ -292,6 +42,7 @@ bool ImGui_ChannelsTable(const ChannelsTable& channels_dataframe) {
             auto [subimage, chan] = subimage_chan;
             auto [layer, view, channel] = layer_view_channel;
 
+            //ImGui::TableNextRow();
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
             ImGui::Text("%d/%d", subimage, chan);
@@ -303,11 +54,13 @@ bool ImGui_ChannelsTable(const ChannelsTable& channels_dataframe) {
             ImGui::Text(channel.c_str());
             //ImGui::Text("%s", channel.c_str());
         }
+        ImGui::TableNextRow();
         ImGui::EndTable();
     }
+    ImGui::EndGroup();
 }
 
-void ImGui_Display(std::vector<int> values) {
+void ImGui_Display(const std::vector<int> &values) {
     ImGui::BeginGroup();
     for (auto val : values) {
         ImGui::Text("%d", val);
@@ -317,36 +70,140 @@ void ImGui_Display(std::vector<int> values) {
     ImGui::EndGroup();
 }
 
+bool ImGui_SanitycheckChannelstable(const ChannelsTable &df) {
+    // check if channels are the same subimage
+    std::vector<int> subimages = get_subimage_idx_column(df);
 
-int indexOf(const std::vector<std::string> &v, const std::string element) {
-    auto it = find(v.begin(), v.end(), element);
+    bool AreTheSameSubmages = std::all_of(subimages.begin(), subimages.end(), [&](int i) {return i == subimages[0]; });
+    // check if RGBA and in right order
+    std::vector<std::string> channels = get_channels_column(df);
 
-    // If element was found
-    if (it != v.end())
-    {
-        int index = it - v.begin();
-        return index;
+    // check channels count
+    bool ChannelsCountWithinRange = channels.size() > 0 && channels.size() <= 4;
+
+    // check if RGBA and in wrong order
+    bool R_OK = indexOf(channels, "R") == -1 || indexOf(channels, "R") == 0;
+    bool G_OK = indexOf(channels, "G") == -1 || indexOf(channels, "G") == 1;
+    bool B_OK = indexOf(channels, "B") == -1 || indexOf(channels, "B") == 2;
+    bool A_OK = indexOf(channels, "A") == -1 || indexOf(channels, "A") == 3 || indexOf(channels, "A") == 0;
+    bool RGBA_ORDERED = R_OK && G_OK && B_OK && A_OK;
+
+    // check if xyz and in right order
+    //                         
+    bool X_OK = indexOf(channels, "x") == -1 || indexOf(channels, "x") == 0;
+    bool Y_OK = indexOf(channels, "y") == -1 || indexOf(channels, "y") == 1;
+    bool Z_OK = indexOf(channels, "z") == -1 || indexOf(channels, "z") == 2 || indexOf(channels, "z") == 0;
+    bool XYZ_ORDERED = X_OK && Y_OK && Z_OK;
+
+    if (!ChannelsCountWithinRange) {
+        ImGui::TextColored(ImColor(255, 255, 0), "channels count not within displayable range [1-4], got: %d", channels.size());
     }
-    else {
-        return -1;
+
+    if (!AreTheSameSubmages) {
+        ImGui::TextColored(ImColor(255, 255, 0), "Channels are from multiple subimages");
     }
+    if (!RGBA_ORDERED) {
+        ImGui::TextColored(ImColor(255, 255, 0), "RGBA in wrong order!");
+    }
+    if (!XYZ_ORDERED) {
+        ImGui::TextColored(ImColor(255, 255, 0), "XYZ in wrong order!");
+    }
+
+    return AreTheSameSubmages && ChannelsCountWithinRange && RGBA_ORDERED && XYZ_ORDERED;
 }
 
-bool ImGui_sanitycheck_channelstable(const ChannelsTable &df) {
+GLuint ImGui_DisplayImage_impl(std::filesystem::path filename, std::vector<ChannelKey> channel_keys) {
+    //auto channel_keys = get_index_column(selected_df);
+    // read header
+    auto image_cache = OIIO::ImageCache::create(true);
+    OIIO::ImageSpec spec;
+    image_cache->get_imagespec(OIIO::ustring(filename.string()), spec, std::get<0>(channel_keys[0]), 0);
+    auto x = spec.x;
+    auto y = spec.y;
+    int w = spec.width;
+    int h = spec.height;
+    int chbegin = std::get<1>(channel_keys[0]);
+    int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
+    int nchannels = chend - chbegin;
+    ImGui::Text("pos: %d %d\nsize: %dx%d\nchannels: %d-%d #%d", x, y, w, h, chbegin, chend, nchannels);
 
+    // read pixels
+    float* data = (float*)malloc(w * h * nchannels * sizeof(float));
+    image_cache->get_pixels(OIIO::ustring(filename.string()), std::get<0>(channel_keys[0]), 0, x, x + w, y, y + h, 0, 1, chbegin, chend, OIIO::TypeFloat, data, OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, chbegin, chend);
+
+    // create texture
+    GLuint tex;
+
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    GLint internalformat;
+    GLint format;
+    if (nchannels == 1) {
+        format = GL_RED;
+        internalformat = GL_RGBA;
+    }
+    if (nchannels == 2) {
+        format = GL_RG;
+        internalformat = GL_RGBA;
+    }
+    if (nchannels == 3) {
+        format = GL_RGB;
+        internalformat = GL_RGBA;
+    }
+    if (nchannels == 4) {
+        format = GL_RGBA;
+        internalformat = GL_RGBA;
+    }
+    GLint type = GL_FLOAT;
+    glTexImage2D(GL_TEXTURE_2D, 0, internalformat, spec.width, spec.height, 0, format, type, data);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    // free data from memory after uploaded to gpu
+    free(data);
+    return tex;
 }
 
-void ImGui_DisplayImage(const ChannelsTable &df) {
+void ImGui_DisplayImage(std::filesystem::path filename, std::vector<ChannelKey> channel_keys, const ImVec2 &size)
+{
+    using Key = std::tuple<std::filesystem::path, std::vector<ChannelKey>>;
+    static std::map<Key, GLuint> cache;
 
+    Key key{ filename, channel_keys };
+    if (!cache.contains(key)) {
+        
+        cache[key] = ImGui_DisplayImage_impl(filename, channel_keys);
+    }
+
+    //delete_texture_later(cache[key]);
+    ImGui::Image((ImTextureID)cache[key], size);
+}
+
+void TestImageSequence() {
+    std::filesystem::path filename = "C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr";
+
+    ImGui::Text("filename: %s", filename.string().c_str());
+
+    auto sequence = scan_for_sequence(filename);
+    auto [pattern, start_frame, end_frame] = sequence;
+    ImGui::Text("pattern: %s %d-%d", pattern.string().c_str(), start_frame, end_frame);
+
+    static int frame;
+    ImGui::SliderInt("frame", &frame, start_frame, end_frame);
+
+    auto item = sequence_item(pattern, frame);
+    ImGui::Text("item: %s", item.string().c_str());
 }
 
 void TestEXRLayers() {
     std::filesystem::path filename = "C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr";
 
-
-
+    /// Prepare data for display
     // Read channels dataframe
-    ChannelsTable channels_table = get_channels_dataframe(filename);
+    ChannelsTable channels_table = get_channelstable(filename);
     static ChannelsTable selected_df;
 
     // Group by layers and views
@@ -358,15 +215,17 @@ void TestEXRLayers() {
         layer_view_map[layer] = group_by_view(channels);
     }
 
-    // Show filename
-    ImGui::Text("filename: %s", filename.string().c_str());
-    ImGui::Separator();
-
-    // Show Views
+    // Get Views
     auto image_cache = OIIO::ImageCache::create(true);
     OIIO::ImageSpec spec;
     image_cache->get_imagespec(OIIO::ustring(filename.string()), spec, 0, 0);
     auto views = get_stringvector_attribute(spec, "multiView");
+
+    /// Display GUI
+
+    // Show filename
+    ImGui::Text("filename: %s", filename.string().c_str());
+    ImGui::Separator();
 
     // display views
     ImGui::Text("views: "); ImGui::SameLine();
@@ -377,7 +236,7 @@ void TestEXRLayers() {
     ImGui::Separator();
 
     // Show DataFrame
-    if (ImGui::BeginChild("channels_column", {ImGui::GetContentRegionAvailWidth()-256, ImGui::GetContentRegionAvail().y})) {
+    if (ImGui::BeginChild("channels_column", {ImGui::GetContentRegionAvailWidth()-512, ImGui::GetContentRegionAvail().y})) {
         if (ImGui::BeginTabBar("image header")) {
             if (ImGui::BeginTabItem("channels dataframe")) {
                 ImGui_ChannelsTable(channels_table);
@@ -395,55 +254,23 @@ void TestEXRLayers() {
                 ImGui::EndTabItem();
             }
 
-            if (ImGui::BeginTabItem("layer -> view")) {
+            if (ImGui::BeginTabItem("layer -> view"))
+            {
                 for (auto [layer, view_groups] : layer_view_map) {
                     ImGui::SetNextItemOpen(true, ImGuiCond_Once);
                     if (ImGui::TreeNode(layer.c_str())) {
                         for (auto [view, df] : view_groups) {
                             ImGui::SetNextItemOpen(true, ImGuiCond_Once);
                             if (ImGui::TreeNode(view.c_str())) {
-                                // check if channels are the same subimage
-                                std::vector<int> subimages = get_subimage_idx_column(selected_df);
-                                bool AreTheSameSubmages = std::all_of(subimages.begin(), subimages.end(), [&](int i) {return i == subimages[0]; });
-                                // check if RGBA and in right order
-                                std::vector<std::string> channels = get_channels_column(df);
-
-                                // check channels count
-                                bool ChannelsCountWithinRange = channels.size() > 0 && channels.size() <= 4;
-
-                                // check if RGBA and in wrong order
-                                bool R_OK = indexOf(channels, "R") == -1 || indexOf(channels, "R") == 0;
-                                bool G_OK = indexOf(channels, "G") == -1 || indexOf(channels, "G") == 1;
-                                bool B_OK = indexOf(channels, "B") == -1 || indexOf(channels, "B") == 2;
-                                bool A_OK = indexOf(channels, "A") == -1 || indexOf(channels, "A") == 3 || indexOf(channels, "A") == 0;
-                                bool RGBA_ORDERED = R_OK && G_OK && B_OK && A_OK;
-
-                                // check if xyz and in right order
-                                //                         
-                                bool X_OK = indexOf(channels, "x") == -1 || indexOf(channels, "x") == 0;
-                                bool Y_OK = indexOf(channels, "y") == -1 || indexOf(channels, "y") == 1;
-                                bool Z_OK = indexOf(channels, "z") == -1 || indexOf(channels, "z") == 2 || indexOf(channels, "z") == 0;
-                                bool XYZ_ORDERED = X_OK && Y_OK && Z_OK;
-
-                                if (!ChannelsCountWithinRange) {
-                                    ImGui::TextColored(ImColor(255, 255, 0), "channels count not within displayable range [1-4], got: %d", channels.size());
-                                }
-
-                                if (!AreTheSameSubmages) {
-                                    ImGui::TextColored(ImColor(255, 255, 0), "Channels are from multiple subimages");
-                                }
-                                if (!RGBA_ORDERED) {
-                                    ImGui::TextColored(ImColor(255, 255, 0), "RGBA in wrong order!");
-                                }
-                                if (!XYZ_ORDERED) {
-                                    ImGui::TextColored(ImColor(255, 255, 0), "XYZ in wrong order!");
-                                }
-
                                 if (ImGui::Selectable(layer.c_str())) {
                                     selected_df = df;
                                 }
+                                //ImGui::SetNextItemWidth(ImGui::GetContentRegionAvailWidth() - 232);
+                                if (ImGui_SanitycheckChannelstable(df)) {
+                                    ImGui_DisplayImage(filename, get_index_column(df), ImVec2(232, 232));
+                                }
+                                ImGui::SameLine();
                                 ImGui_ChannelsTable(df);
-
                                 ImGui::TreePop();
                             }
                         }
@@ -460,164 +287,15 @@ void TestEXRLayers() {
         display image from selection
     */
     ImGui::SameLine();
-    if(ImGui::BeginChild("viewer column", {256, ImGui::GetContentRegionAvail().y})) {
-        // show selected channels
-        ImGui::Text("%s", "display channels");
-
-        std::vector<int> subimages = get_subimage_idx_column(selected_df);
-        std::vector<int> channels = get_chan_idx_column(selected_df);
-
-        ImGui::Text("subimages:");
-        bool AreTheSameSubmages = std::all_of(subimages.begin(), subimages.end(), [&](int i) {return i == subimages[0]; });
-        ImGui_Display(subimages); ImGui::TextColored(AreTheSameSubmages ? ImColor(0, 255, 0) : ImColor(255, 0, 0), AreTheSameSubmages ? "SameSubimage" : "Channels shoud come from the same subimage");
-        ImGui::Text("channels:");
-
-        bool IsConsecutive = true;
-        for (int i = 1; i < channels.size(); ++i) {
-            if (channels[i] != channels[i - 1] + 1) {
-                IsConsecutive = false;
-                break;
-            }
-        }
-
-        bool WithinMaximumChannels = channels.size() <= 4;
-        ImGui_Display(channels);
-        ImGui::TextColored(IsConsecutive ? ImColor(0, 255, 0) : ImColor(255, 0, 0), IsConsecutive ? "Channels are in order" : "Channels shoud be in order!");
-        ImGui::TextColored(WithinMaximumChannels ? ImColor(0, 255, 0) : ImColor(255, 0, 0), WithinMaximumChannels ? "Channels can be displayed in RGBA" : "Maximum four channels can be displayed: RGBA");
-
-
-        if (subimages.size() > 0 && AreTheSameSubmages && channels.size() > 0 && IsConsecutive && WithinMaximumChannels) {
-            ImGui::Text("!!!DISPLAY IMAGE!!!");
-            // read header
-            auto image_cache = OIIO::ImageCache::create(true);
-            OIIO::ImageSpec spec;
-            image_cache->get_imagespec(OIIO::ustring(filename.string()), spec, subimages[0], 0);
-            auto x = spec.x;
-            auto y = spec.y;
-            int w = spec.width;
-            int h = spec.height;
-            int chbegin = channels[0];
-            int chend = channels[channels.size() - 1] + 1; // channel range is exclusive [0-3)
-            int nchannels = chend - chbegin;
-            ImGui::Text("pos: %d %d, size: %dx%d, channels: %d-%d #%d", x, y, w, h, chbegin, chend, nchannels);
-
-            // read pixels
-            float* data = (float*)malloc(w * h * nchannels * sizeof(float));
-            image_cache->get_pixels(OIIO::ustring(filename.string()), subimages[0], 0, x, x + w, y, y + h, 0, 1, chbegin, chend, OIIO::TypeFloat, data, OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, chbegin, chend);
-
-            // create texture
-            static GLuint tex;
-            if (glIsTexture(tex)) {
-                glDeleteTextures(1, &tex);
-            }
-
-            glGenTextures(1, &tex);
-            glBindTexture(GL_TEXTURE_2D, tex);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-            GLint internalformat;
-            GLint format;
-            if (nchannels == 1) {
-                format = GL_RED;
-                internalformat = GL_RGBA;
-            }
-            if (nchannels == 2) {
-                format = GL_RG;
-                internalformat = GL_RGBA;
-            }
-            if (nchannels == 3) {
-                format = GL_RGB;
-                internalformat = GL_RGBA;
-            }
-            if (nchannels == 4) {
-                format = GL_RGBA;
-                internalformat = GL_RGBA;
-            }
-            GLint type = GL_FLOAT;
-            glTexImage2D(GL_TEXTURE_2D, 0, internalformat, w, h, 0, format, type, data);
-            glBindTexture(GL_TEXTURE_2D, 0);
-
-            // free data from memory after uploaded to gpu
-            free(data);
-            ImGui::Image((ImTextureID)tex, ImVec2(256, 256));
+    if(ImGui::BeginChild("viewer column", {512, ImGui::GetContentRegionAvail().y}))
+    {       
+        if (ImGui_SanitycheckChannelstable(selected_df))
+        {
+            ImGui_DisplayImage(filename, get_index_column(selected_df), ImVec2(512, 512));
         }
         ImGui::EndChild();
     }
 }
-
-
-
-/**********************
- * Reactive lazy vars *
- **********************/
-class BaseVar {
-protected:
-    mutable bool dirty=true;
-public:
-    mutable std::set<BaseVar*> dependants;
-    std::string name;
-    ImVec2 pos={0,0};
-    void set_dirty(bool val=true) {
-        dirty = val;
-    }
-};
-
-std::vector<BaseVar*>depstack;
-std::set<BaseVar*> nodes;
-
-template <typename T>
-class State : public BaseVar {
-private:
-    mutable T cache;
-public:
-    State(T val, std::string _name="") :cache(val) {
-        nodes.insert(this);
-        name = _name;
-    };
-    void set(T val) {
-        cache = val;
-        for (auto dep : dependants) dep->set_dirty();
-    }
-    T get() const {
-        if (!depstack.empty()) {
-            dependants.insert(depstack.back());
-        }
-        return cache;
-    }
-};
-
-template <typename T>
-class Computed : public BaseVar{
-private:
-    mutable T cache;
-    std::function<T()> evaluate;
-public:
-    Computed(std::function<T()> f, std::string _name="") : evaluate(f) {
-        nodes.insert(this);
-        name = _name;
-    };
-
-    const T get() const {
-        if (!depstack.empty()) {
-            dependants.insert(depstack.back());
-        }
-        if (dirty) {
-            depstack.push_back((BaseVar*)this);
-            cache = evaluate();
-            depstack.pop_back();
-            dirty = false;
-            for (auto dep : dependants) dep->set_dirty();
-        }
-        
-        return cache;
-    }
-};
-
-/*********
- * Store * 
- *********/
 
 /* state */
 auto state_pattern = State<std::filesystem::path>("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/multipart.%04d.exr", "pattern");
@@ -801,73 +479,33 @@ auto texture = Computed<GLuint>([]()->GLuint {
     return 0;
 }, "texture");
 
-// widget helpers
-void layout_nodes() {
-    // collect edges
-    std::set<std::tuple<BaseVar*, BaseVar*>> edges;
-    for (auto node : nodes) {
-        for (auto dep : node->dependants) {
-            edges.insert({ node, dep });
-        }
-    }
-
-    std::map<int, std::set<BaseVar*>> layers;
-    
-
-    // Find Roots
-    std::vector<BaseVar*> roots;
-    for (auto node : nodes) roots.push_back(node);
-    // collect nodes with depencies
-    std::set<BaseVar*> nodes_with_dependencies;
-    for (auto node : nodes) {
-        for (auto dep : node->dependants) {
-            nodes_with_dependencies.insert(dep);
-        }
-    }
-    // remove nodes with dependencies from queue->keep root nodes only!
-    roots.erase(std::remove_if(roots.begin(), roots.end(), [&](auto n) {
-        return nodes_with_dependencies.contains(n);
-    }), roots.end());
-
-    auto Q = roots;
-    std::set<BaseVar*> visited;
-    int current_layer = 0;
-    while (!Q.empty()) {
-        auto v = Q.back(); Q.pop_back();
-        layers[current_layer].insert(v);
-
-        for (auto w : v->dependants) {
-            if (!visited.contains(w)) {
-                current_layer += 1;
-                visited.insert(w);
-                Q.push_back(w);
-            }
-        }
-    }
-
-    // position nodes on layers
-    for (auto [u, layer]:layers) {
-        int v = 0;
-        for (auto node : layer) {
-            node->pos = { v*150.f+50, u*120.f+50 };
-            v += 1;
-        }
-    }
-
-    //for (auto node : nodes) {
-    //    node->pos.x = (float)rand() / RAND_MAX * 300 + 50;
-    //    node->pos.y = (float)rand() / RAND_MAX * 300 + 50;
-    //}
-}
-
 int main()
 {
     glazy::init();
     while (glazy::is_running())
     {
         glazy::new_frame();
+        // window visibility flags
+        static bool show_channelstable_window{true};
+        static bool show_viewer_window{ true };
+        static bool show_info_window{ true };
+        static bool show_dag_window{ true };
+        static bool show_imagesequence_window{ true };
+        if (ImGui::BeginMainMenuBar()) {
+            if (ImGui::BeginMenu("windows"))
+            {
+                ImGui::MenuItem("channels sheet", "", &show_channelstable_window);
+                ImGui::MenuItem("viewer", "", &show_viewer_window);
+                ImGui::MenuItem("info", "", &show_info_window);
+                ImGui::MenuItem("DAG", "", &show_dag_window);
+                ImGui::MenuItem("image sequence", "", &show_imagesequence_window);
 
-        if (ImGui::Begin("DAG")) {
+                ImGui::EndMenu();
+            }
+            ImGui::EndMainMenuBar();
+        }
+
+        if (show_dag_window && ImGui::Begin("DAG")) {
             layout_nodes();
             auto drawlist = ImGui::GetWindowDrawList();
             auto windowpos = ImGui::GetWindowPos();
@@ -903,12 +541,12 @@ int main()
             ImGui::End();
         }
 
-        if (ImGui::Begin("Read"))
+        if (show_info_window && ImGui::Begin("Read"))
         {
             if (ImGui::Button("open")) {
                 auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0");
                 if (!filepath.empty()) {
-                    auto [pattern, first, last] = scan_sequence(filepath);
+                    auto [pattern, first, last] = scan_for_sequence(filepath);
                     state_pattern.set(pattern);
                     selected_subimage = 0;
 
@@ -961,13 +599,6 @@ int main()
             // create a dataframe from all available channels
             // subimage <name,channelname> -> <layer,view,channel>
 
-            if (ImGui::Begin("tests")) {
-                if (ImGui::CollapsingHeader("TestEXRLayers")) {
-                    TestEXRLayers();
-                }
-                ImGui::End();
-            }
-
             if (ImGui::BeginTabBar("MyTabBar", ImGuiTabBarFlags_None)) {
                 if (ImGui::BeginTabItem("spec")) {
                     auto imagecache = OIIO::ImageCache::create(true);
@@ -982,13 +613,29 @@ int main()
             ImGui::End();
         }
 
-        if (ImGui::Begin("Viewer")) {
+        if (show_viewer_window && ImGui::Begin("Viewer")) {
             auto tex = texture.get();
             ImGui::Text("tex: %d", texture.get());
             ImGui::Image((ImTextureID)tex, {100,100});
             ImGui::End();
         }
+
+        if (show_channelstable_window && ImGui::Begin("TestEXRLayers")) {
+            TestEXRLayers();
+            ImGui::End();
+        }
+
+        if (show_imagesequence_window && ImGui::Begin("Test ImageSequence")) {
+            TestImageSequence();
+            ImGui::End();
+        }
+
         glazy::end_frame();
+
+        for (auto tex : textures_to_delete) {
+            glDeleteTextures(1, &tex);
+        }
+        textures_to_delete.clear();
     }
     glazy::destroy();
     std::cout << "Hello World!\n";

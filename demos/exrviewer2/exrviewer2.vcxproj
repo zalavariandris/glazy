@@ -151,7 +151,9 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="exr_attributes_helper.h" />
+    <ClInclude Include="ChannelsTable.h" />
+    <ClInclude Include="Store.h" />
+    <ClInclude Include="UNUSED_exr_attributes_helper.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

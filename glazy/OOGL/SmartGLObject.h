@@ -7,7 +7,7 @@ namespace OOGL {
 
 	protected:
 		GLuint _id = -1;
-		mutable int* refs_ptr = NULL;
+		mutable int* refs_ptr = NULL; // TODO: use shared_ptr!!! std::make_shared<int>
 
 		std::function<GLuint()> _createFunc;
 		std::function<void(GLuint)> _deleteFunc;
