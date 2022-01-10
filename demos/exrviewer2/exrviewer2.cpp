@@ -24,6 +24,32 @@
 #include "ChannelsTable.h"
 #include "Store.h"
 
+namespace ImGui
+{
+    static auto vector_getter = [](void* vec, int idx, const char** out_text)
+    {
+        auto& vector = *static_cast<std::vector<std::string>*>(vec);
+        if (idx < 0 || idx >= static_cast<int>(vector.size())) { return false; }
+        *out_text = vector.at(idx).c_str();
+        return true;
+    };
+
+    bool Combo(const char* label, int* currIndex, std::vector<std::string>& values)
+    {
+        if (values.empty()) { return false; }
+        return Combo(label, currIndex, vector_getter,
+            static_cast<void*>(&values), values.size());
+    }
+
+    bool ListBox(const char* label, int* currIndex, std::vector<std::string>& values)
+    {
+        if (values.empty()) { return false; }
+        return ListBox(label, currIndex, vector_getter,
+            static_cast<void*>(&values), values.size());
+    }
+
+}
+
 std::set<GLuint> textures_to_delete;
 void delete_texture_later(GLuint tex) {
     textures_to_delete.insert(tex);
@@ -297,6 +323,78 @@ void TestEXRLayers() {
     }
 }
 
+void ShowExrViewer() {
+    // gui state
+    static std::vector<std::string> layers{"color", "depth"};
+    static int current_layer{ 0 };
+    static std::vector<std::string> views{ "left", "right" };
+    static int current_view{ 0 };
+    static int tex{1};
+    static int start_frame{0};
+    static int end_frame{ 10 };
+    static int frame{ 0 };
+    static std::filesystem::path _file_pattern{ "" };
+
+    // actions
+    auto open = []() {
+        auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0");
+        if (!filepath.empty()) {
+            auto [pattern, start, end] = scan_for_sequence(filepath);
+            _file_pattern = pattern;
+            start_frame = start;
+            end_frame = end;
+
+            // keep frame within framerange
+            if (frame < start_frame) frame = start_frame;
+            if (frame > end_frame) frame = end_frame;
+
+            // update layers
+            // update views
+            // update channels
+            // update texture
+        }
+    };
+
+    auto set_layer = []() {
+
+    };
+
+    auto set_view = []() {
+
+    };
+    
+    auto toggle_channel = [](std::string channel) {
+
+    };
+
+    if (ImGui::Button("open")) {
+        open();
+    }
+
+    ImGui::SetNextItemWidth(120);
+    if (ImGui::Combo("##layers", &current_layer, layers)) {
+
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(120);
+    if (ImGui::Combo("##views", &current_view, views)) {
+
+    }
+    ImGui::SameLine();
+    for (auto chan : { "R", "G", "B", "A" }) {
+        ImGui::Button(chan); ImGui::SameLine();
+    }; ImGui::NewLine();
+
+    ImGui::InputInt("tex id", &tex);
+    ImGui::Image((ImTextureID)tex, { 512,512 });
+
+    ImGui::BeginGroup();
+    ImGui::Text("%d", start_frame); ImGui::SameLine();
+    ImGui::SliderInt("##frame", &frame, start_frame, end_frame); ImGui::SameLine();
+    ImGui::Text("%d", end_frame);
+    ImGui::EndGroup();
+}
+
 /* state */
 auto state_pattern = State<std::filesystem::path>("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/multipart.%04d.exr", "pattern");
 auto state_frame = State<int>(1, "frame");
@@ -491,6 +589,7 @@ int main()
         static bool show_info_window{ true };
         static bool show_dag_window{ true };
         static bool show_imagesequence_window{ true };
+        static bool image_viewer_visible{ true };
         if (ImGui::BeginMainMenuBar()) {
             if (ImGui::BeginMenu("windows"))
             {
@@ -499,10 +598,15 @@ int main()
                 ImGui::MenuItem("info", "", &show_info_window);
                 ImGui::MenuItem("DAG", "", &show_dag_window);
                 ImGui::MenuItem("image sequence", "", &show_imagesequence_window);
+                ImGui::MenuItem("image viewer", "", &image_viewer_visible);
 
                 ImGui::EndMenu();
             }
             ImGui::EndMainMenuBar();
+        }
+
+        if (image_viewer_visible && ImGui::Begin("Simple Viewer")) {
+            ShowExrViewer();
         }
 
         if (show_dag_window && ImGui::Begin("DAG")) {
