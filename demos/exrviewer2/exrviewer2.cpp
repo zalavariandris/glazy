@@ -138,7 +138,7 @@ bool ImGui_SanitycheckChannelstable(const ChannelsTable &df) {
     return AreTheSameSubmages && ChannelsCountWithinRange && RGBA_ORDERED && XYZ_ORDERED;
 }
 
-GLuint ImGui_DisplayImage_impl(std::filesystem::path filename, std::vector<ChannelKey> channel_keys) {
+GLuint make_texture(std::filesystem::path filename, std::vector<ChannelKey> channel_keys={{0,0},{0,1},{0,2}}) {
     //auto channel_keys = get_index_column(selected_df);
     // read header
     auto image_cache = OIIO::ImageCache::create(true);
@@ -151,7 +151,6 @@ GLuint ImGui_DisplayImage_impl(std::filesystem::path filename, std::vector<Chann
     int chbegin = std::get<1>(channel_keys[0]);
     int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
     int nchannels = chend - chbegin;
-    ImGui::Text("pos: %d %d\nsize: %dx%d\nchannels: %d-%d #%d", x, y, w, h, chbegin, chend, nchannels);
 
     // read pixels
     float* data = (float*)malloc(w * h * nchannels * sizeof(float));
@@ -201,7 +200,7 @@ void ImGui_DisplayImage(std::filesystem::path filename, std::vector<ChannelKey> 
     Key key{ filename, channel_keys };
     if (!cache.contains(key)) {
         
-        cache[key] = ImGui_DisplayImage_impl(filename, channel_keys);
+        cache[key] = make_texture(filename, channel_keys);
     }
 
     //delete_texture_later(cache[key]);
@@ -323,24 +322,45 @@ void TestEXRLayers() {
     }
 }
 
+template <class T>
+void drop_duplicates(std::vector<T> &vec) {
+    std::set<T> values;
+    vec.erase(std::remove_if(vec.begin(), vec.end(), [&](const T& value) {
+        return !values.insert(value).second;
+    }), vec.end());
+}
+
 void ShowExrViewer() {
     // gui state
-    static std::vector<std::string> layers{"color", "depth"};
-    static int current_layer{ 0 };
-    static std::vector<std::string> views{ "left", "right" };
-    static int current_view{ 0 };
-    static int tex{1};
+    static std::vector<std::string> layers{"color", "depth"}; // list of currently available layer names
+    static int current_layer{ 0 }; // currently selected layer index
+    static std::vector<std::string> views{ "left", "right" }; // list of currently available view names
+    static int current_view{ 0 }; // currently selected view index
+    static std::vector<std::string> channels{ "R", "G", "B" }; // list of currently available channel names
+
+    static GLuint tex{0};
     static int start_frame{0};
     static int end_frame{ 10 };
     static int frame{ 0 };
-    static std::filesystem::path _file_pattern{ "" };
+    static bool is_playing{ false };
+    static std::filesystem::path file_pattern{ "" };
+
+    // getters cache
+    static std::filesystem::path _current_filename; // depends on file_pattern and frame
+    auto calc_current_filename() {
+
+    };
+    static ChannelsTable _channels_table; // depends on current filename
+    static std::map<std::string, std::map<std::string, ChannelsTable>> _channels_table_tree;
+
+    static ChannelsTable _current_channels_df;
+    
 
     // actions
-    auto open = []() {
-        auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0");
+    auto open = [&](std::filesystem::path filepath) {
         if (!filepath.empty()) {
             auto [pattern, start, end] = scan_for_sequence(filepath);
-            _file_pattern = pattern;
+            file_pattern = pattern;
             start_frame = start;
             end_frame = end;
 
@@ -348,49 +368,146 @@ void ShowExrViewer() {
             if (frame < start_frame) frame = start_frame;
             if (frame > end_frame) frame = end_frame;
 
+            // update filename
+            _current_filename = sequence_item(file_pattern, frame); // get filename for current frame
+
+            // reset current layer, view
+            current_layer = 0; // reset to first layer
+            current_view = 0; // reset current view
+
+            // update channels table
+            _channels_table = get_channelstable(_current_filename);
+
+            // update channels tree
+            _channels_table_tree.clear();
+            for (const auto& [layer, channels] : group_by_layer(_channels_table)) {
+                _channels_table_tree[layer] = group_by_view(channels);
+            }
+
             // update layers
+            layers.clear();
+            for (auto [layer_name, view_group] : _channels_table_tree) {
+                layers.push_back(layer_name);
+            }
+               
             // update views
+            views.clear();
+            for (auto [view_name, df] : _channels_table_tree[layers[current_layer]]) {
+                views.push_back(view_name);
+            }
+            
+            // update current channels df
+            _current_channels_df = _channels_table_tree[layers[current_layer]][views[current_view]];
+
             // update channels
+            channels.clear();
+            for (auto [index, record] : _current_channels_df) {
+                auto [layer, view, channel_name] = record;
+                channels.push_back(channel_name);
+            }
+
             // update texture
+            if(glIsTexture(tex)) glDeleteTextures(1, &tex);
+            tex = make_texture(_current_filename, get_index_column(_current_channels_df));
         }
     };
 
-    auto set_layer = []() {
+    auto on_layer_changed = [&]() {
+        // update views
+        views.clear();
+        for (auto [view_name, df] : _channels_table_tree[layers[current_layer]]) {
+            views.push_back(view_name);
+        }
 
+        // update current channels df
+        _current_channels_df = _channels_table_tree[layers[current_layer]][views[current_view]];
+
+        // update channels
+        channels = get_channels_column(_current_channels_df);
+        drop_duplicates(channels);
+
+        // update texture
+        if (glIsTexture(tex)) glDeleteTextures(1, &tex);
+        tex = make_texture(_current_filename, get_index_column(_current_channels_df));
     };
 
     auto set_view = []() {
+        auto _filename = sequence_item(file_pattern, frame); // get filename for current frame
+        auto current_channels_df = group_by_view(group_by_layer(_channels_table)[layers[current_layer]])[views[current_view]];
 
+        // update channels
+        channels = get_channels_column(current_channels_df);
+        drop_duplicates(channels);
+
+        // update texture
+        if (glIsTexture(tex)) glDeleteTextures(1, &tex);
+        tex = make_texture(_filename, get_index_column(current_channels_df));
     };
-    
-    auto toggle_channel = [](std::string channel) {
 
+    auto set_frame = []() {
+        _current_filename = sequence_item(file_pattern, frame); // get filename for current frame
+        _current_channels_df = group_by_view(group_by_layer(_channels_table)[layers[current_layer]])[views[current_view]];
+
+        // update texture
+        if (glIsTexture(tex)) glDeleteTextures(1, &tex);
+        tex = make_texture(_current_filename, get_index_column(_current_channels_df));
     };
 
-    if (ImGui::Button("open")) {
-        open();
+    // control playback
+    if (is_playing) {
+        frame++;
+        if (frame > end_frame) {
+            frame = start_frame;
+        }
     }
+
+    // Toolbar
+    ImGui::BeginGroup();
+    
+    if (ImGui::Button(file_pattern.empty() ? "open" : file_pattern.string().c_str(), { 120,0 })) // file input
+    {
+        auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0");
+        open(filepath);
+    }
+    if (!file_pattern.empty() && ImGui::IsItemHovered()) // file tooltip
+    {
+        ImGui::BeginTooltip();
+        ImGui::TextUnformatted(file_pattern.string().c_str());
+        ImGui::EndTooltip();
+    }
+
+    ImGui::SameLine();
 
     ImGui::SetNextItemWidth(120);
     if (ImGui::Combo("##layers", &current_layer, layers)) {
-
+        on_layer_changed();
     }
     ImGui::SameLine();
     ImGui::SetNextItemWidth(120);
     if (ImGui::Combo("##views", &current_view, views)) {
-
+        set_view();
     }
+
     ImGui::SameLine();
-    for (auto chan : { "R", "G", "B", "A" }) {
-        ImGui::Button(chan); ImGui::SameLine();
+
+    for (auto chan : channels) {
+        ImGui::Button(chan.c_str()); ImGui::SameLine();
     }; ImGui::NewLine();
 
-    ImGui::InputInt("tex id", &tex);
+    ImGui::EndGroup(); // toolbar end
+
+    // Image
     ImGui::Image((ImTextureID)tex, { 512,512 });
 
+    // Timeslider
     ImGui::BeginGroup();
+    if (ImGui::Button(is_playing ? "pause" : "play")) {
+        is_playing = !is_playing;
+    }
     ImGui::Text("%d", start_frame); ImGui::SameLine();
-    ImGui::SliderInt("##frame", &frame, start_frame, end_frame); ImGui::SameLine();
+    if (ImGui::SliderInt("##frame", &frame, start_frame, end_frame)) {
+        set_frame();
+    } ImGui::SameLine();
     ImGui::Text("%d", end_frame);
     ImGui::EndGroup();
 }

@@ -223,7 +223,7 @@ std::vector<std::string> get_views_column(const ChannelsTable &df) {
         auto&& [subimage, chan] = subimage_chan;
         auto&& [layer, view, channel] = layer_view_channel;
 
-        views.push_back(layer);
+        views.push_back(view);
     }
     return views;
 }
