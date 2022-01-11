@@ -332,28 +332,70 @@ void drop_duplicates(std::vector<T> &vec) {
 
 void ShowExrViewer() {
     // gui state
-    static std::vector<std::string> layers{"color", "depth"}; // list of currently available layer names
-    static int current_layer{ 0 }; // currently selected layer index
-    static std::vector<std::string> views{ "left", "right" }; // list of currently available view names
-    static int current_view{ 0 }; // currently selected view index
-    static std::vector<std::string> channels{ "R", "G", "B" }; // list of currently available channel names
-
-    static GLuint tex{0};
+    static std::filesystem::path file_pattern{ "" };
     static int start_frame{0};
     static int end_frame{ 10 };
+
     static int frame{ 0 };
     static bool is_playing{ false };
-    static std::filesystem::path file_pattern{ "" };
 
-    // getters cache
+    // getters
     static std::filesystem::path _current_filename; // depends on file_pattern and frame
-    auto calc_current_filename() {
-
+    static auto update_current_filename = []() {
+        _current_filename = sequence_item(file_pattern, frame);
     };
+
     static ChannelsTable _channels_table; // depends on current filename
+    static auto update_channels_table = []() {
+        _channels_table = get_channelstable(_current_filename);
+    };
+
     static std::map<std::string, std::map<std::string, ChannelsTable>> _channels_table_tree;
+    static auto update_channels_table_tree = []() {
+        _channels_table_tree.clear();
+        for (const auto& [layer, channels] : group_by_layer(_channels_table)) {
+            _channels_table_tree[layer] = group_by_view(channels);
+        }
+    };
+
+    static std::vector<std::string> layers{}; // list of currently available layer names
+    static auto update_layers = []() {
+        layers.clear();
+        for (auto [layer_name, view_group] : _channels_table_tree) {
+            layers.push_back(layer_name);
+        }
+    };
+    static int current_layer{ 0 }; // currently selected layer index
+
+    static std::vector<std::string> views{}; // list of currently available view names
+    static auto update_views = []() {
+        views.clear();
+        for (auto [view_name, df] : _channels_table_tree[layers[current_layer]]) {
+            views.push_back(view_name);
+        }
+    };
+    static int current_view{ 0 }; // currently selected view index
 
     static ChannelsTable _current_channels_df;
+    static auto update_current_channels_df = []() {
+        _current_channels_df = _channels_table_tree[layers[current_layer]][views[current_view]];
+    };
+
+    static std::vector<std::string> channels{}; // list of currently available channel names
+    static auto update_channels = []() {
+        channels.clear();
+        for (auto [index, record] : _current_channels_df) {
+            auto [layer, view, channel_name] = record;
+            channels.push_back(channel_name);
+        }
+    };
+
+
+    static GLuint tex{ 0 };
+    static auto update_texture = []() {
+        if (glIsTexture(tex)) glDeleteTextures(1, &tex);
+        tex = make_texture(_current_filename, get_index_column(_current_channels_df));
+    };
     
 
     // actions
@@ -369,88 +411,37 @@ void ShowExrViewer() {
             if (frame > end_frame) frame = end_frame;
 
             // update filename
-            _current_filename = sequence_item(file_pattern, frame); // get filename for current frame
-
-            // reset current layer, view
+            update_current_filename();
             current_layer = 0; // reset to first layer
             current_view = 0; // reset current view
-
-            // update channels table
-            _channels_table = get_channelstable(_current_filename);
-
-            // update channels tree
-            _channels_table_tree.clear();
-            for (const auto& [layer, channels] : group_by_layer(_channels_table)) {
-                _channels_table_tree[layer] = group_by_view(channels);
-            }
-
-            // update layers
-            layers.clear();
-            for (auto [layer_name, view_group] : _channels_table_tree) {
-                layers.push_back(layer_name);
-            }
-               
-            // update views
-            views.clear();
-            for (auto [view_name, df] : _channels_table_tree[layers[current_layer]]) {
-                views.push_back(view_name);
-            }
-            
-            // update current channels df
-            _current_channels_df = _channels_table_tree[layers[current_layer]][views[current_view]];
-
-            // update channels
-            channels.clear();
-            for (auto [index, record] : _current_channels_df) {
-                auto [layer, view, channel_name] = record;
-                channels.push_back(channel_name);
-            }
-
-            // update texture
-            if(glIsTexture(tex)) glDeleteTextures(1, &tex);
-            tex = make_texture(_current_filename, get_index_column(_current_channels_df));
+            update_channels_table();
+            update_channels_table_tree();
+            update_layers();
+            update_views();
+            update_current_channels_df();
+            update_channels();
+            update_texture();
         }
     };
 
     auto on_layer_changed = [&]() {
-        // update views
-        views.clear();
-        for (auto [view_name, df] : _channels_table_tree[layers[current_layer]]) {
-            views.push_back(view_name);
-        }
-
-        // update current channels df
-        _current_channels_df = _channels_table_tree[layers[current_layer]][views[current_view]];
-
-        // update channels
-        channels = get_channels_column(_current_channels_df);
-        drop_duplicates(channels);
-
-        // update texture
-        if (glIsTexture(tex)) glDeleteTextures(1, &tex);
-        tex = make_texture(_current_filename, get_index_column(_current_channels_df));
+        update_views();
+        current_view = 0;
+        update_current_channels_df();
+        update_channels();
+        update_texture();
     };
 
-    auto set_view = []() {
-        auto _filename = sequence_item(file_pattern, frame); // get filename for current frame
-        auto current_channels_df = group_by_view(group_by_layer(_channels_table)[layers[current_layer]])[views[current_view]];
-
-        // update channels
-        channels = get_channels_column(current_channels_df);
-        drop_duplicates(channels);
-
-        // update texture
-        if (glIsTexture(tex)) glDeleteTextures(1, &tex);
-        tex = make_texture(_filename, get_index_column(current_channels_df));
+    auto on_view_change = []() {
+        update_current_channels_df();
+        update_channels();
+        update_texture();
     };
 
-    auto set_frame = []() {
-        _current_filename = sequence_item(file_pattern, frame); // get filename for current frame
-        _current_channels_df = group_by_view(group_by_layer(_channels_table)[layers[current_layer]])[views[current_view]];
-
-        // update texture
-        if (glIsTexture(tex)) glDeleteTextures(1, &tex);
-        tex = make_texture(_current_filename, get_index_column(_current_channels_df));
+    auto on_frame_change = []() {
+        update_current_filename();
+        update_channels_table();
+        update_texture();
     };
 
     // control playback
@@ -459,6 +450,7 @@ void ShowExrViewer() {
         if (frame > end_frame) {
             frame = start_frame;
         }
+        on_frame_change();
     }
 
     // Toolbar
@@ -485,7 +477,7 @@ void ShowExrViewer() {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(120);
     if (ImGui::Combo("##views", &current_view, views)) {
-        set_view();
+        on_view_change();
     }
 
     ImGui::SameLine();
@@ -506,7 +498,7 @@ void ShowExrViewer() {
     }
     ImGui::Text("%d", start_frame); ImGui::SameLine();
     if (ImGui::SliderInt("##frame", &frame, start_frame, end_frame)) {
-        set_frame();
+        on_frame_change();
     } ImGui::SameLine();
     ImGui::Text("%d", end_frame);
     ImGui::EndGroup();
