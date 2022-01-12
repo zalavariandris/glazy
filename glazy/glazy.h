@@ -50,6 +50,31 @@
 #include "OOGL/VertexArray.h"
 #include "OOGL/Texture.h"
 
+namespace ImGui
+{
+	static auto vector_getter = [](void* vec, int idx, const char** out_text)
+	{
+		auto& vector = *static_cast<std::vector<std::string>*>(vec);
+		if (idx < 0 || idx >= static_cast<int>(vector.size())) { return false; }
+		*out_text = vector.at(idx).c_str();
+		return true;
+	};
+
+	bool Combo(const char* label, int* currIndex, std::vector<std::string>& values)
+	{
+		if (values.empty()) { return false; }
+		return Combo(label, currIndex, vector_getter,
+			static_cast<void*>(&values), values.size());
+	}
+
+	bool ListBox(const char* label, int* currIndex, std::vector<std::string>& values)
+	{
+		if (values.empty()) { return false; }
+		return ListBox(label, currIndex, vector_getter,
+			static_cast<void*>(&values), values.size());
+	}
+}
+
 void control_camera(Camera& camera, int scree_width, int screen_height) {
 	auto io = ImGui::GetIO();
 	// control camera
@@ -461,12 +486,13 @@ namespace glazy {
 		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
 		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
 		//glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+		glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_TRUE);
 
 		glfwSetErrorCallback(glfw_error_callback);
 
 		// create main window
 		//glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
-		window = glfwCreateWindow(1024, 768, "Demo: OpenGL Only", nullptr, nullptr);
+		window = glfwCreateWindow(1024, 768, "MiniViewer", nullptr, nullptr);
 
 		if (!window) {
 			std::cout << "Window or context creation failed" << std::endl;
@@ -482,7 +508,6 @@ namespace glazy {
 		auto height = mode->height * 3 / 4;
 		glfwSetWindowSize(window, width, height);
 		glfwSetWindowPos(window, (mode->width-width)/2, (mode->height-height)/2);
-		
 
 		glfwMakeContextCurrent(window);
 
@@ -640,15 +665,18 @@ namespace glazy {
 
 		camera.aspect = (float)display_w / display_h;
 
+		//control_camera(camera, display_w, display_h);
+	}
+
+	void end_frame() {
 		// glazy windows
 		{
-
-
 			static bool themes;
 			static bool stats;
 			static bool imgui_demo;
 			static bool imgui_style;
 			if (ImGui::BeginMainMenuBar()) {
+				ImGui::Spacing();
 				if (ImGui::BeginMenu("glazy"))
 				{
 					ImGui::Separator();
@@ -729,7 +757,7 @@ namespace glazy {
 			}
 
 			if (imgui_demo) {
-				ImGui::ShowDemoWindow();
+				ImGui::ShowDemoWindow(&imgui_demo);
 			}
 			if (imgui_style) {
 				ImGui::Begin("StyleEditor", &imgui_style);
@@ -738,10 +766,6 @@ namespace glazy {
 			}
 		}
 
-		//control_camera(camera, display_w, display_h);
-	}
-
-	void end_frame() {
 		/* IMGUI */
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		ImGui::Render(); // render imgui
