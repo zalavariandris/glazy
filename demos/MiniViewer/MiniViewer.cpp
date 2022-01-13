@@ -256,17 +256,36 @@ void ShowChannelsTable()
 }
 
 void ShowImageInfo() {
-    ImGui::Text("folder: %s", file_pattern.parent_path().string().c_str());
-    ImGui::Text("filename: %s", file_pattern.filename().string().c_str());
-    ImGui::Text("framerange: %d-%d", start_frame, end_frame);
-    ImGui::Text("(%s)", _current_filename.filename().string().c_str());
+    if (ImGui::CollapsingHeader("sequence", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        ImGui::Text("folder: %s", file_pattern.parent_path().string().c_str());
+        ImGui::Text("filename: %s", file_pattern.filename().string().c_str());
+        ImGui::Text("framerange: %d-%d", start_frame, end_frame);
+        ImGui::Text("(%s)", _current_filename.filename().string().c_str());
+    }
 
-    // read header
-    auto image_cache = OIIO::ImageCache::create(true);
-    OIIO::ImageSpec spec;
-    image_cache->get_imagespec(OIIO::ustring(_current_filename.string()), spec, 0, 0);
-    std::string info = spec.serialize(OIIO::ImageSpec::SerialText, OIIO::ImageSpec::SerialDetailedHuman);
-    ImGui::Text("%s", info.c_str());
+    if (ImGui::CollapsingHeader("overall spec"))
+    {
+        /*
+        auto in = OIIO::ImageInput::open(_current_filename.string());
+        bool exhausted{ false };
+        while (!exhausted)
+        {
+        }
+        while (in->seek_subimage(0, nmipmaps))
+        {
+            ++nmipmaps;
+        }
+        const OIIO::ImageSpec& spec = in->spec(subimage, mipmap);
+        */
+        // read header
+        auto image_cache = OIIO::ImageCache::create(true);
+        OIIO::ImageSpec spec;
+        image_cache->get_imagespec(OIIO::ustring(_current_filename.string()), spec, 0, 0);
+        std::string info = spec.serialize(OIIO::ImageSpec::SerialText, OIIO::ImageSpec::SerialDetailedHuman);
+        ImGui::Text("%s", info.c_str());
+    }
+
 }
 
 void ShowTimeline() {
@@ -283,45 +302,35 @@ void ShowTimeline() {
     ImGui::EndGroup();
 }
 
-void ShowMiniViewer() {
-    // Toolbar
-    ImGui::BeginGroup();
-    /*
-    if (ImGui::Button(file_pattern.empty() ? "open" : file_pattern.string().c_str(), { 120,0 })) // file input
-    {
-        auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0");
-        open(filepath);
+void ShowMiniViewer(bool *p_open) {
+    if (ImGui::Begin("Viewer", p_open, ImGuiWindowFlags_NoCollapse)) {
+        // Toolbar
+        ImGui::BeginGroup();
+        {
+            ImGui::SetNextItemWidth(120);
+            if (ImGui::Combo("##layers", &current_layer, layers)) {
+                on_layer_changed();
+            }
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(120);
+            if (ImGui::Combo("##views", &current_view, views)) {
+                on_view_change();
+            }
+
+            ImGui::SameLine();
+
+            for (auto chan : channels) {
+                ImGui::Button(chan.c_str()); ImGui::SameLine();
+            }; ImGui::NewLine();
+        }
+        ImGui::EndGroup(); // toolbar end
+
+        // Viewport
+        {
+            
+            ImGui::Image((ImTextureID)tex, { 512,512 });
+        }
     }
-    if (!file_pattern.empty() && ImGui::IsItemHovered()) // file tooltip
-    {
-        ImGui::BeginTooltip();
-        ImGui::TextUnformatted(file_pattern.string().c_str());
-        ImGui::EndTooltip();
-    }
-
-    ImGui::SameLine();
-    */
-
-    ImGui::SetNextItemWidth(120);
-    if (ImGui::Combo("##layers", &current_layer, layers)) {
-        on_layer_changed();
-    }
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(120);
-    if (ImGui::Combo("##views", &current_view, views)) {
-        on_view_change();
-    }
-
-    ImGui::SameLine();
-
-    for (auto chan : channels) {
-        ImGui::Button(chan.c_str()); ImGui::SameLine();
-    }; ImGui::NewLine();
-
-    ImGui::EndGroup(); // toolbar end
-
-    // Image
-    ImGui::Image((ImTextureID)tex, { 512,512 });
 }
 
 int main()
@@ -368,8 +377,8 @@ int main()
             ImGui::EndMainMenuBar();
         }
         // Image Viewer
-        if (image_viewer_visible && ImGui::Begin("Viewer", &image_viewer_visible, ImGuiWindowFlags_NoCollapse)) {
-            ShowMiniViewer();
+        if (image_viewer_visible) {
+            ShowMiniViewer(&image_viewer_visible);
         }
         // ChannelsTable
         if (channels_table_visible && ImGui::Begin("channels table", &channels_table_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {

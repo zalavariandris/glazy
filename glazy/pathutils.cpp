@@ -76,8 +76,10 @@ std::tuple<std::filesystem::path, int, int> scan_for_sequence(const std::filesys
 
     // find sequence item in folder
     auto [input_name, input_digits] = split_digits(input_path.stem().string());
+    if (input_digits.empty()) {
+        return {input_path, 0, 0};
+    }
     auto input_folder = input_path.parent_path();
-
     std::filesystem::path sequence_pattern = input_folder / (input_name +"%0" + std::to_string(input_digits.size()) + "d" + input_path.extension().string());
 
     for (std::filesystem::path path : std::filesystem::directory_iterator{ input_folder, std::filesystem::directory_options::skip_permission_denied }) {
@@ -89,6 +91,7 @@ std::tuple<std::filesystem::path, int, int> scan_for_sequence(const std::filesys
             //std::cout << name << " <> " << input_name << std::endl;
             if (IsSequenceItem) {
                 sequence.push_back(path);
+                std::cout << "digits: " << digits << "\n";
                 framenumbers.push_back(std::stoi(digits));
             }
         }

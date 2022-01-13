@@ -145,7 +145,6 @@ ChannelRecord parse_channel_name(std::string channel_name, std::vector<std::stri
 ///  test multipart multiview
 ChannelsTable get_channelstable(const std::filesystem::path &filename)
 {
-
     auto image_cache = OIIO::ImageCache::create(true);
 
     // create a dataframe from all available channels
