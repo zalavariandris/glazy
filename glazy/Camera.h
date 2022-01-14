@@ -24,6 +24,18 @@ public:
 		ortho = false;
 	}
 
+	Camera(glm::vec3 eye, glm::vec3 target, bool ortho=false) :
+		eye(eye),
+		target(target),
+		ortho(ortho)
+	{
+		fov = 1.57 / 2;
+		tiltshift = glm::vec2(0.0, 0.0);
+		aspect = 1.0;
+		near_plane = 0.1;
+		far_plane = 10000;
+	};
+
 	glm::mat4 getProjection() const;
 
 	glm::mat4 getView() const;

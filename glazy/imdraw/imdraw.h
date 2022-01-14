@@ -30,6 +30,7 @@ namespace imdraw {
 
 	void cross(glm::vec3 center, float size=1.0);
 	void grid();
+	void axis();
 
 	void cube(glm::vec3 center, float size=1.0, glm::vec3 color=glm::vec3(1,1,1));
 	void sharp_cube(glm::vec3 center, float size = 1.0);

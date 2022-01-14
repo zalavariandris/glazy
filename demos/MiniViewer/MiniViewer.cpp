@@ -302,6 +302,8 @@ void ShowTimeline() {
     ImGui::EndGroup();
 }
 
+
+
 void ShowMiniViewer(bool *p_open) {
     if (ImGui::Begin("Viewer", p_open, ImGuiWindowFlags_NoCollapse)) {
         // Toolbar
@@ -327,8 +329,79 @@ void ShowMiniViewer(bool *p_open) {
 
         // Viewport
         {
+            static GLuint fbo;
+            static GLuint color_attachment;
+            static Camera camera({0,0,5}, {0,0,0});
+            auto item_pos = ImGui::GetCursorPos();
+            auto item_size = ImGui::GetContentRegionAvail();
+
+            // on resize
+            static ImVec2 display_size;
+            if (display_size.x != item_size.x || display_size.y != item_size.y) {
+                display_size = item_size;
+                // update attachments
+                glDeleteTextures(1, &color_attachment);
+                color_attachment = imdraw::make_texture_float(item_size.x, item_size.y, NULL, GL_RGBA);
+                // update fbo
+                glDeleteFramebuffers(1, &fbo);
+                fbo = imdraw::make_fbo(color_attachment);
+                // update camera aspect
+                camera.aspect = item_size.x / item_size.y;
+            }
+
+            // Control Camera
+            ImGui::InvisibleButton("camera control", item_size);
+            if (ImGui::IsItemActive()) {
+                if (ImGui::IsMouseDragging(0) && !ImGui::GetIO().KeyMods)
+                {
+                    camera.pan(-ImGui::GetIO().MouseDelta.x / item_size.x, -ImGui::GetIO().MouseDelta.y / item_size.y);
+                }
+
+                if (ImGui::IsMouseDragging(0) && (ImGui::GetIO().KeyMods == (ImGuiKeyModFlags_Ctrl | ImGuiKeyModFlags_Alt)))
+                {
+                    camera.orbit(-ImGui::GetIO().MouseDelta.x * 0.006, -ImGui::GetIO().MouseDelta.y * 0.006);
+                }
+            }
+            if (ImGui::IsItemHovered()) {
+                if (ImGui::GetIO().MouseWheel != 0 && !ImGui::GetIO().KeyMods) {
+                    const auto target_distance = camera.get_target_distance();
+                    camera.dolly(-ImGui::GetIO().MouseWheel * target_distance * 0.2);
+                }
+            }
+
+            ImGui::SetItemAllowOverlap();
+            ImGui::SetCursorPos(item_pos);
+            ImGui::Image((ImTextureID)color_attachment, item_size, ImVec2(0, 1), ImVec2(1, 0));
+
+            glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+            glClearColor(0.2, 0.2, 0.2, 0);
+            glClear(GL_COLOR_BUFFER_BIT);
+            glViewport(0, 0, item_size.x, item_size.y);
+            imdraw::set_projection(camera.getProjection());
+            imdraw::set_view(camera.getView());
+
+            // draw scene
+            imdraw::grid();
+            imdraw::axis();
+            // draw image
+            if (!_current_channels_df.empty()) {
+                // read header
+                auto image_cache = OIIO::ImageCache::create(true);
+                OIIO::ImageSpec spec;
+                auto channel_keys = get_index_column(_current_channels_df);
+                int SUBIMAGE = std::get<0>(channel_keys[0]); //todo: ALL SUBIMAGE MUST MATCH
+                image_cache->get_imagespec(OIIO::ustring(_current_filename.string()), spec, SUBIMAGE, 0);
+                int chbegin = std::get<1>(channel_keys[0]);
+                int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
+                int nchannels = chend - chbegin;
+                // draw textured quad at ROI
+                imdraw::quad(tex,
+                    { spec.x*0.001, spec.y*0.001 },
+                    { spec.width*0.001, spec.height*0.001 }
+                );
+            }
             
-            ImGui::Image((ImTextureID)tex, { 512,512 });
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
         }
     }
 }
@@ -386,7 +459,7 @@ int main()
         }
 
         // Image info
-        ImGui::SetNextWindowSizeConstraints(ImVec2(100, -1), ImVec2(500, -1));          // Width 400-500
+        ImGui::SetNextWindowSizeConstraints(ImVec2(100, -1), ImVec2(200, -1));          // Width 400-500
         if (image_info_visible && ImGui::Begin("Info", &image_info_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
             ShowImageInfo();
         }

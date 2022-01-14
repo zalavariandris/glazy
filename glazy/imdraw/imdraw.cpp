@@ -186,7 +186,6 @@ void imdraw::quad(GLuint texture, glm::vec2 pos, glm::vec2 size) {
 	M = glm::translate(M, glm::vec3(pos, 0));
 	M = glm::scale(M, glm::vec3(size, 1));
 	
-
 	push_program(program());
 	imdraw::reset_uniforms();
 	imdraw::set_uniforms(program(), {
@@ -519,5 +518,11 @@ void imdraw::arrow(glm::vec3 A, glm::vec3 B, glm::vec3 color) {
 	glDeleteBuffers(1, &pos_vbo);
 	glDeleteBuffers(1, &ebo);
 	glDeleteVertexArrays(1, &vao);
+}
+
+void imdraw::axis() {
+	imdraw::arrow({ 0,0,0 }, { 1,0,0 }, { 1,0,0 });
+	imdraw::arrow({ 0,0,0 }, { 0,1,0 }, { 0,1,0 });
+	imdraw::arrow({ 0,0,0 }, { 0,0,1 }, { 0,0,1 });
 }
 
