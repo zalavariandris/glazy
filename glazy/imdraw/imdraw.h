@@ -24,9 +24,10 @@ namespace imdraw {
 
 	// draw shapes
 	void triangle();
-	void quad(GLuint texture, glm::vec2 pos={ 0,0 }, glm::vec2 size={1,1});
+	void quad(GLuint texture, glm::vec2 min_rect={ -1,-1 }, glm::vec2 max_rect={1,1});
 	void disc(glm::vec3 center, float diameter=1.0, glm::vec3 color=glm::vec3(1));
 	void disc(std::vector<glm::vec3> center, float diameter=1.0, glm::vec3 color=glm::vec3(1));
+	void rect(glm::vec2 rect_min, glm::vec2 rect_max);
 
 	void cross(glm::vec3 center, float size=1.0);
 	void grid();

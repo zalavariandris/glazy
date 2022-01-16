@@ -31,7 +31,10 @@ int end_frame{ 10 };
 int frame{ 0 };
 bool is_playing{ false };
 
-GLuint make_texture(std::filesystem::path filename, std::vector<ChannelKey> channel_keys = { {0,0},{0,1},{0,2} }) {
+GLuint make_texture(std::filesystem::path filename, std::vector<ChannelKey> channel_keys = {})
+{
+    if (channel_keys.empty()) return 0;
+    if (!std::filesystem::exists(filename)) return 0;
     //auto channel_keys = get_index_column(selected_df);
     // read header
     auto image_cache = OIIO::ImageCache::create(true);
@@ -397,8 +400,11 @@ void ShowMiniViewer(bool *p_open) {
                 // draw textured quad at ROI
                 imdraw::quad(tex,
                     { spec.x*0.001, spec.y*0.001 },
-                    { spec.width*0.001, spec.height*0.001 }
+                    { spec.x*0.001+spec.width*0.001, spec.y*0.001+spec.height*0.001}
                 );
+
+                // draw image full boundaries
+                imdraw::rect({ spec.full_x*0.001,spec.full_y*0.001 }, { spec.full_width*0.001, spec.full_height*0.001 });
             }
             
             glBindFramebuffer(GL_FRAMEBUFFER, 0);

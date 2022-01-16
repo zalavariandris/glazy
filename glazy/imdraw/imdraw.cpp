@@ -100,7 +100,7 @@ namespace imdraw {
 			//{"view", glm::mat4(1)},
 			//{"projection", glm::mat4(1)},
 			{uniform_locations["useInstanceMatrix"], false},
-			{uniform_locations["color"], glm::vec3(1,0,0)},
+			{uniform_locations["color"], glm::vec3(1,1,1)},
 			{uniform_locations["useTextureMap"], false},
 			{uniform_locations["textureMap"], 0}
 		});
@@ -167,7 +167,7 @@ void imdraw::triangle() {
 	pop_program();
 }
 
-void imdraw::quad(GLuint texture, glm::vec2 pos, glm::vec2 size) {
+void imdraw::quad(GLuint texture, glm::vec2 min_rect, glm::vec2 max_rect) {
 	static auto geo = imgeo::quad();
 
 	// init vao
@@ -183,6 +183,8 @@ void imdraw::quad(GLuint texture, glm::vec2 pos, glm::vec2 size) {
 
 	// draw
 	auto M = glm::mat4(1);
+	auto pos = (max_rect + min_rect) / 2.0f;
+	auto size = (max_rect - min_rect);
 	M = glm::translate(M, glm::vec3(pos, 0));
 	M = glm::scale(M, glm::vec3(size, 1));
 	
@@ -323,13 +325,39 @@ void imdraw::disc(std::vector<glm::vec3> centers, float diameter, glm::vec3 colo
 	glDeleteBuffers(1, &VBO);
 }
 
+void imdraw::rect(glm::vec2 rect_min, glm::vec2 rect_max) {
+	std::vector<glm::vec3> data{
+		{rect_min.x, rect_min.y, 0},
+		{rect_max.x, rect_min.y, 0},
+		{rect_max.x, rect_max.y, 0},
+		{rect_min.x, rect_max.y, 0}
+	};
+
+	auto vbo = make_vbo(data);
+	auto vao = make_vao(program(), {
+		{"aPos", {vbo, 3}},
+	});
+
+	// draw
+	push_program(program());
+	imdraw::reset_uniforms();
+	glBindVertexArray(vao);
+	glDrawArrays(GL_LINE_LOOP, 0, data.size());
+	glBindVertexArray(0);
+	pop_program();
+
+	glDeleteBuffers(1, &vbo);
+	glDeleteVertexArrays(1, &vao);
+}
+
 void imdraw::cross(glm::vec3 center, float size) {
-	// goemetry
+	// gepmetry
 	static std::vector<glm::vec3> positions{
 		{-1,0,0}, {1,0,0},
 		{0,-1,0}, {0,1,0},
 		{0,0,-1}, {0,0,1}
 	};
+
 	static std::vector<unsigned int> indices{
 		0,1, 2,3, 4, 5
 	};

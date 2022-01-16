@@ -35,7 +35,7 @@ using namespace OIIO;
 
 #include "imageio.h"
 
-void TextureViewer(GLuint* fbo, GLuint* color_attachment, Camera* camera, GLuint img_texture, ImVec2 pos = { 0,0 }, ImVec2 size = { 1, 1 }) {
+void TextureViewer(GLuint* fbo, GLuint* color_attachment, Camera* camera, GLuint img_texture) {
     
     auto item_pos = ImGui::GetCursorPos();
     auto item_size = ImGui::GetContentRegionAvail();
@@ -64,9 +64,7 @@ void TextureViewer(GLuint* fbo, GLuint* color_attachment, Camera* camera, GLuint
     imdraw::set_projection(camera->getProjection());
     imdraw::set_view(camera->getView());
 
-    imdraw::quad(img_texture,
-        { pos.x, pos.y },
-        {size.x, size.y}
+    imdraw::quad(img_texture
         //{ (float)roi.xbegin / 1000,  (float)roi.ybegin / 1000 },
         //{ -(float)roi.width() / 1000, -(float)roi.height() / 1000 }
     );
@@ -638,7 +636,7 @@ int run_gui() {
             static GLuint fbo;
             static GLuint color_attachment;
             static Camera camera;
-            TextureViewer(&fbo, &color_attachment, &camera, state.texture(), {0,0}, {1,1});
+            TextureViewer(&fbo, &color_attachment, &camera, state.texture());
             ImGui::End();
         }
 
