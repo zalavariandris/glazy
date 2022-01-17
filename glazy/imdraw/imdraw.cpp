@@ -184,7 +184,7 @@ void imdraw::quad(GLuint texture, glm::vec2 min_rect, glm::vec2 max_rect) {
 	// draw
 	auto M = glm::mat4(1);
 	auto pos = (max_rect + min_rect) / 2.0f;
-	auto size = (max_rect - min_rect);
+	auto size = (max_rect - min_rect)/2.0f;
 	M = glm::translate(M, glm::vec3(pos, 0));
 	M = glm::scale(M, glm::vec3(size, 1));
 	

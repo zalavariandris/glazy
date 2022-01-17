@@ -112,7 +112,11 @@ bool ImGui_SanitycheckChannelstable(const ChannelsTable &df) {
     return AreTheSameSubmages && ChannelsCountWithinRange && RGBA_ORDERED && XYZ_ORDERED;
 }
 
-GLuint make_texture(std::filesystem::path filename, std::vector<ChannelKey> channel_keys={{0,0},{0,1},{0,2}}) {
+GLuint make_texture(std::filesystem::path filename, std::vector<ChannelKey> channel_keys={{0,0},{0,1},{0,2}})
+{
+    if (!std::filesystem::exists(filename)) {
+        return {};
+    }
     //auto channel_keys = get_index_column(selected_df);
     // read header
     auto image_cache = OIIO::ImageCache::create(true);

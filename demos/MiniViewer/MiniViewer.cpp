@@ -23,19 +23,10 @@
 // utilities
 #include "ChannelsTable.h"
 
-// gui state variables
-std::filesystem::path file_pattern{ "" };
-int start_frame{ 0 };
-int end_frame{ 10 };
-
-int frame{ 0 };
-bool is_playing{ false };
-
 GLuint make_texture(std::filesystem::path filename, std::vector<ChannelKey> channel_keys = {})
 {
     if (channel_keys.empty()) return 0;
     if (!std::filesystem::exists(filename)) return 0;
-    //auto channel_keys = get_index_column(selected_df);
     // read header
     auto image_cache = OIIO::ImageCache::create(true);
     OIIO::ImageSpec spec;
@@ -52,11 +43,11 @@ GLuint make_texture(std::filesystem::path filename, std::vector<ChannelKey> chan
     float* data = (float*)malloc(w * h * nchannels * sizeof(float));
     image_cache->get_pixels(OIIO::ustring(filename.string()), std::get<0>(channel_keys[0]), 0, x, x + w, y, y + h, 0, 1, chbegin, chend, OIIO::TypeFloat, data, OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, chbegin, chend);
 
-    // create texture
-    GLuint tex;
+    // create texture for ROI
+    GLuint tex_roi;
 
-    glGenTextures(1, &tex);
-    glBindTexture(GL_TEXTURE_2D, tex);
+    glGenTextures(1, &tex_roi);
+    glBindTexture(GL_TEXTURE_2D, tex_roi);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -85,8 +76,46 @@ GLuint make_texture(std::filesystem::path filename, std::vector<ChannelKey> chan
 
     // free data from memory after uploaded to gpu
     free(data);
-    return tex;
+
+    // create full texture
+
+    GLuint tex_full = imdraw::make_texture_float(spec.full_width, spec.full_height, NULL, GL_RGBA);
+    
+    GLint current_fbo;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &current_fbo); // TODO: getting fbo is fairly harmful to performance.
+
+    GLuint fbo_full = imdraw::make_fbo(tex_full);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo_full);
+    glClearColor(0, 0,0,0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glViewport(spec.full_x, spec.full_y, spec.full_width, spec.full_height);
+    imdraw::set_projection(glm::ortho(0.0f, spec.full_width * 1.0f, 0.0f, spec.full_height * 1.0f));
+    glm::mat4 M{ 1 };
+    imdraw::set_view(glm::mat4(M));
+
+
+    glm::vec2 min_rect{ spec.x * 1.0f,spec.y * 1.0f };
+    glm::vec2 max_rect{ spec.x * 1.0f + spec.width * 1.0f, spec.y * 1.0f + spec.height * 1.0f };
+    imdraw::disc(glm::vec3(min_rect,0), 20.0f);
+    imdraw::disc(glm::vec3(max_rect, 0), 20.0f);
+    imdraw::quad(tex_roi, { spec.x * 1.0f,spec.y * 1.0f }, { spec.x * 1.0f + spec.width * 1.0f, spec.y * 1.0f + spec.height * 1.0f });
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, current_fbo); // restore fbo
+    // delete temporary FBO and tetures
+    glDeleteFramebuffers(1, &fbo_full);
+    glDeleteTextures(1, &tex_roi);
+    
+    
+    return tex_full;
 }
+
+// gui state variables
+std::filesystem::path file_pattern{ "" };
+int start_frame{ 0 };
+int end_frame{ 10 };
+
+int frame{ 0 };
+bool is_playing{ false };
 
 // getters
 std::filesystem::path _current_filename; // depends on file_pattern and frame
@@ -171,6 +200,12 @@ void open(std::filesystem::path filepath) {
     }
 };
 
+void on_frame_change() {
+    update_current_filename();
+    update_channels_table();
+    update_texture();
+};
+
 // event handlers
 void on_layer_changed() {
     update_views();
@@ -186,16 +221,13 @@ void on_view_change() {
     update_texture();
 };
 
-void on_frame_change() {
-    update_current_filename();
-    update_channels_table();
-    update_texture();
-};
+
 
 void ShowChannelsTable()
 {
     if (ImGui::BeginTabBar("image header"))
     {
+        
         if (ImGui::BeginTabItem("all channels"))
         {
             if (ImGui::BeginTable("channels table", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_NoHostExtendX | ImGuiTableFlags_SizingFixedFit))
@@ -226,16 +258,21 @@ void ShowChannelsTable()
             }
             ImGui::EndTabItem();
         }
-
+        
+        
         if (ImGui::BeginTabItem("layers"))
         {
             ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_DefaultOpen;
             for (auto [layer, view_groups] : _channels_table_tree) {
                 //ImGui::SetNextItemOpen(true, ImGuiCond_Once);
-                if (ImGui::TreeNodeEx(layer.c_str(), node_flags)) {
+                
+                if (ImGui::TreeNodeEx(layer.c_str(), node_flags))
+                {
                     for (auto [view, df] : view_groups) {
                         //ImGui::SetNextItemOpen(true, ImGuiCond_Once);
-                        if (ImGui::TreeNodeEx(view.c_str(), node_flags)) {
+                        
+                        if (ImGui::TreeNodeEx(view.c_str(), node_flags))
+                        {
                             for (auto [index, record] : df){
                                 auto [layer, view, channel] = record;
                                 if (channel == "R" || channel == "x") ImGui::PushStyleColor(ImGuiCol_Text, (ImVec4)ImColor(240, 0, 0));
@@ -250,11 +287,16 @@ void ShowChannelsTable()
 
                             ImGui::TreePop();
                         }
+                        
                     }
                     ImGui::TreePop();
                 }
+                
+
             }
+            ImGui::EndTabItem();
         }
+        ImGui::EndTabBar();
     }
 }
 
@@ -334,13 +376,21 @@ void ShowMiniViewer(bool *p_open) {
         {
             static GLuint fbo;
             static GLuint color_attachment;
-            static Camera camera({0,0,5}, {0,0,0});
+            static bool flip_y{false};
+            static Camera camera({0,0,5}, {0,0,0}, {0,1,0});
+
+            if (ImGui::Checkbox("flip", &flip_y)) {
+                camera = Camera({ 0,0,flip_y ? -5 : 5 }, { 0,0,0 }, { 0,flip_y ? -1 : 1,0 }, false, camera.aspect, camera.fov);
+            }
+
             auto item_pos = ImGui::GetCursorPos();
             auto item_size = ImGui::GetContentRegionAvail();
 
             // on resize
             static ImVec2 display_size;
-            if (display_size.x != item_size.x || display_size.y != item_size.y) {
+            if (display_size.x != item_size.x || display_size.y != item_size.y)
+            {
+                std::cout << "update fbo: " << item_size.x << ", " << item_size.y << "\n";
                 display_size = item_size;
                 // update attachments
                 glDeleteTextures(1, &color_attachment);
@@ -377,15 +427,13 @@ void ShowMiniViewer(bool *p_open) {
             ImGui::Image((ImTextureID)color_attachment, item_size, ImVec2(0, 1), ImVec2(1, 0));
 
             glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-            glClearColor(0.2, 0.2, 0.2, 0);
+            glClearColor(0.0, 0.0, 0.0, 0.0);
             glClear(GL_COLOR_BUFFER_BIT);
             glViewport(0, 0, item_size.x, item_size.y);
             imdraw::set_projection(camera.getProjection());
             imdraw::set_view(camera.getView());
 
-            // draw scene
-            imdraw::grid();
-            imdraw::axis();
+            /// Draw scene
             // draw image
             if (!_current_channels_df.empty()) {
                 // read header
@@ -398,17 +446,26 @@ void ShowMiniViewer(bool *p_open) {
                 int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
                 int nchannels = chend - chbegin;
                 // draw textured quad at ROI
+                double DPI = 300;
                 imdraw::quad(tex,
-                    { spec.x*0.001, spec.y*0.001 },
-                    { spec.x*0.001+spec.width*0.001, spec.y*0.001+spec.height*0.001}
+                    { spec.full_x/DPI, spec.full_y/DPI },
+                    { spec.full_x/DPI+spec.full_width/DPI, spec.full_y/DPI+spec.full_height/DPI}
                 );
 
                 // draw image full boundaries
-                imdraw::rect({ spec.full_x*0.001,spec.full_y*0.001 }, { spec.full_width*0.001, spec.full_height*0.001 });
+                imdraw::rect({ spec.full_x/DPI,spec.full_y/DPI }, { spec.full_x / DPI+spec.full_width/DPI, spec.full_y / DPI+spec.full_height/DPI });
+
+                // draw image ROI boundaries
+                imdraw::rect({ spec.x / DPI,spec.y / DPI }, { spec.x / DPI + spec.width / DPI, spec.y / DPI + spec.height / DPI });
+
             }
+            
+            imdraw::grid();
+            imdraw::axis();
             
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
         }
+        ImGui::End(); // End Viewer window
     }
 }
 
@@ -432,8 +489,9 @@ int main()
 
         // GUI
         glazy::new_frame();
-
+        
         // Main menubar
+        
         if (ImGui::BeginMainMenuBar()) {
             if (ImGui::BeginMenu("file"))
             {
@@ -455,24 +513,30 @@ int main()
             
             ImGui::EndMainMenuBar();
         }
+        
         // Image Viewer
         if (image_viewer_visible) {
             ShowMiniViewer(&image_viewer_visible);
         }
+        
         // ChannelsTable
+
         if (channels_table_visible && ImGui::Begin("channels table", &channels_table_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
             ShowChannelsTable();
+            ImGui::End();
         }
-
+        
         // Image info
         ImGui::SetNextWindowSizeConstraints(ImVec2(100, -1), ImVec2(200, -1));          // Width 400-500
         if (image_info_visible && ImGui::Begin("Info", &image_info_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
             ShowImageInfo();
+            ImGui::End();
         }
 
         // Timeliune
         if (timeline_visible && ImGui::Begin("timeline")) {
             ShowTimeline();
+            ImGui::End();
         }
         glazy::end_frame();
     }

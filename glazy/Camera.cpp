@@ -63,7 +63,7 @@ glm::mat4 Camera::getProjection() const {
 }
 
 glm::mat4 Camera::getView() const {
-	return glm::lookAt(eye, target, { 0,1,0 });
+	return glm::lookAt(eye, target, up);
 }
 
 double Camera::get_target_distance() const {
@@ -72,14 +72,14 @@ double Camera::get_target_distance() const {
 
 void Camera::orbit(double yaw, double pitch) {
 	const auto forward = glm::normalize(target - eye);
-	const auto right = glm::cross(forward, { 0,1,0 });
-	const auto up = glm::cross(forward, right);
+	const auto right = glm::cross(forward, up);
+	//const auto up = glm::cross(forward, right);
 
 	auto pivot = target;
 	auto m = glm::mat4(1);
 	m = glm::translate(m, pivot);
 
-	m = glm::rotate(m, (float)yaw, { 0,1,0 });
+	m = glm::rotate(m, (float)yaw, up);
 	m = glm::rotate(m, (float)pitch, right);
 
 	m = glm::translate(m, -pivot);
