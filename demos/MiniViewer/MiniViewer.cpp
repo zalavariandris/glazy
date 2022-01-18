@@ -462,6 +462,7 @@ void ShowMiniViewer(bool *p_open) {
             
             imdraw::grid();
             imdraw::axis();
+            imdraw::quad(glazy::checkerboard_tex, {0,0},{1.0,1.0});
             
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
         }
