@@ -93,11 +93,8 @@ GLuint make_texture(std::filesystem::path filename, std::vector<ChannelKey> chan
     glm::mat4 M{ 1 };
     imdraw::set_view(glm::mat4(M));
 
-
     glm::vec2 min_rect{ spec.x * 1.0f,spec.y * 1.0f };
     glm::vec2 max_rect{ spec.x * 1.0f + spec.width * 1.0f, spec.y * 1.0f + spec.height * 1.0f };
-    imdraw::disc(glm::vec3(min_rect,0), 20.0f);
-    imdraw::disc(glm::vec3(max_rect, 0), 20.0f);
     imdraw::quad(tex_roi, { spec.x * 1.0f,spec.y * 1.0f }, { spec.x * 1.0f + spec.width * 1.0f, spec.y * 1.0f + spec.height * 1.0f });
 
     glBindFramebuffer(GL_READ_FRAMEBUFFER, current_fbo); // restore fbo
@@ -116,6 +113,8 @@ int end_frame{ 10 };
 
 int frame{ 0 };
 bool is_playing{ false };
+const double DPI = 300;
+Camera camera({ 0,0,5 }, { 0,0,0 }, { 0,1,0 });
 
 // getters
 std::filesystem::path _current_filename; // depends on file_pattern and frame
@@ -200,13 +199,24 @@ void open(std::filesystem::path filepath) {
     }
 };
 
+void fit() {
+    // read header
+    auto image_cache = OIIO::ImageCache::create(true);
+    OIIO::ImageSpec spec;
+    auto channel_keys = get_index_column(_current_channels_df);
+    image_cache->get_imagespec(OIIO::ustring(_current_filename.string()), spec, std::get<0>(channel_keys[0]), 0);
+
+    camera.eye = { spec.full_width / 2.0 / DPI, spec.full_width / 2.0 / DPI, camera.eye.z };
+    camera.target = { spec.full_width / 2.0 / DPI, spec.full_width / 2.0 / DPI, 0.0 };
+}
+
+// event handlers
 void on_frame_change() {
     update_current_filename();
     update_channels_table();
     update_texture();
 };
 
-// event handlers
 void on_layer_changed() {
     update_views();
     current_view = 0;
@@ -309,7 +319,7 @@ void ShowImageInfo() {
         ImGui::Text("(%s)", _current_filename.filename().string().c_str());
     }
 
-    if (ImGui::CollapsingHeader("overall spec"))
+    if (ImGui::CollapsingHeader("overall spec", ImGuiTreeNodeFlags_DefaultOpen))
     {
         /*
         auto in = OIIO::ImageInput::open(_current_filename.string());
@@ -347,8 +357,6 @@ void ShowTimeline() {
     ImGui::EndGroup();
 }
 
-
-
 void ShowMiniViewer(bool *p_open) {
     if (ImGui::Begin("Viewer", p_open, ImGuiWindowFlags_NoCollapse)) {
         // Toolbar
@@ -377,7 +385,6 @@ void ShowMiniViewer(bool *p_open) {
             static GLuint fbo;
             static GLuint color_attachment;
             static bool flip_y{false};
-            static Camera camera({0,0,5}, {0,0,0}, {0,1,0});
 
             if (ImGui::Checkbox("flip", &flip_y)) {
                 camera = Camera({ 0,0,flip_y ? -5 : 5 }, { 0,0,0 }, { 0,flip_y ? -1 : 1,0 }, false, camera.aspect, camera.fov);
@@ -405,14 +412,13 @@ void ShowMiniViewer(bool *p_open) {
             // Control Camera
             ImGui::InvisibleButton("camera control", item_size);
             if (ImGui::IsItemActive()) {
-                if (ImGui::IsMouseDragging(0) && !ImGui::GetIO().KeyMods)
-                {
-                    camera.pan(-ImGui::GetIO().MouseDelta.x / item_size.x, -ImGui::GetIO().MouseDelta.y / item_size.y);
-                }
-
                 if (ImGui::IsMouseDragging(0) && (ImGui::GetIO().KeyMods == (ImGuiKeyModFlags_Ctrl | ImGuiKeyModFlags_Alt)))
                 {
                     camera.orbit(-ImGui::GetIO().MouseDelta.x * 0.006, -ImGui::GetIO().MouseDelta.y * 0.006);
+                }
+                else if (ImGui::IsMouseDragging(0))// && !ImGui::GetIO().KeyMods)
+                {
+                    camera.pan(-ImGui::GetIO().MouseDelta.x / item_size.x, -ImGui::GetIO().MouseDelta.y / item_size.y);
                 }
             }
             if (ImGui::IsItemHovered()) {
@@ -434,6 +440,8 @@ void ShowMiniViewer(bool *p_open) {
             imdraw::set_view(camera.getView());
 
             /// Draw scene
+            imdraw::grid();
+            imdraw::axis();
             // draw image
             if (!_current_channels_df.empty()) {
                 // read header
@@ -446,7 +454,7 @@ void ShowMiniViewer(bool *p_open) {
                 int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
                 int nchannels = chend - chbegin;
                 // draw textured quad at ROI
-                double DPI = 300;
+                
                 imdraw::quad(tex,
                     { spec.full_x/DPI, spec.full_y/DPI },
                     { spec.full_x/DPI+spec.full_width/DPI, spec.full_y/DPI+spec.full_height/DPI}
@@ -460,10 +468,13 @@ void ShowMiniViewer(bool *p_open) {
 
             }
             
+<<<<<<< HEAD
             imdraw::grid();
             imdraw::axis();
             imdraw::quad(glazy::checkerboard_tex, {0,0},{1.0,1.0});
             
+=======
+>>>>>>> 7aa175c197fa8a8da7d832698c8fbabba72d2192
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
         }
         ImGui::End(); // End Viewer window
@@ -502,6 +513,14 @@ int main()
                 }
                 ImGui::EndMenu();
             }
+
+            if (ImGui::BeginMenu("View")) {
+                if(ImGui::MenuItem("fit", "f")) {
+                    fit();
+                }
+                ImGui::EndMenu();
+            }
+
             if (ImGui::BeginMenu("windows"))
             {
                 ImGui::MenuItem("image viewer", "", &image_viewer_visible);

@@ -12,6 +12,7 @@
 #include <vector>
 #include <tuple>
 #include <map>
+#include <array>
 
 // OpenGL
 #include <glad/glad.h>
@@ -690,6 +691,7 @@ namespace glazy {
 			static bool stats;
 			static bool imgui_demo;
 			static bool imgui_style;
+			static bool fullscreen;
 			if (ImGui::BeginMainMenuBar()) {
 				ImGui::Spacing();
 				if (ImGui::BeginMenu("glazy"))
@@ -702,6 +704,22 @@ namespace glazy {
 					ImGui::MenuItem("imgui demo", "", &imgui_demo);
 					ImGui::MenuItem("imgui style", "", &imgui_style);
 					ImGui::EndMenu();
+				}
+
+				if (ImGui::MenuItem(fullscreen ? "[window]" : "[fullscreen]", "", &fullscreen)) {
+					std::cout << "toggle fullscreen" << "\n";
+					static std::array< int, 2 > _wndPos{ 0, 0 };
+					static std::array< int, 2 > _wndSize{ 0, 0 };
+					if (fullscreen) {
+						auto monitor = glfwGetPrimaryMonitor();
+						const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+						glfwGetWindowPos(window, &_wndPos[0], &_wndPos[1]);
+						glfwGetWindowSize(window, &_wndSize[0], &_wndSize[1]);
+						glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+					}
+					else {
+						glfwSetWindowMonitor(window, nullptr, _wndPos[0], _wndPos[1], _wndSize[0], _wndSize[1], 0);
+					}
 				}
 
 				// Show fps in the right side
