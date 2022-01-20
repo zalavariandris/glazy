@@ -398,6 +398,9 @@ void imdraw::set_uniforms(GLuint program, std::map<GLint, UniformVariant> unifor
 		else if (auto value = std::get_if<GLuint>(&data)) {
 			glUniform1i(location, *value);
 		}
+		else if (auto value = std::get_if<glm::vec2>(&data)) {
+			glUniform2f(location, value->x, value->y);
+		}
 		else if (auto value = std::get_if<glm::vec3>(&data)) {
 			glUniform3f(location, value->x, value->y, value->z);
 		}
@@ -435,6 +438,9 @@ void imdraw::set_uniforms(GLuint program, std::map<std::string, UniformVariant> 
 		}
 		else if (auto value = std::get_if<glm::vec3>(&data)) {
 			glUniform3f(location, value->x, value->y, value->z);
+		}
+		else if (auto value = std::get_if<glm::vec2>(&data)) {
+			glUniform2f(location, value->x, value->y);
 		}
 		else if (auto value = std::get_if<glm::mat4>(&data)) {
 			glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(*value));
@@ -478,7 +484,7 @@ void imdraw::draw(GLenum mode, GLuint vao, GLuint ebo, GLsizei count) {
 }
 
 void imdraw::render(GLuint program,
-	std::map<std::string, std::variant<bool, int, float, glm::vec3, glm::mat4, GLuint>> uniforms,
+	std::map<std::string, UniformVariant> uniforms,
 	std::map<GLenum, std::tuple<GLenum, GLuint>> textures,
 	GLuint vao,
 	GLenum mode,

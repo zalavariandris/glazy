@@ -72,7 +72,9 @@ namespace imdraw {
 				"useInstanceMatrix",
 				"color",
 				"useTextureMap",
-				"textureMap"
+				"textureMap",
+				"uv_tiling",
+				"uv_offset"
 			};
 			for (std::string name : uniform_names) {
 				uniform_locations[name] = glGetUniformLocation(p, name.c_str());
@@ -86,7 +88,9 @@ namespace imdraw {
 				{"useInstanceMatrix", false},
 				{"color", glm::vec3(1,0,0)},
 				{"useTextureMap", false},
-				{"textureMap", 0}
+				{"textureMap", 0},
+				{"uv_tiling", glm::vec2(1,1)},
+				{"uv_offset", glm::vec2(0,0)}
 				});
 			return p;
 		}();
@@ -102,7 +106,9 @@ namespace imdraw {
 			{uniform_locations["useInstanceMatrix"], false},
 			{uniform_locations["color"], glm::vec3(1,1,1)},
 			{uniform_locations["useTextureMap"], false},
-			{uniform_locations["textureMap"], 0}
+			{uniform_locations["textureMap"], 0},
+			{uniform_locations["uv_tiling"], glm::vec2(1,1)},
+			{uniform_locations["uv_offset"], glm::vec2(0,0) }
 		});
 	}
 }
@@ -167,7 +173,7 @@ void imdraw::triangle() {
 	pop_program();
 }
 
-void imdraw::quad(GLuint texture, glm::vec2 min_rect, glm::vec2 max_rect) {
+void imdraw::quad(GLuint texture, glm::vec2 min_rect, glm::vec2 max_rect, glm::vec2 uv_tiling, glm::vec2 uv_offset) {
 	static auto geo = imgeo::quad();
 
 	// init vao
@@ -193,7 +199,9 @@ void imdraw::quad(GLuint texture, glm::vec2 min_rect, glm::vec2 max_rect) {
 	imdraw::set_uniforms(program(), {
 		{uniform_locations["color"], glm::vec3(1)},
 		{uniform_locations["useTextureMap"], true },
-		{uniform_locations["model"], M}
+		{uniform_locations["model"], M},
+		{uniform_locations["uv_tiling"], uv_tiling},
+		{uniform_locations["uv_offset"], uv_offset}
 	});
 	glBindTexture(GL_TEXTURE_2D, texture);
 	glBindVertexArray(vao);

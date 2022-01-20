@@ -7,9 +7,6 @@ uniform sampler2D textureMap;
 
 uniform bool useVertexColor;
 
-uniform vec3 uv_offset;
-uniform vec2 un_tiling;
-
 in vec4 ScreenPos;
 				
 in vec3 vNormal;

@@ -432,6 +432,11 @@ void ShowMiniViewer(bool *p_open) {
             ImGui::SetCursorPos(item_pos);
             ImGui::Image((ImTextureID)color_attachment, item_size, ImVec2(0, 1), ImVec2(1, 0));
 
+            static float tiling[2]{ 1,1 };
+            static float offset[2]{ 0,0 };
+            ImGui::SliderFloat2("tiling", tiling, 0, 128);
+            ImGui::SliderFloat2("offset", offset, -512, 512);
+
             glBindFramebuffer(GL_FRAMEBUFFER, fbo);
             glClearColor(0.0, 0.0, 0.0, 0.0);
             glClear(GL_COLOR_BUFFER_BIT);
@@ -454,10 +459,12 @@ void ShowMiniViewer(bool *p_open) {
                 int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
                 int nchannels = chend - chbegin;
                 // draw textured quad at ROI
-                
+
                 imdraw::quad(tex,
                     { spec.full_x/DPI, spec.full_y/DPI },
-                    { spec.full_x/DPI+spec.full_width/DPI, spec.full_y/DPI+spec.full_height/DPI}
+                    { spec.full_x/DPI+spec.full_width/DPI, spec.full_y/DPI+spec.full_height/DPI},
+                    glm::vec2(tiling[0], tiling[1]),
+                    glm::vec2(offset[0], offset[1])
                 );
 
                 // draw image full boundaries
@@ -468,13 +475,10 @@ void ShowMiniViewer(bool *p_open) {
 
             }
             
-<<<<<<< HEAD
             imdraw::grid();
             imdraw::axis();
             imdraw::quad(glazy::checkerboard_tex, {0,0},{1.0,1.0});
-            
-=======
->>>>>>> 7aa175c197fa8a8da7d832698c8fbabba72d2192
+
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
         }
         ImGui::End(); // End Viewer window

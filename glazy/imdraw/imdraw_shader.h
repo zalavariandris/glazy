@@ -50,6 +50,9 @@ uniform sampler2D textureMap;
 
 uniform bool useVertexColor;
 
+uniform vec2 uv_tiling;
+uniform vec2 uv_offset;
+
 in vec4 ScreenPos;
 				
 in vec3 vNormal;
@@ -81,7 +84,7 @@ void main()
 	vec3 col = color;
 	float alpha = 1.0;
 	if(useTextureMap){
-		vec4 tex = texture(textureMap, vUV);
+		vec4 tex = texture(textureMap, vUV*uv_tiling+uv_offset);
 		col *= tex.rgb;
 		alpha *= tex.a;
 	}
