@@ -432,9 +432,11 @@ void ShowMiniViewer(bool *p_open) {
             ImGui::SetCursorPos(item_pos);
             ImGui::Image((ImTextureID)color_attachment, item_size, ImVec2(0, 1), ImVec2(1, 0));
 
-            static float tiling[2]{ 1,1 };
+            static float tiling[2]{ 2,2 };
             static float offset[2]{ 0,0 };
-            ImGui::SliderFloat2("tiling", tiling, 0, 128);
+            if (ImGui::SliderFloat2("tiling", tiling, 0, 128)) {
+                std::cout << "tiling changed" << tiling[0] << tiling[1] << "\n";
+            }
             ImGui::SliderFloat2("offset", offset, -512, 512);
 
             glBindFramebuffer(GL_FRAMEBUFFER, fbo);
@@ -462,9 +464,7 @@ void ShowMiniViewer(bool *p_open) {
 
                 imdraw::quad(tex,
                     { spec.full_x/DPI, spec.full_y/DPI },
-                    { spec.full_x/DPI+spec.full_width/DPI, spec.full_y/DPI+spec.full_height/DPI},
-                    glm::vec2(tiling[0], tiling[1]),
-                    glm::vec2(offset[0], offset[1])
+                    { spec.full_x/DPI+spec.full_width/DPI, spec.full_y/DPI+spec.full_height/DPI}
                 );
 
                 // draw image full boundaries
@@ -477,7 +477,12 @@ void ShowMiniViewer(bool *p_open) {
             
             imdraw::grid();
             imdraw::axis();
-            imdraw::quad(glazy::checkerboard_tex, {0,0},{1.0,1.0});
+            imdraw::quad(glazy::checkerboard_tex, 
+                {0,0},
+                {1.0,1.0},
+                glm::vec2(tiling[0], tiling[1]),
+                glm::vec2(offset[0], offset[1])
+            );
 
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
         }

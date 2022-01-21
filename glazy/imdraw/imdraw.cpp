@@ -76,8 +76,11 @@ namespace imdraw {
 				"uv_tiling",
 				"uv_offset"
 			};
+			std::cout << "init default glazy program" << "\n";
+			std::cout << "uniform locations: " << "\n";
 			for (std::string name : uniform_names) {
 				uniform_locations[name] = glGetUniformLocation(p, name.c_str());
+				std::cout << "- " << name << ": " << uniform_locations[name] << "\n";
 			}
 
 			// set default uniforms

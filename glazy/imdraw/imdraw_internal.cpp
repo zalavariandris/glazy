@@ -399,6 +399,7 @@ void imdraw::set_uniforms(GLuint program, std::map<GLint, UniformVariant> unifor
 			glUniform1i(location, *value);
 		}
 		else if (auto value = std::get_if<glm::vec2>(&data)) {
+			//std::cout << "set uniform at " << location << ": " << value->x << "," << value->y << "\n";
 			glUniform2f(location, value->x, value->y);
 		}
 		else if (auto value = std::get_if<glm::vec3>(&data)) {
