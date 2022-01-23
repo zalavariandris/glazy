@@ -585,7 +585,7 @@ namespace glazy {
 		checkerboard_tex = imdraw::make_texture_float(64, 64, NULL, GL_RGBA);
 		GLuint fbo = imdraw::make_fbo(checkerboard_tex);
 		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-		glClearColor(1.0, 0, 0, 1);
+		glClearColor(1.0,1.0,1.0, 1);
 		glClear(GL_COLOR_BUFFER_BIT);
 		glViewport(0, 0, 64, 64);
 		imdraw::set_projection(glm::ortho(-1, 1, -1, 1));

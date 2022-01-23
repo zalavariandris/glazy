@@ -173,6 +173,7 @@
     <ClInclude Include="glazy\OOGL\Texture.h" />
     <ClInclude Include="glazy\widgets\Viewport.h" />
     <ClInclude Include="glazy\imageio.h" />
+    <ClInclude Include="glazy\ImGuiColorTextEdit.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="glazy\imageio.cpp" />
@@ -192,6 +193,7 @@
     <ClCompile Include="glazy\OOGL\VertexArray.cpp" />
     <ClCompile Include="glazy\OOGL\Texture.cpp" />
     <ClCompile Include="glazy\widgets\Viewport.cpp" />
+    <ClCompile Include="glazy\ImGuiColorTextEdit.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".gitignore" />

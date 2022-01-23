@@ -64,6 +64,15 @@ std::vector<std::string> get_stringvector_attribute(const OIIO::ImageSpec& spec,
 /// - left.R; right,left  -> color left R
 /// - left.Z; right,left  -> depth left Z
 /// - disparityR.x -> disparityL _ R
+/// 
+/// 
+
+
+#define COLOR_LAYER "[color]"
+#define DEPTH_LAYER "[depth]"
+#define OTHER_LAYER "[other]"
+#define DATA_VIEW ""
+
 ChannelRecord parse_channel_name(std::string channel_name, std::vector<std::string> views_hint) {
     bool isMultiView = !views_hint.empty();
 
@@ -75,9 +84,9 @@ ChannelRecord parse_channel_name(std::string channel_name, std::vector<std::stri
         std::string channel = channel_segments.back();
         bool isColor = std::string("RGBA").find(channel) != std::string::npos;
         bool isDepth = channel == "Z";
-        std::string layer = "[other]";
-        if (isColor) layer = "[color]";
-        if (isDepth) layer = "[depth]";
+        std::string layer = OTHER_LAYER;
+        if (isColor) layer = COLOR_LAYER;
+        if (isDepth) layer = DEPTH_LAYER;
         std::string view = isMultiView ? views_hint[0] : "";
         return std::tuple<std::string, std::string, std::string>({ layer,view,channel });
     }
@@ -90,13 +99,13 @@ ChannelRecord parse_channel_name(std::string channel_name, std::vector<std::stri
             std::string channel = channel_segments.back();
             bool isColor = std::string("RGBA").find(channel) != std::string::npos;
             bool isDepth = channel == "Z";
-            std::string layer = "[other]";
-            if (isColor) layer = "[color]";
-            if (isDepth) layer = "[depth]";
+            std::string layer = OTHER_LAYER;
+            if (isColor) layer = COLOR_LAYER;
+            if (isDepth) layer = DEPTH_LAYER;
             return { layer, channel_segments.end()[-2], channel_segments.back() };
         }
         else {
-            return { channel_segments[0], "[data]", channel_segments.back() };
+            return { channel_segments[0], DATA_VIEW, channel_segments.back() };
         }
     }
 
@@ -114,7 +123,7 @@ ChannelRecord parse_channel_name(std::string channel_name, std::vector<std::stri
             // this channel is not in a view, but the layer name contains a dot
             //{layer.name}.{final channels}
             auto layer = join_string(channel_segments, ".", 0, channel_segments.size() - 2);
-            return { layer, "[data]", channel_segments.back() };
+            return { layer, DATA_VIEW, channel_segments.back() };
         }
     }
 
@@ -130,7 +139,7 @@ ChannelRecord parse_channel_name(std::string channel_name, std::vector<std::stri
         }
         else {
             auto layer = join_string(channel_segments, ".", 0, channel_segments.size() - 2);
-            auto view = "[data]";
+            auto view = DATA_VIEW;
             auto channel = channel_segments.end()[-1];
             return { layer, view, channel };
         }
@@ -163,11 +172,14 @@ ChannelsTable get_channelstable(const std::filesystem::path& filename)
         auto spec = in->spec();
         std::string subimage_name = spec.get_string_attribute("name");
         for (auto chan = 0; chan < spec.nchannels; chan++) {
-
             std::string channel_name = spec.channel_name(chan);
-            const auto& [layer, view, channel] = parse_channel_name(spec.channel_name(chan), views);
+            auto [layer, view, channel] = parse_channel_name(spec.channel_name(chan), views);
+            
+            if (view.empty()) {
+                view = std::string{ spec.get_string_attribute("view") };
+            }
             std::tuple<int, int> key{ nsubimages, chan };
-            layers_dataframe[key] = { layer, view, channel };
+            layers_dataframe[key] = { layer, view, channel};
         }
         ++nsubimages;
     }

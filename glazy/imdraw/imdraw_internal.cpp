@@ -256,7 +256,7 @@ GLuint imdraw::make_vao(GLuint program, std::map<std::string, std::tuple<GLuint,
 	glGenVertexArrays(1, &vao);
 	glBindVertexArray(vao);
 	for (const auto& [name, attribute] : attributes) {
-		auto location = glGetAttribLocation(program, name.c_str());
+		GLuint location = glGetAttribLocation(program, name.c_str());
 		if (location < 0) {
 			std::cout << "WARNING::GL: attribute '" << name << "' is not active!" << std::endl;
 		}
@@ -409,7 +409,7 @@ void imdraw::set_uniforms(GLuint program, std::map<GLint, UniformVariant> unifor
 			glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(*value));
 		}
 		else {
-			std::cout << "WARNING:GLAZY: '" << location << "' type is not handled" << std::endl;
+			//std::cout << "WARNING:GLAZY: '" << location << "' type is not handled" << std::endl;
 		}
 	}
 	pop_program();
@@ -422,7 +422,7 @@ void imdraw::set_uniforms(GLuint program, std::map<std::string, UniformVariant> 
 	{
 		GLint location = glGetUniformLocation(program, name.c_str());
 		if (location < 0) {
-			std::cout << "WARNING:GLAZY: '" << name << "' uniform is not used!" << std::endl;
+			//std::cout << "WARNING:GLAZY: '" << name << "' uniform is not used!" << std::endl;
 		}
 
 		if (auto value = std::get_if<bool>(&data)) {
@@ -437,7 +437,7 @@ void imdraw::set_uniforms(GLuint program, std::map<std::string, UniformVariant> 
 		else if (auto value = std::get_if<GLuint>(&data)) {
 			glUniform1i(location, *value);
 		}
-		else if (auto value = std::get_if<glm::vec3>(&data)) {
+	else if (auto value = std::get_if<glm::vec3>(&data)) {
 			glUniform3f(location, value->x, value->y, value->z);
 		}
 		else if (auto value = std::get_if<glm::vec2>(&data)) {

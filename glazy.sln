@@ -9,8 +9,6 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "draw_demo", "demos\draw_dem
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OOGL-test", "tests\OOGL-test\OOGL-test.vcxproj", "{A3B90D0E-476E-47F0-9422-1DC69678FBD3}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "shadertoy_with_oogl", "demos\draw_woth_oogl\draw_woth_oogl.vcxproj", "{DBDDB6DB-053D-461B-86DD-0E0E1DD18945}"
-EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "read_exr", "demos\read_exr\read_exr.vcxproj", "{EAADF433-03C5-4BE9-A614-3E1E232FFE5D}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "splitexr", "demos\splitexr\splitexr.vcxproj", "{EABF8B16-BE6F-4AF3-A26C-6D621AAEE953}"
@@ -26,6 +24,8 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "try_rxcpp", "..\try_rxcpp\try_rxcpp.vcxproj", "{FDD69971-9428-4EE0-9344-DC045C31CDB4}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MiniViewer", "demos\MiniViewer\MiniViewer.vcxproj", "{B4060E4E-8A95-4607-8D03-638624A98168}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ChannelsTable-Test", "tests\ChannelsTable-Test\ChannelsTable-Test.vcxproj", "{4CF42370-CDA0-45C8-A14E-0B25AF0C6B2C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -59,14 +59,6 @@ Global
 		{A3B90D0E-476E-47F0-9422-1DC69678FBD3}.Release|x64.Build.0 = Release|x64
 		{A3B90D0E-476E-47F0-9422-1DC69678FBD3}.Release|x86.ActiveCfg = Release|Win32
 		{A3B90D0E-476E-47F0-9422-1DC69678FBD3}.Release|x86.Build.0 = Release|Win32
-		{DBDDB6DB-053D-461B-86DD-0E0E1DD18945}.Debug|x64.ActiveCfg = Debug|x64
-		{DBDDB6DB-053D-461B-86DD-0E0E1DD18945}.Debug|x64.Build.0 = Debug|x64
-		{DBDDB6DB-053D-461B-86DD-0E0E1DD18945}.Debug|x86.ActiveCfg = Debug|Win32
-		{DBDDB6DB-053D-461B-86DD-0E0E1DD18945}.Debug|x86.Build.0 = Debug|Win32
-		{DBDDB6DB-053D-461B-86DD-0E0E1DD18945}.Release|x64.ActiveCfg = Release|x64
-		{DBDDB6DB-053D-461B-86DD-0E0E1DD18945}.Release|x64.Build.0 = Release|x64
-		{DBDDB6DB-053D-461B-86DD-0E0E1DD18945}.Release|x86.ActiveCfg = Release|Win32
-		{DBDDB6DB-053D-461B-86DD-0E0E1DD18945}.Release|x86.Build.0 = Release|Win32
 		{EAADF433-03C5-4BE9-A614-3E1E232FFE5D}.Debug|x64.ActiveCfg = Debug|x64
 		{EAADF433-03C5-4BE9-A614-3E1E232FFE5D}.Debug|x64.Build.0 = Debug|x64
 		{EAADF433-03C5-4BE9-A614-3E1E232FFE5D}.Debug|x86.ActiveCfg = Debug|Win32
@@ -131,6 +123,14 @@ Global
 		{B4060E4E-8A95-4607-8D03-638624A98168}.Release|x64.Build.0 = Release|x64
 		{B4060E4E-8A95-4607-8D03-638624A98168}.Release|x86.ActiveCfg = Release|Win32
 		{B4060E4E-8A95-4607-8D03-638624A98168}.Release|x86.Build.0 = Release|Win32
+		{4CF42370-CDA0-45C8-A14E-0B25AF0C6B2C}.Debug|x64.ActiveCfg = Debug|x64
+		{4CF42370-CDA0-45C8-A14E-0B25AF0C6B2C}.Debug|x64.Build.0 = Debug|x64
+		{4CF42370-CDA0-45C8-A14E-0B25AF0C6B2C}.Debug|x86.ActiveCfg = Debug|Win32
+		{4CF42370-CDA0-45C8-A14E-0B25AF0C6B2C}.Debug|x86.Build.0 = Debug|Win32
+		{4CF42370-CDA0-45C8-A14E-0B25AF0C6B2C}.Release|x64.ActiveCfg = Release|x64
+		{4CF42370-CDA0-45C8-A14E-0B25AF0C6B2C}.Release|x64.Build.0 = Release|x64
+		{4CF42370-CDA0-45C8-A14E-0B25AF0C6B2C}.Release|x86.ActiveCfg = Release|Win32
+		{4CF42370-CDA0-45C8-A14E-0B25AF0C6B2C}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -74,7 +74,8 @@ namespace imdraw {
 				"useTextureMap",
 				"textureMap",
 				"uv_tiling",
-				"uv_offset"
+				"uv_offset",
+				"opacity"
 			};
 			std::cout << "init default glazy program" << "\n";
 			std::cout << "uniform locations: " << "\n";
@@ -89,11 +90,12 @@ namespace imdraw {
 				{"view", glm::mat4(1)},
 				{"projection", glm::mat4(1)},
 				{"useInstanceMatrix", false},
-				{"color", glm::vec3(1,0,0)},
+				{"color", glm::vec3(1,1,1)},
 				{"useTextureMap", false},
 				{"textureMap", 0},
 				{"uv_tiling", glm::vec2(1,1)},
-				{"uv_offset", glm::vec2(0,0)}
+				{"uv_offset", glm::vec2(0,0)},
+				{"opacity", 0.0f}
 				});
 			return p;
 		}();
@@ -176,7 +178,7 @@ void imdraw::triangle() {
 	pop_program();
 }
 
-void imdraw::quad(GLuint texture, glm::vec2 min_rect, glm::vec2 max_rect, glm::vec2 uv_tiling, glm::vec2 uv_offset) {
+void imdraw::quad(GLuint texture, glm::vec2 min_rect, glm::vec2 max_rect, glm::vec2 uv_tiling, glm::vec2 uv_offset, float opacity) {
 	static auto geo = imgeo::quad();
 
 	// init vao
@@ -200,11 +202,11 @@ void imdraw::quad(GLuint texture, glm::vec2 min_rect, glm::vec2 max_rect, glm::v
 	push_program(program());
 	imdraw::reset_uniforms();
 	imdraw::set_uniforms(program(), {
-		{uniform_locations["color"], glm::vec3(1)},
 		{uniform_locations["useTextureMap"], true },
 		{uniform_locations["model"], M},
 		{uniform_locations["uv_tiling"], uv_tiling},
-		{uniform_locations["uv_offset"], uv_offset}
+		{uniform_locations["uv_offset"], uv_offset},
+		{uniform_locations["opacity"], opacity}
 	});
 	glBindTexture(GL_TEXTURE_2D, texture);
 	glBindVertexArray(vao);

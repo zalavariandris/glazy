@@ -23,6 +23,77 @@
 // utilities
 #include "ChannelsTable.h"
 
+#include <chrono>
+
+#include "imgui.h"
+#include "imgui_stdlib.h"
+
+namespace ImGui {
+    struct InputTextCallback_UserData
+    {
+        std::string* Str;
+        ImGuiInputTextCallback  ChainCallback;
+        void* ChainCallbackUserData;
+    };
+
+    static int InputTextCallback(ImGuiInputTextCallbackData* data)
+    {
+        InputTextCallback_UserData* user_data = (InputTextCallback_UserData*)data->UserData;
+        if (data->EventFlag == ImGuiInputTextFlags_CallbackResize)
+        {
+            // Resize string callback
+            // If for some reason we refuse the new length (BufTextLen) and/or capacity (BufSize) we need to set them back to what we want.
+            std::string* str = user_data->Str;
+            IM_ASSERT(data->Buf == str->c_str());
+            str->resize(data->BufTextLen);
+            data->Buf = (char*)str->c_str();
+        }
+        else if (user_data->ChainCallback)
+        {
+            // Forward to user callback, if any
+            data->UserData = user_data->ChainCallbackUserData;
+            return user_data->ChainCallback(data);
+        }
+        return 0;
+    }
+
+    bool InputText(const char* label, std::string* str, ImGuiInputTextFlags flags, ImGuiInputTextCallback callback, void* user_data)
+    {
+        IM_ASSERT((flags & ImGuiInputTextFlags_CallbackResize) == 0);
+        flags |= ImGuiInputTextFlags_CallbackResize;
+
+        InputTextCallback_UserData cb_user_data;
+        cb_user_data.Str = str;
+        cb_user_data.ChainCallback = callback;
+        cb_user_data.ChainCallbackUserData = user_data;
+        return InputText(label, (char*)str->c_str(), str->capacity() + 1, flags, InputTextCallback, &cb_user_data);
+    }
+
+    bool InputTextMultiline(const char* label, std::string* str, const ImVec2& size, ImGuiInputTextFlags flags, ImGuiInputTextCallback callback, void* user_data)
+    {
+        IM_ASSERT((flags & ImGuiInputTextFlags_CallbackResize) == 0);
+        flags |= ImGuiInputTextFlags_CallbackResize;
+
+        InputTextCallback_UserData cb_user_data;
+        cb_user_data.Str = str;
+        cb_user_data.ChainCallback = callback;
+        cb_user_data.ChainCallbackUserData = user_data;
+        return InputTextMultiline(label, (char*)str->c_str(), str->capacity() + 1, size, flags, InputTextCallback, &cb_user_data);
+    }
+
+    bool InputTextWithHint(const char* label, const char* hint, std::string* str, ImGuiInputTextFlags flags, ImGuiInputTextCallback callback, void* user_data)
+    {
+        IM_ASSERT((flags & ImGuiInputTextFlags_CallbackResize) == 0);
+        flags |= ImGuiInputTextFlags_CallbackResize;
+
+        InputTextCallback_UserData cb_user_data;
+        cb_user_data.Str = str;
+        cb_user_data.ChainCallback = callback;
+        cb_user_data.ChainCallbackUserData = user_data;
+        return InputTextWithHint(label, hint, (char*)str->c_str(), str->capacity() + 1, flags, InputTextCallback, &cb_user_data);
+    }
+}
+
 GLuint make_texture(std::filesystem::path filename, std::vector<ChannelKey> channel_keys = {})
 {
     if (channel_keys.empty()) return 0;
@@ -231,8 +302,6 @@ void on_view_change() {
     update_texture();
 };
 
-
-
 void ShowChannelsTable()
 {
     if (ImGui::BeginTabBar("image header"))
@@ -340,21 +409,32 @@ void ShowImageInfo() {
         std::string info = spec.serialize(OIIO::ImageSpec::SerialText, OIIO::ImageSpec::SerialDetailedHuman);
         ImGui::Text("%s", info.c_str());
     }
-
 }
 
 void ShowTimeline() {
     // Timeslider
-    ImGui::BeginGroup();
-    if (ImGui::Button(is_playing ? "pause" : "play")) {
+    
+    ImGui::SetCursorPosX(ImGui::GetContentRegionAvailWidth() / 2 - 60);
+    if (ImGui::Button(is_playing ? "pause" : "play", {120, 0})) {
         is_playing = !is_playing;
     }
-    ImGui::Text("%d", start_frame); ImGui::SameLine();
-    if (ImGui::SliderInt("##frame", &frame, start_frame, end_frame)) {
-        on_frame_change();
-    } ImGui::SameLine();
-    ImGui::Text("%d", end_frame);
-    ImGui::EndGroup();
+
+    if (ImGui::BeginTable("channels table", 3, ImGuiTableFlags_SizingStretchProp)) {
+
+        ImGui::TableNextColumn();
+        ImGui::Text("%d", start_frame); ImGui::SameLine();
+
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::SliderInt("##frame", &frame, start_frame, end_frame)) {
+            on_frame_change();
+        }
+
+        ImGui::TableNextColumn();
+        ImGui::Text("%d", end_frame);
+
+        ImGui::EndTable();
+    }
 }
 
 void ShowMiniViewer(bool *p_open) {
@@ -362,14 +442,28 @@ void ShowMiniViewer(bool *p_open) {
         // Toolbar
         ImGui::BeginGroup();
         {
-            ImGui::SetNextItemWidth(120);
+            ImGui::SetNextItemWidth(150);
             if (ImGui::Combo("##layers", &current_layer, layers)) {
                 on_layer_changed();
             }
             ImGui::SameLine();
-            ImGui::SetNextItemWidth(120);
-            if (ImGui::Combo("##views", &current_view, views)) {
-                on_view_change();
+            ImGui::SetNextItemWidth(150);
+
+            if (views.size() == 1)
+            {
+                if (!views[current_view].empty())
+                {
+                    ImGui::Text(views[current_view].c_str());
+                }
+                else {
+                    ImGui::Text("-no view-");
+                }
+            }
+            else if (views.size() > 1)
+            {
+                if (ImGui::Combo("##views", &current_view, views)) {
+                    on_view_change();
+                }
             }
 
             ImGui::SameLine();
@@ -389,6 +483,13 @@ void ShowMiniViewer(bool *p_open) {
             if (ImGui::Checkbox("flip", &flip_y)) {
                 camera = Camera({ 0,0,flip_y ? -5 : 5 }, { 0,0,0 }, { 0,flip_y ? -1 : 1,0 }, false, camera.aspect, camera.fov);
             }
+
+            //static float tiling[2]{ 2,2 };
+            //static float offset[2]{ 0,0 };
+            //if (ImGui::SliderFloat2("tiling", tiling, 0, 128)) {
+            //    std::cout << "tiling changed" << tiling[0] << tiling[1] << "\n";
+            //}
+            //ImGui::SliderFloat2("offset", offset, -512, 512);
 
             auto item_pos = ImGui::GetCursorPos();
             auto item_size = ImGui::GetContentRegionAvail();
@@ -432,13 +533,6 @@ void ShowMiniViewer(bool *p_open) {
             ImGui::SetCursorPos(item_pos);
             ImGui::Image((ImTextureID)color_attachment, item_size, ImVec2(0, 1), ImVec2(1, 0));
 
-            static float tiling[2]{ 2,2 };
-            static float offset[2]{ 0,0 };
-            if (ImGui::SliderFloat2("tiling", tiling, 0, 128)) {
-                std::cout << "tiling changed" << tiling[0] << tiling[1] << "\n";
-            }
-            ImGui::SliderFloat2("offset", offset, -512, 512);
-
             glBindFramebuffer(GL_FRAMEBUFFER, fbo);
             glClearColor(0.0, 0.0, 0.0, 0.0);
             glClear(GL_COLOR_BUFFER_BIT);
@@ -447,8 +541,93 @@ void ShowMiniViewer(bool *p_open) {
             imdraw::set_view(camera.getView());
 
             /// Draw scene
-            imdraw::grid();
-            imdraw::axis();
+            // draw background
+            {
+                static std::filesystem::path fragment_path{"./polka.frag"};
+                static std::filesystem::file_time_type last_mod_time;
+                static std::string vertex_code{ R"(#version 330 core
+                    layout (location = 0) in vec3 aPos;
+
+                    uniform mat4 projection;
+                    uniform mat4 view;
+                    uniform mat4 model;
+
+                    out vec3 nearPoint;
+                    out vec3 farPoint;
+                    out mat4 fragView;
+                    out mat4 fragProj;
+
+                    vec3 UnprojectPoint(float x, float y, float z, mat4 view, mat4 projection) {
+                        mat4 viewInv = inverse(view);
+                        mat4 projInv = inverse(projection);
+                        vec4 unprojectedPoint =  viewInv * projInv * vec4(x, y, z, 1.0);
+                        return unprojectedPoint.xyz / unprojectedPoint.w;
+                    }
+				
+                    // Main
+                    void main()
+                    {
+                        //gl_Position = projection * view * model * vec4(aPos, 1.0);
+                        nearPoint = UnprojectPoint(aPos.x, aPos.y, 0.0, view, projection).xyz;
+                        farPoint = UnprojectPoint(aPos.x, aPos.y, 1.0, view, projection).xyz;
+                        fragView = view;
+                        fragProj = projection;
+                        gl_Position = vec4(aPos, 1.0);
+                    };)"
+                };
+
+                static std::string fragment_code;
+                static GLuint polka_program;
+                if (std::filesystem::last_write_time(fragment_path) != last_mod_time)
+                {
+                    // reload fragment code
+                    fragment_code = glazy::read_text(fragment_path.string().c_str());
+                    last_mod_time = std::filesystem::last_write_time(fragment_path);
+
+                    // recompile shader
+                    std::cout << "recompile background shader" << "\n";
+                    if (glIsProgram(polka_program)) {
+                        glDeleteProgram(polka_program);
+                    }
+
+                    polka_program = imdraw::make_program_from_source(
+                        vertex_code.c_str(),
+                        fragment_code.c_str()
+                    );
+                }
+
+
+                static std::vector<glm::vec3> vertices{
+                    {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0}
+                };
+
+                static GLuint vbo = imdraw::make_vbo(vertices);
+
+                static auto vao = imdraw::make_vao(polka_program, {
+                    {"aPos", {vbo, 3}}
+                });
+                
+                static auto begin_time = std::chrono::system_clock::now();
+                auto now = std::chrono::system_clock::now();
+                auto delta = now - begin_time;
+                static float radius = 0.01;
+                float iTime = std::chrono::duration_cast<std::chrono::milliseconds>(delta).count()*0.001;
+                imdraw::push_program(polka_program);
+                imdraw::set_uniforms(polka_program, {
+                    {"projection", camera.getProjection()},
+                    {"view", camera.getView()},
+                    {"model", glm::mat4(1)},
+                    {"uResolution", glm::vec2(item_size.x, item_size.y)},
+                    {"radius", radius}
+                });
+
+                glBindVertexArray(vao);
+                glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+                glBindVertexArray(0);
+                imdraw::pop_program();
+                
+            }
+
             // draw image
             if (!_current_channels_df.empty()) {
                 // read header
@@ -460,8 +639,16 @@ void ShowMiniViewer(bool *p_open) {
                 int chbegin = std::get<1>(channel_keys[0]);
                 int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
                 int nchannels = chend - chbegin;
-                // draw textured quad at ROI
 
+                // draw transparency checkboard
+                imdraw::quad(glazy::checkerboard_tex,
+                    { spec.full_x / DPI,spec.full_y / DPI }, { spec.full_x / DPI + spec.full_width / DPI, spec.full_y / DPI + spec.full_height / DPI },
+                    glm::vec2(spec.full_width/64, spec.full_height/64),
+                    glm::vec2(0,0),
+                    0.7
+                );
+
+                // draw textured quad at ROIchec
                 imdraw::quad(tex,
                     { spec.full_x/DPI, spec.full_y/DPI },
                     { spec.full_x/DPI+spec.full_width/DPI, spec.full_y/DPI+spec.full_height/DPI}
@@ -475,14 +662,9 @@ void ShowMiniViewer(bool *p_open) {
 
             }
             
-            imdraw::grid();
+            //imdraw::grid();
             imdraw::axis();
-            imdraw::quad(glazy::checkerboard_tex, 
-                {0,0},
-                {1.0,1.0},
-                glm::vec2(tiling[0], tiling[1]),
-                glm::vec2(offset[0], offset[1])
-            );
+
 
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
         }
