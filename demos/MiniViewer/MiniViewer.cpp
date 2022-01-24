@@ -28,6 +28,14 @@
 #include "imgui.h"
 #include "imgui_stdlib.h"
 
+void BeginRenderToTexture(const char *label) {
+
+}
+
+void EndRenderToTexture() {
+
+}
+
 namespace ImGui {
     struct InputTextCallback_UserData
     {
@@ -94,7 +102,7 @@ namespace ImGui {
     }
 }
 
-GLuint make_texture(std::filesystem::path filename, std::vector<ChannelKey> channel_keys = {})
+GLuint make_texture_from_file(std::filesystem::path filename, std::vector<ChannelKey> channel_keys = {})
 {
     if (channel_keys.empty()) return 0;
     if (!std::filesystem::exists(filename)) return 0;
@@ -241,7 +249,7 @@ void update_channels() {
 GLuint tex{ 0 };
 void update_texture() {
     if (glIsTexture(tex)) glDeleteTextures(1, &tex);
-    tex = make_texture(_current_filename, get_index_column(_current_channels_df));
+    tex = make_texture_from_file(_current_filename, get_index_column(_current_channels_df));
 };
 
 // actions
@@ -437,6 +445,27 @@ void ShowTimeline() {
     }
 }
 
+struct RenderTarget {
+    GLuint fbo;
+    GLuint color_attachment;
+};
+
+RenderTarget make_rendertarget(int width, int height) {
+    RenderTarget rt;
+    rt.color_attachment = imdraw::make_texture_float(width, height, NULL, GL_RGBA);
+    rt.fbo = imdraw::make_fbo(rt.color_attachment);
+    return rt;
+}
+
+void delete_rendertarget(const RenderTarget & rt) {
+    glDeleteTextures(1, &rt.color_attachment);
+    glDeleteFramebuffers(1, &rt.fbo);
+}
+
+void bind_rendertarget() {
+
+}
+
 void ShowMiniViewer(bool *p_open) {
     if (ImGui::Begin("Viewer", p_open, ImGuiWindowFlags_NoCollapse)) {
         // Toolbar
@@ -476,8 +505,7 @@ void ShowMiniViewer(bool *p_open) {
 
         // Viewport
         {
-            static GLuint fbo;
-            static GLuint color_attachment;
+            static RenderTarget viewport_rt;
             static bool flip_y{false};
 
             if (ImGui::Checkbox("flip", &flip_y)) {
@@ -500,12 +528,14 @@ void ShowMiniViewer(bool *p_open) {
             {
                 std::cout << "update fbo: " << item_size.x << ", " << item_size.y << "\n";
                 display_size = item_size;
+                delete_rendertarget(viewport_rt);
+                viewport_rt = make_rendertarget(item_size.x, item_size.y);
                 // update attachments
-                glDeleteTextures(1, &color_attachment);
-                color_attachment = imdraw::make_texture_float(item_size.x, item_size.y, NULL, GL_RGBA);
-                // update fbo
-                glDeleteFramebuffers(1, &fbo);
-                fbo = imdraw::make_fbo(color_attachment);
+                //glDeleteTextures(1, &viewport_rt.color_attachment);
+                //viewport_rt.color_attachment = imdraw::make_texture_float(item_size.x, item_size.y, NULL, GL_RGBA);
+                //// update fbo
+                //glDeleteFramebuffers(1, &viewport_rt.fbo);
+                //viewport_rt.fbo = imdraw::make_fbo(viewport_rt.color_attachment);
                 // update camera aspect
                 camera.aspect = item_size.x / item_size.y;
             }
@@ -531,9 +561,9 @@ void ShowMiniViewer(bool *p_open) {
 
             ImGui::SetItemAllowOverlap();
             ImGui::SetCursorPos(item_pos);
-            ImGui::Image((ImTextureID)color_attachment, item_size, ImVec2(0, 1), ImVec2(1, 0));
+            ImGui::Image((ImTextureID)viewport_rt.color_attachment, item_size, ImVec2(0, 1), ImVec2(1, 0));
 
-            glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+            glBindFramebuffer(GL_FRAMEBUFFER, viewport_rt.fbo);
             glClearColor(0.0, 0.0, 0.0, 0.0);
             glClear(GL_COLOR_BUFFER_BIT);
             glViewport(0, 0, item_size.x, item_size.y);
@@ -618,18 +648,21 @@ void ShowMiniViewer(bool *p_open) {
                     {"view", camera.getView()},
                     {"model", glm::mat4(1)},
                     {"uResolution", glm::vec2(item_size.x, item_size.y)},
-                    {"radius", radius}
+                    {"radius", radius},
+                    {"textureMap", 0}
                 });
-
+                glBindTexture(GL_TEXTURE_2D, tex);
                 glBindVertexArray(vao);
                 glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
                 glBindVertexArray(0);
+                glBindTexture(GL_TEXTURE_2D, 0);
                 imdraw::pop_program();
                 
             }
 
             // draw image
             if (!_current_channels_df.empty()) {
+
                 // read header
                 auto image_cache = OIIO::ImageCache::create(true);
                 OIIO::ImageSpec spec;
@@ -648,18 +681,17 @@ void ShowMiniViewer(bool *p_open) {
                     0.7
                 );
 
-                // draw textured quad at ROIchec
+                // draw textured quad
                 imdraw::quad(tex,
-                    { spec.full_x/DPI, spec.full_y/DPI },
-                    { spec.full_x/DPI+spec.full_width/DPI, spec.full_y/DPI+spec.full_height/DPI}
+                    { spec.full_x / DPI, spec.full_y / DPI },
+                    { spec.full_x / DPI + spec.full_width / DPI, spec.full_y / DPI + spec.full_height / DPI }
                 );
-
+                
                 // draw image full boundaries
                 imdraw::rect({ spec.full_x/DPI,spec.full_y/DPI }, { spec.full_x / DPI+spec.full_width/DPI, spec.full_y / DPI+spec.full_height/DPI });
 
                 // draw image ROI boundaries
                 imdraw::rect({ spec.x / DPI,spec.y / DPI }, { spec.x / DPI + spec.width / DPI, spec.y / DPI + spec.height / DPI });
-
             }
             
             //imdraw::grid();

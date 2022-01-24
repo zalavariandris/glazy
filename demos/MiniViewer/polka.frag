@@ -15,6 +15,8 @@ in mat4 fragProj;
 float near = 0.1;
 float far = 10000;
 
+uniform sampler2D textureMap;
+
 // gives the grid lines alpha factor
 float grid(in vec2 uv)
 {
@@ -64,7 +66,10 @@ void main(){
         distance = step(0.02, distance);
         alpha=1-distance;
         //col = vec3(uv, 0);
-    }
 
-    FragColor = vec4(col, alpha*0.3);
+        col = texture(textureMap, gl_FragCoord.xy/uResolution).rgb; alpha = 1.0;
+    }
+    
+    FragColor = vec4(col, alpha*1.0);
+
 }            
