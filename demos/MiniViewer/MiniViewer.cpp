@@ -28,12 +28,39 @@
 #include "imgui.h"
 #include "imgui_stdlib.h"
 
-void BeginRenderToTexture(const char *label) {
+#include <array>
 
+std::vector<GLuint> fbo_stack;
+std::vector<std::array<GLint, 4>> viewport_stack;
+
+void BeginRenderToTexture(GLuint fbo, GLint x, GLint y, GLsizei width, GLsizei height)
+{
+    // push fbo
+    GLint current_fbo;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &current_fbo); // TODO: getting fbo is fairly harmful to performance.
+    fbo_stack.push_back(current_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+    // push viewport
+    GLint viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    viewport_stack.push_back({ viewport[0], viewport[1], viewport[2], viewport[3]});
+    glViewport(x, y, width, height);
 }
 
-void EndRenderToTexture() {
+void EndRenderToTexture()
+{
+    ASSERT(("Mismatch Begin/End Rendertargets", !fbo_stack.empty()));
 
+    // restore viewport
+    auto last_viewport = viewport_stack.back();
+    viewport_stack.pop_back();
+    glViewport(last_viewport[0], last_viewport[1], last_viewport[2], last_viewport[3]);
+
+    // restore fbo
+    GLuint last_fbo = fbo_stack.back();
+    glBindFramebuffer(GL_FRAMEBUFFER, last_fbo);
+    fbo_stack.pop_back();
 }
 
 namespace ImGui {
@@ -102,11 +129,36 @@ namespace ImGui {
     }
 }
 
+
+
+//std::map<std::filesystem::path, std::tuple<std::filesystem::file_time_type, std::string>> values;
+//std::string get_text(const std::filesystem::path & path)
+//{
+//    if (!values.contains(path)) {
+//        auto timestamp = std::filesystem::last_write_time(path);
+//        auto text = glazy::read_text(path.string().c_str());
+//        values[path] = { timestamp, text };
+//    }
+//    if (std::get<0>(values[path]) != std::filesystem::last_write_time(path)) {
+//        auto timestamp = std::filesystem::last_write_time(path);
+//        auto text = glazy::read_text(path.string().c_str());
+//        values[path] = { timestamp, text };
+//    }
+//    return std::get<1>(values[path]);
+//}
+//
+//bool IsFileModified(std::filesystem::path path) {
+//
+//}
+
+
 GLuint make_texture_from_file(std::filesystem::path filename, std::vector<ChannelKey> channel_keys = {})
 {
+    /// Validate parameters
     if (channel_keys.empty()) return 0;
     if (!std::filesystem::exists(filename)) return 0;
-    // read header
+
+    /// Read header
     auto image_cache = OIIO::ImageCache::create(true);
     OIIO::ImageSpec spec;
     image_cache->get_imagespec(OIIO::ustring(filename.string()), spec, std::get<0>(channel_keys[0]), 0);
@@ -118,13 +170,12 @@ GLuint make_texture_from_file(std::filesystem::path filename, std::vector<Channe
     int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
     int nchannels = chend - chbegin;
 
-    // read pixels
+    /// Allocate and read pixels
     float* data = (float*)malloc(w * h * nchannels * sizeof(float));
     image_cache->get_pixels(OIIO::ustring(filename.string()), std::get<0>(channel_keys[0]), 0, x, x + w, y, y + h, 0, 1, chbegin, chend, OIIO::TypeFloat, data, OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, chbegin, chend);
 
-    // create texture for ROI
+    /// Create texture for ROI
     GLuint tex_roi;
-
     glGenTextures(1, &tex_roi);
     glBindTexture(GL_TEXTURE_2D, tex_roi);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -153,35 +204,32 @@ GLuint make_texture_from_file(std::filesystem::path filename, std::vector<Channe
     glTexImage2D(GL_TEXTURE_2D, 0, internalformat, spec.width, spec.height, 0, format, type, data);
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    // free data from memory after uploaded to gpu
+    // Deallocate data after uploaded to GPU
     free(data);
 
-    // create full texture
-
+    /// Render ROI texture to full display window
     GLuint tex_full = imdraw::make_texture_float(spec.full_width, spec.full_height, NULL, GL_RGBA);
-    
-    GLint current_fbo;
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &current_fbo); // TODO: getting fbo is fairly harmful to performance.
-
     GLuint fbo_full = imdraw::make_fbo(tex_full);
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo_full);
-    glClearColor(0, 0,0,0);
-    glClear(GL_COLOR_BUFFER_BIT);
-    glViewport(spec.full_x, spec.full_y, spec.full_width, spec.full_height);
-    imdraw::set_projection(glm::ortho(0.0f, spec.full_width * 1.0f, 0.0f, spec.full_height * 1.0f));
-    glm::mat4 M{ 1 };
-    imdraw::set_view(glm::mat4(M));
+    BeginRenderToTexture(fbo_full, spec.full_x, spec.full_y, spec.full_width, spec.full_height);
+    {
+        glClearColor(0, 0, 0, 0);
+        glClear(GL_COLOR_BUFFER_BIT);
+        
+        imdraw::set_projection(glm::ortho(0.0f, spec.full_width * 1.0f, 0.0f, spec.full_height * 1.0f));
+        glm::mat4 M{ 1 };
+        imdraw::set_view(glm::mat4(M));
 
-    glm::vec2 min_rect{ spec.x * 1.0f,spec.y * 1.0f };
-    glm::vec2 max_rect{ spec.x * 1.0f + spec.width * 1.0f, spec.y * 1.0f + spec.height * 1.0f };
-    imdraw::quad(tex_roi, { spec.x * 1.0f,spec.y * 1.0f }, { spec.x * 1.0f + spec.width * 1.0f, spec.y * 1.0f + spec.height * 1.0f });
+        glm::vec2 min_rect{ spec.x * 1.0f,spec.y * 1.0f };
+        glm::vec2 max_rect{ spec.x * 1.0f + spec.width * 1.0f, spec.y * 1.0f + spec.height * 1.0f };
+        imdraw::quad(tex_roi, { spec.x * 1.0f,spec.y * 1.0f }, { spec.x * 1.0f + spec.width * 1.0f, spec.y * 1.0f + spec.height * 1.0f });
+    }
+    EndRenderToTexture();
 
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, current_fbo); // restore fbo
-    // delete temporary FBO and tetures
+    // Delete temporary FBO and tetures
     glDeleteFramebuffers(1, &fbo_full);
     glDeleteTextures(1, &tex_roi);
     
-    
+    /// Return final texture
     return tex_full;
 }
 
@@ -512,13 +560,6 @@ void ShowMiniViewer(bool *p_open) {
                 camera = Camera({ 0,0,flip_y ? -5 : 5 }, { 0,0,0 }, { 0,flip_y ? -1 : 1,0 }, false, camera.aspect, camera.fov);
             }
 
-            //static float tiling[2]{ 2,2 };
-            //static float offset[2]{ 0,0 };
-            //if (ImGui::SliderFloat2("tiling", tiling, 0, 128)) {
-            //    std::cout << "tiling changed" << tiling[0] << tiling[1] << "\n";
-            //}
-            //ImGui::SliderFloat2("offset", offset, -512, 512);
-
             auto item_pos = ImGui::GetCursorPos();
             auto item_size = ImGui::GetContentRegionAvail();
 
@@ -563,142 +604,123 @@ void ShowMiniViewer(bool *p_open) {
             ImGui::SetCursorPos(item_pos);
             ImGui::Image((ImTextureID)viewport_rt.color_attachment, item_size, ImVec2(0, 1), ImVec2(1, 0));
 
-            glBindFramebuffer(GL_FRAMEBUFFER, viewport_rt.fbo);
-            glClearColor(0.0, 0.0, 0.0, 0.0);
-            glClear(GL_COLOR_BUFFER_BIT);
-            glViewport(0, 0, item_size.x, item_size.y);
-            imdraw::set_projection(camera.getProjection());
-            imdraw::set_view(camera.getView());
-
-            /// Draw scene
-            // draw background
+            BeginRenderToTexture(viewport_rt.fbo, 0, 0, item_size.x, item_size.y);
             {
-                static std::filesystem::path fragment_path{"./polka.frag"};
-                static std::filesystem::file_time_type last_mod_time;
-                static std::string vertex_code{ R"(#version 330 core
-                    layout (location = 0) in vec3 aPos;
+                glClearColor(0.0, 0.0, 0.0, 0.0);
+                glClear(GL_COLOR_BUFFER_BIT);
+                imdraw::set_projection(camera.getProjection());
+                imdraw::set_view(camera.getView());
 
-                    uniform mat4 projection;
-                    uniform mat4 view;
-                    uniform mat4 model;
-
-                    out vec3 nearPoint;
-                    out vec3 farPoint;
-                    out mat4 fragView;
-                    out mat4 fragProj;
-
-                    vec3 UnprojectPoint(float x, float y, float z, mat4 view, mat4 projection) {
-                        mat4 viewInv = inverse(view);
-                        mat4 projInv = inverse(projection);
-                        vec4 unprojectedPoint =  viewInv * projInv * vec4(x, y, z, 1.0);
-                        return unprojectedPoint.xyz / unprojectedPoint.w;
-                    }
-				
-                    // Main
-                    void main()
-                    {
-                        //gl_Position = projection * view * model * vec4(aPos, 1.0);
-                        nearPoint = UnprojectPoint(aPos.x, aPos.y, 0.0, view, projection).xyz;
-                        farPoint = UnprojectPoint(aPos.x, aPos.y, 1.0, view, projection).xyz;
-                        fragView = view;
-                        fragProj = projection;
-                        gl_Position = vec4(aPos, 1.0);
-                    };)"
-                };
-
-                static std::string fragment_code;
-                static GLuint polka_program;
-                if (std::filesystem::last_write_time(fragment_path) != last_mod_time)
+                /// Draw scene
+                // draw background
                 {
-                    // reload fragment code
-                    fragment_code = glazy::read_text(fragment_path.string().c_str());
-                    last_mod_time = std::filesystem::last_write_time(fragment_path);
+                    static std::filesystem::path fragment_path{ "./polka.frag" };
+                    static std::filesystem::file_time_type last_mod_time;
+                    static std::string vertex_code{ R"(#version 330 core
+                        layout (location = 0) in vec3 aPos;
 
-                    // recompile shader
-                    std::cout << "recompile background shader" << "\n";
-                    if (glIsProgram(polka_program)) {
-                        glDeleteProgram(polka_program);
+                        uniform mat4 projection;
+                        uniform mat4 view;
+                        uniform mat4 model;
+
+                        out vec3 nearPoint;
+                        out vec3 farPoint;
+                        out mat4 fragView;
+                        out mat4 fragProj;
+
+                        vec3 UnprojectPoint(float x, float y, float z, mat4 view, mat4 projection) {
+                            mat4 viewInv = inverse(view);
+                            mat4 projInv = inverse(projection);
+                            vec4 unprojectedPoint =  viewInv * projInv * vec4(x, y, z, 1.0);
+                            return unprojectedPoint.xyz / unprojectedPoint.w;
+                        }
+				
+                        void main()
+                        {
+                            //gl_Position = projection * view * model * vec4(aPos, 1.0);
+                            nearPoint = UnprojectPoint(aPos.x, aPos.y, 0.0, view, projection).xyz;
+                            farPoint = UnprojectPoint(aPos.x, aPos.y, 1.0, view, projection).xyz;
+                            fragView = view;
+                            fragProj = projection;
+                            gl_Position = vec4(aPos, 1.0);
+                        };)"
+                    };
+
+                    static std::string fragment_code;
+                    static GLuint polka_program;
+                    if (std::filesystem::last_write_time(fragment_path) != last_mod_time)
+                    {
+                        // reload fragment code
+                        fragment_code = glazy::read_text(fragment_path.string().c_str());
+                        last_mod_time = std::filesystem::last_write_time(fragment_path);
+
+                        // recompile shader
+                        std::cout << "recompile background shader" << "\n";
+                        if (glIsProgram(polka_program)) glDeleteProgram(polka_program);
+                        polka_program = imdraw::make_program_from_source(
+                            vertex_code.c_str(),
+                            fragment_code.c_str()
+                        );
                     }
 
-                    polka_program = imdraw::make_program_from_source(
-                        vertex_code.c_str(),
-                        fragment_code.c_str()
-                    );
+                    /// Draw quad with fragment shader
+                    static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
+                    static auto vao = imdraw::make_vao(polka_program, {{"aPos", {vbo, 3}}});
+
+                    imdraw::push_program(polka_program);
+                    imdraw::set_uniforms(polka_program, {
+                        {"projection", camera.getProjection()},
+                        {"view", camera.getView()},
+                        {"model", glm::mat4(1)},
+                        {"uResolution", glm::vec2(item_size.x, item_size.y)},
+                        {"radius", 0.01f}
+                    });
+
+                    glBindVertexArray(vao);
+                    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+                    glBindVertexArray(0);
+                    imdraw::pop_program();
                 }
 
+                // draw image
+                if (!_current_channels_df.empty()) {
 
-                static std::vector<glm::vec3> vertices{
-                    {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0}
-                };
+                    // read header
+                    auto image_cache = OIIO::ImageCache::create(true);
+                    OIIO::ImageSpec spec;
+                    auto channel_keys = get_index_column(_current_channels_df);
+                    int SUBIMAGE = std::get<0>(channel_keys[0]); //todo: ALL SUBIMAGE MUST MATCH
+                    image_cache->get_imagespec(OIIO::ustring(_current_filename.string()), spec, SUBIMAGE, 0);
+                    int chbegin = std::get<1>(channel_keys[0]);
+                    int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
+                    int nchannels = chend - chbegin;
 
-                static GLuint vbo = imdraw::make_vbo(vertices);
+                    // draw transparency checkboard
+                    imdraw::quad(glazy::checkerboard_tex,
+                        { spec.full_x / DPI,spec.full_y / DPI }, { spec.full_x / DPI + spec.full_width / DPI, spec.full_y / DPI + spec.full_height / DPI },
+                        glm::vec2(spec.full_width / 64, spec.full_height / 64),
+                        glm::vec2(0, 0),
+                        0.7
+                    );
 
-                static auto vao = imdraw::make_vao(polka_program, {
-                    {"aPos", {vbo, 3}}
-                });
-                
-                static auto begin_time = std::chrono::system_clock::now();
-                auto now = std::chrono::system_clock::now();
-                auto delta = now - begin_time;
-                static float radius = 0.01;
-                float iTime = std::chrono::duration_cast<std::chrono::milliseconds>(delta).count()*0.001;
-                imdraw::push_program(polka_program);
-                imdraw::set_uniforms(polka_program, {
-                    {"projection", camera.getProjection()},
-                    {"view", camera.getView()},
-                    {"model", glm::mat4(1)},
-                    {"uResolution", glm::vec2(item_size.x, item_size.y)},
-                    {"radius", radius},
-                    {"textureMap", 0}
-                });
-                glBindTexture(GL_TEXTURE_2D, tex);
-                glBindVertexArray(vao);
-                glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-                glBindVertexArray(0);
-                glBindTexture(GL_TEXTURE_2D, 0);
-                imdraw::pop_program();
-                
+                    // draw textured quad
+                    imdraw::quad(tex,
+                        { spec.full_x / DPI, spec.full_y / DPI },
+                        { spec.full_x / DPI + spec.full_width / DPI, spec.full_y / DPI + spec.full_height / DPI }
+                    );
+
+                    // draw image full boundaries
+                    imdraw::rect({ spec.full_x / DPI,spec.full_y / DPI }, { spec.full_x / DPI + spec.full_width / DPI, spec.full_y / DPI + spec.full_height / DPI });
+
+                    // draw image ROI boundaries
+                    imdraw::rect({ spec.x / DPI,spec.y / DPI }, { spec.x / DPI + spec.width / DPI, spec.y / DPI + spec.height / DPI });
+                }
+
+                //imdraw::grid();
+                imdraw::axis();
+
             }
-
-            // draw image
-            if (!_current_channels_df.empty()) {
-
-                // read header
-                auto image_cache = OIIO::ImageCache::create(true);
-                OIIO::ImageSpec spec;
-                auto channel_keys = get_index_column(_current_channels_df);
-                int SUBIMAGE = std::get<0>(channel_keys[0]); //todo: ALL SUBIMAGE MUST MATCH
-                image_cache->get_imagespec(OIIO::ustring(_current_filename.string()), spec, SUBIMAGE, 0);
-                int chbegin = std::get<1>(channel_keys[0]);
-                int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
-                int nchannels = chend - chbegin;
-
-                // draw transparency checkboard
-                imdraw::quad(glazy::checkerboard_tex,
-                    { spec.full_x / DPI,spec.full_y / DPI }, { spec.full_x / DPI + spec.full_width / DPI, spec.full_y / DPI + spec.full_height / DPI },
-                    glm::vec2(spec.full_width/64, spec.full_height/64),
-                    glm::vec2(0,0),
-                    0.7
-                );
-
-                // draw textured quad
-                imdraw::quad(tex,
-                    { spec.full_x / DPI, spec.full_y / DPI },
-                    { spec.full_x / DPI + spec.full_width / DPI, spec.full_y / DPI + spec.full_height / DPI }
-                );
-                
-                // draw image full boundaries
-                imdraw::rect({ spec.full_x/DPI,spec.full_y/DPI }, { spec.full_x / DPI+spec.full_width/DPI, spec.full_y / DPI+spec.full_height/DPI });
-
-                // draw image ROI boundaries
-                imdraw::rect({ spec.x / DPI,spec.y / DPI }, { spec.x / DPI + spec.width / DPI, spec.y / DPI + spec.height / DPI });
-            }
-            
-            //imdraw::grid();
-            imdraw::axis();
-
-
-            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            EndRenderToTexture();
         }
         ImGui::End(); // End Viewer window
     }
