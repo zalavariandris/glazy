@@ -415,7 +415,7 @@ void ShowTimeline() {
     // Timeslider
     
     ImGui::SetCursorPosX(ImGui::GetContentRegionAvailWidth() / 2 - 60);
-    if (ImGui::Button(is_playing ? "pause" : "play", {120, 0})) {
+    if (ImGui::Button(is_playing ? ICON_FA_PAUSE : ICON_FA_PLAY, {120, 0})) {
         is_playing = !is_playing;
     }
 
@@ -696,9 +696,9 @@ int main()
         // Main menubar
         
         if (ImGui::BeginMainMenuBar()) {
-            if (ImGui::BeginMenu("file"))
+            if (ImGui::BeginMenu("File"))
             {
-                if (ImGui::MenuItem("open")) {
+                if (ImGui::MenuItem("Open")) {
                     auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0");
                     open(filepath);
                 }
@@ -706,13 +706,13 @@ int main()
             }
 
             if (ImGui::BeginMenu("View")) {
-                if(ImGui::MenuItem("fit", "f")) {
+                if(ImGui::MenuItem("Fit", "f")) {
                     fit();
                 }
                 ImGui::EndMenu();
             }
 
-            if (ImGui::BeginMenu("windows"))
+            if (ImGui::BeginMenu("Windows"))
             {
                 ImGui::MenuItem("image viewer", "", &image_viewer_visible);
                 ImGui::MenuItem("image info", "", &image_info_visible);
@@ -720,7 +720,7 @@ int main()
                 ImGui::EndMenu();
             }
             ImGui::Spacing();
-            ImGui::Text("[%s]", file_pattern.string().c_str());
+            ImGui::Text("%s", file_pattern.string().c_str());
             
             ImGui::EndMainMenuBar();
         }
@@ -732,7 +732,7 @@ int main()
         
         // ChannelsTable
 
-        if (channels_table_visible && ImGui::Begin("channels table", &channels_table_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
+        if (channels_table_visible && ImGui::Begin("ChannelsTtable", &channels_table_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
             ShowChannelsTable();
             ImGui::End();
         }

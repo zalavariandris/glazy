@@ -51,6 +51,9 @@
 #include "OOGL/VertexArray.h"
 #include "OOGL/Texture.h"
 
+// Icon Fonts
+#include "IconsFontAwesome5.h"
+
 namespace ImGui
 {
 	static auto vector_getter = [](void* vec, int idx, const char** out_text)
@@ -544,14 +547,22 @@ namespace glazy {
 		ImGui_ImplGlfw_InitForOpenGL(window, true);
 		ImGui_ImplOpenGL3_Init();
 
-		ImFontConfig cfg;
-		cfg.OversampleV = 3;
-		cfg.OversampleH = 3;
-		cfg.SizePixels = 16*xscale;
+		/// Setup fonts
+		ImFontConfig config;
+		config.OversampleV = 3;
+		config.OversampleH = 3;
+		config.SizePixels = 16*xscale;
 		//auto font_default = io.Fonts->AddFontDefault(&cfg);
 		//io.Fonts->AddFontFromFileTTF("C:/WINDOWS/FONTS/ARIAL.ttf", 13*xscale);
 		std::cout << "dpi scale: " << xscale << std::endl;
-		io.Fonts->AddFontFromFileTTF("C:/WINDOWS/FONTS/SEGUIVAR.ttf", 16 * xscale, &cfg);
+		io.Fonts->AddFontFromFileTTF("C:/WINDOWS/FONTS/SEGUIVAR.ttf", 16.0f * xscale, &config);
+		// the first loaded font gets used by default
+
+		// Merge icon font
+		config.MergeMode = true;
+		config.GlyphMinAdvanceX = 16.0f * xscale; // Use if you want to make the icon monospaced
+		static const ImWchar icon_ranges[] = { ICON_MIN_FA, ICON_MAX_FA, 0 };
+		io.Fonts->AddFontFromFileTTF("C:/Users/andris/source/repos/glazy/glazy/fontawesome-webfont.ttf", 16.0f * xscale, &config, icon_ranges); // Merge icon font
 
 		ImGui::GetStyle().ScaleAllSizes(xscale);
 
@@ -693,7 +704,9 @@ namespace glazy {
 			static bool imgui_style;
 			static bool fullscreen;
 			if (ImGui::BeginMainMenuBar()) {
-				ImGui::Spacing();
+				auto left_cursor = ImGui::GetCursorPos(); // store cursor
+				ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x-(ImGui::CalcTextSize("glazy").x + ImGui::CalcTextSize("99.00fps").x + ImGui::CalcTextSize(ICON_FA_EXPAND).x+2*ImGui::GetStyle().ItemSpacing.x*2));
+
 				if (ImGui::BeginMenu("glazy"))
 				{
 					ImGui::Separator();
@@ -706,7 +719,8 @@ namespace glazy {
 					ImGui::EndMenu();
 				}
 
-				if (ImGui::MenuItem(fullscreen ? "[window]" : "[fullscreen]", "", &fullscreen)) {
+				// full screen toggle
+				if (ImGui::MenuItem(fullscreen ? ICON_FA_COMPRESS : ICON_FA_EXPAND, "", &fullscreen)) {
 					std::cout << "toggle fullscreen" << "\n";
 					static std::array< int, 2 > _wndPos{ 0, 0 };
 					static std::array< int, 2 > _wndSize{ 0, 0 };
@@ -723,13 +737,14 @@ namespace glazy {
 				}
 
 				// Show fps in the right side
-				auto left_cursor = ImGui::GetCursorPos(); // store cursor
-				std::stringstream ss; // compose text to calculate size
-				ss << std::fixed << std::setprecision(2) << ImGui::GetIO().Framerate << "fps";
-				auto text_size = ImGui::CalcTextSize(ss.str().c_str());
-				ImGui::SameLine(ImGui::GetWindowContentRegionWidth() - text_size.x);
-				ImGui::Text(ss.str().c_str());
-				ImGui::SetCursorPos(left_cursor); // restore cursor to the left side
+				{
+					std::stringstream ss; // compose text to calculate size
+					ss << std::fixed << std::setprecision(2) << ImGui::GetIO().Framerate << "fps";
+					ImGui::Text(ss.str().c_str());
+				}
+
+				// restore cursor to the left side
+				ImGui::SetCursorPos(left_cursor); 
 
 				// end menubar
 				ImGui::EndMainMenuBar();
