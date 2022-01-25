@@ -30,6 +30,37 @@
 
 #include <array>
 
+const char * PASS_CAMERA_VERTEX_CODE = R"(
+#version 330 core
+layout (location = 0) in vec3 aPos;
+
+uniform mat4 projection;
+uniform mat4 view;
+uniform mat4 model;
+
+out vec3 nearPoint;
+out vec3 farPoint;
+out mat4 fragView;
+out mat4 fragProj;
+
+vec3 UnprojectPoint(float x, float y, float z, mat4 view, mat4 projection) {
+    mat4 viewInv = inverse(view);
+    mat4 projInv = inverse(projection);
+    vec4 unprojectedPoint =  viewInv * projInv * vec4(x, y, z, 1.0);
+    return unprojectedPoint.xyz / unprojectedPoint.w;
+}
+				
+void main()
+{
+    //gl_Position = projection * view * model * vec4(aPos, 1.0);
+    nearPoint = UnprojectPoint(aPos.x, aPos.y, 0.0, view, projection).xyz;
+    farPoint = UnprojectPoint(aPos.x, aPos.y, 1.0, view, projection).xyz;
+    fragView = view;
+    fragProj = projection;
+    gl_Position = vec4(aPos, 1.0);
+}
+)";
+
 std::vector<GLuint> fbo_stack;
 std::vector<std::array<GLint, 4>> viewport_stack;
 
@@ -130,26 +161,25 @@ namespace ImGui {
 }
 
 
-
-//std::map<std::filesystem::path, std::tuple<std::filesystem::file_time_type, std::string>> values;
-//std::string get_text(const std::filesystem::path & path)
-//{
-//    if (!values.contains(path)) {
-//        auto timestamp = std::filesystem::last_write_time(path);
-//        auto text = glazy::read_text(path.string().c_str());
-//        values[path] = { timestamp, text };
-//    }
-//    if (std::get<0>(values[path]) != std::filesystem::last_write_time(path)) {
-//        auto timestamp = std::filesystem::last_write_time(path);
-//        auto text = glazy::read_text(path.string().c_str());
-//        values[path] = { timestamp, text };
-//    }
-//    return std::get<1>(values[path]);
-//}
-//
-//bool IsFileModified(std::filesystem::path path) {
-//
-//}
+namespace cacheio {
+    std::map<std::filesystem::path, std::tuple<std::filesystem::file_time_type, std::string>> texts;
+    std::string get_text(const std::filesystem::path& path)
+    {
+        if (!texts.contains(path))
+        {
+            auto timestamp = std::filesystem::last_write_time(path);
+            auto text = glazy::read_text(path.string().c_str());
+            texts[path] = { timestamp, text };
+        }
+        if (std::get<0>(texts[path]) != std::filesystem::last_write_time(path))
+        {
+            auto timestamp = std::filesystem::last_write_time(path);
+            auto text = glazy::read_text(path.string().c_str());
+            texts[path] = { timestamp, text };
+        }
+        return std::get<1>(texts[path]);
+    }
+}
 
 
 GLuint make_texture_from_file(std::filesystem::path filename, std::vector<ChannelKey> channel_keys = {})
@@ -299,6 +329,17 @@ void update_texture() {
     if (glIsTexture(tex)) glDeleteTextures(1, &tex);
     tex = make_texture_from_file(_current_filename, get_index_column(_current_channels_df));
 };
+
+OIIO::ImageSpec get_current_spec() {
+    OIIO::ImageSpec spec;
+    auto channel_keys = get_index_column(_current_channels_df);
+    if (channel_keys.empty()) return spec;
+
+    auto image_cache = OIIO::ImageCache::create(true);
+    auto current_subimage = std::get<0>(channel_keys[0]);
+    image_cache->get_imagespec(OIIO::ustring(_current_filename.string()), spec, current_subimage, 0);
+    return spec;
+}
 
 // actions
 void open(std::filesystem::path filepath) {
@@ -494,24 +535,24 @@ void ShowTimeline() {
 }
 
 struct RenderTarget {
-    GLuint fbo;
-    GLuint color_attachment;
+    GLuint fbo=0;
+    GLuint color_attachment=0;
+    int width=0;
+    int height=0;
 };
 
 RenderTarget make_rendertarget(int width, int height) {
     RenderTarget rt;
     rt.color_attachment = imdraw::make_texture_float(width, height, NULL, GL_RGBA);
     rt.fbo = imdraw::make_fbo(rt.color_attachment);
+    rt.width = width;
+    rt.height = height;
     return rt;
 }
 
 void delete_rendertarget(const RenderTarget & rt) {
     glDeleteTextures(1, &rt.color_attachment);
     glDeleteFramebuffers(1, &rt.fbo);
-}
-
-void bind_rendertarget() {
-
 }
 
 void ShowMiniViewer(bool *p_open) {
@@ -551,11 +592,12 @@ void ShowMiniViewer(bool *p_open) {
         }
         ImGui::EndGroup(); // toolbar end
 
+
+
         // Viewport
         {
             static RenderTarget viewport_rt;
             static bool flip_y{false};
-
             if (ImGui::Checkbox("flip", &flip_y)) {
                 camera = Camera({ 0,0,flip_y ? -5 : 5 }, { 0,0,0 }, { 0,flip_y ? -1 : 1,0 }, false, camera.aspect, camera.fov);
             }
@@ -563,7 +605,7 @@ void ShowMiniViewer(bool *p_open) {
             auto item_pos = ImGui::GetCursorPos();
             auto item_size = ImGui::GetContentRegionAvail();
 
-            // on resize
+            // Resize Viewport FBO
             static ImVec2 display_size;
             if (display_size.x != item_size.x || display_size.y != item_size.y)
             {
@@ -571,13 +613,6 @@ void ShowMiniViewer(bool *p_open) {
                 display_size = item_size;
                 delete_rendertarget(viewport_rt);
                 viewport_rt = make_rendertarget(item_size.x, item_size.y);
-                // update attachments
-                //glDeleteTextures(1, &viewport_rt.color_attachment);
-                //viewport_rt.color_attachment = imdraw::make_texture_float(item_size.x, item_size.y, NULL, GL_RGBA);
-                //// update fbo
-                //glDeleteFramebuffers(1, &viewport_rt.fbo);
-                //viewport_rt.fbo = imdraw::make_fbo(viewport_rt.color_attachment);
-                // update camera aspect
                 camera.aspect = item_size.x / item_size.y;
             }
 
@@ -599,11 +634,118 @@ void ShowMiniViewer(bool *p_open) {
                     camera.dolly(-ImGui::GetIO().MouseWheel * target_distance * 0.2);
                 }
             }
-
+            // Display viewport GUI
             ImGui::SetItemAllowOverlap();
             ImGui::SetCursorPos(item_pos);
             ImGui::Image((ImTextureID)viewport_rt.color_attachment, item_size, ImVec2(0, 1), ImVec2(1, 0));
 
+            // Make Image Correection texture
+            OIIO::ImageSpec spec = get_current_spec();
+            static RenderTarget correction_rt;
+            if (correction_rt.width != spec.full_width || correction_rt.height != spec.full_height) {
+                std::cout << "create corection fbo" << std::endl;
+                correction_rt = make_rendertarget(spec.full_width, spec.full_height);
+            }
+            static GLuint correction_program = imdraw::make_program_from_source(R"(
+            #version 330 core
+            layout (location = 0) in vec3 aPos;
+            void main()
+            {
+                gl_Position = vec4(aPos, 1.0);
+            }
+            )", R"(
+
+            #version 330 core
+            out vec4 FragColor;
+            uniform mediump sampler2D inputTexture;
+            uniform vec2 resolution;
+
+            uniform float gamma_correction;
+            uniform float exposure_correction;
+
+            float sRGB_to_linear(float sRGB_value){
+              return sRGB_value <= 0.04045
+                   ? sRGB_value / 12.92
+                   : pow((sRGB_value + 0.055) / 1.055, 2.4);
+            }
+
+            float linear_to_sRGB(float linear_value){
+                  return linear_value <= 0.0031308f
+                   ? linear_value * 12.92
+                   : pow(linear_value, 1.0f/2.4) * 1.055f - 0.055f;
+            }
+
+            vec3 sRGB_to_linear(vec3 sRGB){
+                return vec3(
+                    sRGB_to_linear(sRGB.r),
+                    sRGB_to_linear(sRGB.g),
+                    sRGB_to_linear(sRGB.b)
+                    );
+            }
+
+            vec3 linear_to_sRGB(vec3 linear){
+                return vec3(
+                    linear_to_sRGB(linear.r),
+                    linear_to_sRGB(linear.g),
+                    linear_to_sRGB(linear.b)
+                    );
+            }
+
+            vec3 reinhart_tonemap(vec3 hdrColor){
+                return vec3(1.0) - exp(-hdrColor);
+            }
+
+            void main(){
+                vec2 uv = gl_FragCoord.xy/resolution;
+                vec3 hdrColor = texture(inputTexture, uv).rgb;
+                
+                // apply exposure correction
+                // exposure tone mapping
+                //vec3 mapped = filmic_tonemap(pow(hdrColor,vec3(exposure_correction)));
+                vec3 mapped = reinhart_tonemap(pow(hdrColor,vec3(exposure_correction)));
+
+                // apply gamma correction
+                mapped = pow(mapped, vec3(gamma_correction));
+
+
+                // sRGB device transform
+                //mapped.rgb = linear_to_sRGB(mapped.rgb);
+                mapped.rgb = pow(mapped.rgb, vec3(1.0/2.2));
+                FragColor = vec4(mapped,1);
+            }
+            
+            )");
+            BeginRenderToTexture(correction_rt.fbo, 0, 0, spec.full_width, spec.full_height);
+            {
+                imdraw::push_program(correction_program);
+                glClearColor(1, 0, 1, 1);
+                glClear(GL_COLOR_BUFFER_BIT);
+
+                /// Draw quad with fragment shader
+                static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
+                static auto vao = imdraw::make_vao(correction_program, { {"aPos", {vbo, 3}} });
+
+                static float exposure = 1.0;
+                static float gamma = 1.0;
+                ImGui::SetCursorPos(item_pos);
+                ImGui::SliderFloat("exposure", &exposure, 0, 2.0);
+                ImGui::SliderFloat("gamma", &gamma, 0, 5);
+                imdraw::set_uniforms(correction_program, {
+                    {"inputTexture", 0},
+                    {"resolution", glm::vec2(spec.full_width, spec.full_height)},
+                    {"gamma_correction", gamma},
+                    {"exposure_correction", exposure}
+                    });
+                glBindTexture(GL_TEXTURE_2D, tex);
+                glBindVertexArray(vao);
+                glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+                glBindVertexArray(0);
+                glBindTexture(GL_TEXTURE_2D, 0);
+                imdraw::pop_program();
+            }
+            EndRenderToTexture();
+
+            // Render to Viewport FBO
             BeginRenderToTexture(viewport_rt.fbo, 0, 0, item_size.x, item_size.y);
             {
                 glClearColor(0.0, 0.0, 0.0, 0.0);
@@ -614,51 +756,16 @@ void ShowMiniViewer(bool *p_open) {
                 /// Draw scene
                 // draw background
                 {
+
                     static std::filesystem::path fragment_path{ "./polka.frag" };
-                    static std::filesystem::file_time_type last_mod_time;
-                    static std::string vertex_code{ R"(#version 330 core
-                        layout (location = 0) in vec3 aPos;
-
-                        uniform mat4 projection;
-                        uniform mat4 view;
-                        uniform mat4 model;
-
-                        out vec3 nearPoint;
-                        out vec3 farPoint;
-                        out mat4 fragView;
-                        out mat4 fragProj;
-
-                        vec3 UnprojectPoint(float x, float y, float z, mat4 view, mat4 projection) {
-                            mat4 viewInv = inverse(view);
-                            mat4 projInv = inverse(projection);
-                            vec4 unprojectedPoint =  viewInv * projInv * vec4(x, y, z, 1.0);
-                            return unprojectedPoint.xyz / unprojectedPoint.w;
-                        }
-				
-                        void main()
-                        {
-                            //gl_Position = projection * view * model * vec4(aPos, 1.0);
-                            nearPoint = UnprojectPoint(aPos.x, aPos.y, 0.0, view, projection).xyz;
-                            farPoint = UnprojectPoint(aPos.x, aPos.y, 1.0, view, projection).xyz;
-                            fragView = view;
-                            fragProj = projection;
-                            gl_Position = vec4(aPos, 1.0);
-                        };)"
-                    };
-
                     static std::string fragment_code;
                     static GLuint polka_program;
-                    if (std::filesystem::last_write_time(fragment_path) != last_mod_time)
-                    {
-                        // reload fragment code
+                    if (glazy::is_file_modified(fragment_path)) {
+                        // reload shader
                         fragment_code = glazy::read_text(fragment_path.string().c_str());
-                        last_mod_time = std::filesystem::last_write_time(fragment_path);
-
-                        // recompile shader
-                        std::cout << "recompile background shader" << "\n";
-                        if (glIsProgram(polka_program)) glDeleteProgram(polka_program);
+                        if (glIsProgram(polka_program)) glDeleteProgram(polka_program); // recompile shader
                         polka_program = imdraw::make_program_from_source(
-                            vertex_code.c_str(),
+                            PASS_CAMERA_VERTEX_CODE,
                             fragment_code.c_str()
                         );
                     }
@@ -681,7 +788,7 @@ void ShowMiniViewer(bool *p_open) {
                     glBindVertexArray(0);
                     imdraw::pop_program();
                 }
-
+                
                 // draw image
                 if (!_current_channels_df.empty()) {
 
@@ -704,7 +811,7 @@ void ShowMiniViewer(bool *p_open) {
                     );
 
                     // draw textured quad
-                    imdraw::quad(tex,
+                    imdraw::quad(correction_rt.color_attachment,
                         { spec.full_x / DPI, spec.full_y / DPI },
                         { spec.full_x / DPI + spec.full_width / DPI, spec.full_y / DPI + spec.full_height / DPI }
                     );
@@ -724,6 +831,8 @@ void ShowMiniViewer(bool *p_open) {
         }
         ImGui::End(); // End Viewer window
     }
+
+    
 }
 
 int main()
@@ -803,7 +912,9 @@ int main()
             ShowTimeline();
             ImGui::End();
         }
+        
         glazy::end_frame();
+        
     }
     glazy::destroy();
 

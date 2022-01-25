@@ -637,6 +637,31 @@ namespace glazy {
 		return std::string();
 	}
 
+	/// <summary>
+	/// Returns true when the file has changed since last frame
+	/// changes are kept for mutliple calls. And renew new frame
+	/// </summary>
+	std::map<std::filesystem::path, std::filesystem::file_time_type> mod_times;
+	bool is_file_modified(const std::filesystem::path& path) {
+		if (!mod_times.contains(path)) {
+			mod_times[path] = std::filesystem::last_write_time(path);
+			return true;
+		}
+		if (mod_times[path] != std::filesystem::last_write_time(path)) {
+			return true;
+		}
+		return false;
+	}
+
+	/// <summary>
+	/// private function. clear mod changes
+	/// </summary>
+	void _clear_mod_flags() {
+		for (const auto& [path, timestamp] : mod_times) {
+			mod_times[path] = std::filesystem::last_write_time(path);
+		}
+	}
+
 	/**
 	* Check windows
 	*
@@ -695,7 +720,9 @@ namespace glazy {
 		//control_camera(camera, display_w, display_h);
 	}
 
-	void end_frame() {
+	void end_frame()
+	{
+		
 		// glazy windows
 		{
 			static bool themes;
@@ -826,8 +853,11 @@ namespace glazy {
 			glfwMakeContextCurrent(backup_current_context);
 		}
 
+		glazy::_clear_mod_flags(); // this must be before swap buffers? I dont know why... TODO: FigureOut
+
 		/* SWAP BUFFERS */
 		glfwSwapBuffers(window);
+		
 	}
 
 	void destroy() {
@@ -843,26 +873,6 @@ namespace glazy {
 		// - cleanup flfw
 		glfwDestroyWindow(window);
 		glfwTerminate();
-	}
-
-	std::map<std::string, std::filesystem::file_time_type> path_dates;
-	inline bool IsFileChanged(std::string path, bool trigger_first_time=false) {
-		if (!path_dates.contains(path))
-		{	
-			auto ftime = std::filesystem::last_write_time(path);
-			path_dates[path] = ftime;
-
-			if (!trigger_first_time) {
-				return false;
-			}
-		}
-
-		auto ftime = std::filesystem::last_write_time(path);
-		if (ftime != path_dates[path]) {
-			path_dates[path] = ftime;
-			return true;
-		}
-		return false;
 	}
 
 	inline std::string read_text(const char* path) {

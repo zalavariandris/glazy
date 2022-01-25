@@ -26,8 +26,6 @@ float grid(in vec2 uv)
 }
 
 ///
-
-///
 float computeDepth(vec3 pos) {
     vec4 clip_space_pos = fragProj * fragView * vec4(pos.xyz, 1.0);
     return (clip_space_pos.z / clip_space_pos.w);
@@ -56,7 +54,7 @@ void main(){
         vec2 uv = mod(fragPos3D.xy+offset, tile_size);
         float distance = length(uv-offset);
         float r = fwidth(uv).x*3;
-        distance = step(0.02, distance);
+        distance = step(0.03, distance);
         alpha=1-distance;
         //col = vec3(uv, 0);
     }
