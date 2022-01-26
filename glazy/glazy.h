@@ -549,8 +549,8 @@ namespace glazy {
 
 		/// Setup fonts
 		ImFontConfig config;
-		config.OversampleV = 3;
-		config.OversampleH = 3;
+		config.OversampleV = 8;
+		config.OversampleH = 8;
 		config.SizePixels = 16*xscale;
 		//auto font_default = io.Fonts->AddFontDefault(&cfg);
 		//io.Fonts->AddFontFromFileTTF("C:/WINDOWS/FONTS/ARIAL.ttf", 13*xscale);
@@ -561,8 +561,10 @@ namespace glazy {
 		// Merge icon font
 		config.MergeMode = true;
 		config.GlyphMinAdvanceX = 16.0f * xscale; // Use if you want to make the icon monospaced
+		config.PixelSnapH = true;
 		static const ImWchar icon_ranges[] = { ICON_MIN_FA, ICON_MAX_FA, 0 };
-		io.Fonts->AddFontFromFileTTF("C:/Users/andris/source/repos/glazy/glazy/fontawesome-webfont.ttf", 16.0f * xscale, &config, icon_ranges); // Merge icon font
+		io.Fonts->AddFontFromFileTTF("../../glazy/" FONT_ICON_FILE_NAME_FAS, 12.0f * xscale, &config, icon_ranges); // Merge icon font
+		//io.Fonts->AddFontFromFileTTF("C:/Users/andris/source/repos/glazy/glazy/Font Awesome 5 Free-Regular-400.otf", 16.0f * xscale, &config, icon_ranges); // Merge icon font
 
 		ImGui::GetStyle().ScaleAllSizes(xscale);
 
@@ -747,7 +749,7 @@ namespace glazy {
 				}
 
 				// full screen toggle
-				if (ImGui::MenuItem(fullscreen ? ICON_FA_COMPRESS : ICON_FA_EXPAND, "", &fullscreen)) {
+				if (ImGui::MenuItem(fullscreen ? ICON_FA_COMPRESS_ALT : ICON_FA_EXPAND_ALT, "", &fullscreen)) {
 					std::cout << "toggle fullscreen" << "\n";
 					static std::array< int, 2 > _wndPos{ 0, 0 };
 					static std::array< int, 2 > _wndSize{ 0, 0 };

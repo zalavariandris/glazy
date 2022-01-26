@@ -561,9 +561,9 @@ void imdraw::arrow(glm::vec3 A, glm::vec3 B, glm::vec3 color) {
 	glDeleteVertexArrays(1, &vao);
 }
 
-void imdraw::axis() {
-	imdraw::arrow({ 0,0,0 }, { 1,0,0 }, { 1,0,0 });
-	imdraw::arrow({ 0,0,0 }, { 0,1,0 }, { 0,1,0 });
-	imdraw::arrow({ 0,0,0 }, { 0,0,1 }, { 0,0,1 });
+void imdraw::axis(float size) {
+	imdraw::arrow({ 0,0,0 }, { size,0,0 }, { size,0,0 });
+	imdraw::arrow({ 0,0,0 }, { 0,size,0 }, { 0,size,0 });
+	imdraw::arrow({ 0,0,0 }, { 0,0,size }, { 0,0,size });
 }
 

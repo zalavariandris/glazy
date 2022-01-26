@@ -1,6 +1,7 @@
 #version 330 core
 #define LINE_WIDTH 1
-#define TILE_SIZE 1
+#define TILE_SIZE 100
+#define RELATIVE_RADIUS 0.1
 
 out vec4 FragColor;
 uniform vec2 uResolution;
@@ -13,7 +14,7 @@ in mat4 fragView;
 in mat4 fragProj;
 
 float near = 0.1;
-float far = 10000;
+float far = 100000;
 
 uniform sampler2D textureMap;
 
@@ -49,16 +50,15 @@ void main(){
         vec3 fragPos3D = ray_origin + t * ray_dir;
         gl_FragDepth = computeDepth(fragPos3D);
 
-        vec2 offset = vec2(0.25/2);
-        vec2 tile_size = vec2(0.25);
-        vec2 uv = mod(fragPos3D.xy+offset, tile_size);
-        float distance = length(uv-offset);
-        float r = fwidth(uv).x*3;
-        distance = step(0.03, distance);
+        vec2 offset_factor = vec2(0.5);
+        vec2 uv = mod(fragPos3D.xy/TILE_SIZE+offset_factor, 1.0);
+        float distance = length(uv-offset_factor);
+        distance = step(RELATIVE_RADIUS, distance);
         alpha=1-distance;
         //col = vec3(uv, 0);
     }
     
-    FragColor = vec4(col, alpha*0.3);
+    FragColor = vec4(col, alpha*0.3
+        );
 
-}            
+}

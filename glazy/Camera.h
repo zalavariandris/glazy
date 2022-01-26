@@ -26,7 +26,7 @@ public:
 		ortho = false;
 	}
 
-	Camera(glm::vec3 eye, glm::vec3 target, glm::vec3 up, bool ortho=false, float aspect = 1.0, float fov=1.57/2, glm::vec2 tiltshif=glm::vec2(0.0f,0.0f), float near_plane=0.1, float far_plane=10000) :
+	Camera(glm::vec3 eye, glm::vec3 target, glm::vec3 up, bool ortho=false, float aspect = 1.0, float fov=1.57/2, glm::vec2 tiltshif=glm::vec2(0.0f,0.0f), float near_plane=0.1, float far_plane=100000) :
 		eye(eye),
 		target(target),
 		up(up),

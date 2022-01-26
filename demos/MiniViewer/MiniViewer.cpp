@@ -1,4 +1,4 @@
-// MiniViewer.cpp : This file contains the 'main' function. Program execution begins and ends there.
+﻿// MiniViewer.cpp : This file contains the 'main' function. Program execution begins and ends there.
 //
 
 // std libraries
@@ -10,6 +10,7 @@
 // std data structures
 #include <vector>
 #include <string>
+#include <unordered_set>
 
 // from glazy
 #include "glazy.h"
@@ -27,6 +28,8 @@
 
 #include "imgui.h"
 #include "imgui_stdlib.h"
+#include "imgui_internal.h" // use imgui math operators
+#define IMGUI_DEFINE_MATH_OPERATORS
 
 #include <array>
 
@@ -271,7 +274,7 @@ int end_frame{ 10 };
 int frame{ 0 };
 bool is_playing{ false };
 const double DPI = 300;
-Camera camera({ 0,0,5 }, { 0,0,0 }, { 0,1,0 });
+Camera camera({ 0,0,5000 }, { 0,0,0 }, { 0,1,0 });
 
 // getters
 std::filesystem::path _current_filename; // depends on file_pattern and frame
@@ -295,8 +298,13 @@ void update_channels_table_tree() {
 std::vector<std::string> layers{}; // list of currently available layer names
 void update_layers() {
     layers.clear();
-    for (auto [layer_name, view_group] : _channels_table_tree) {
-        layers.push_back(layer_name);
+    std::unordered_set<std::string> visited;
+    for (const auto& [idx, record] : _channels_table) {
+        const auto& [layer, view, channel] = record;
+        if (!visited.contains(layer)) {
+            layers.push_back(layer);
+            visited.insert(layer);
+        }
     }
 };
 int current_layer{ 0 }; // currently selected layer index
@@ -435,7 +443,6 @@ void ShowChannelsTable()
             ImGui::EndTabItem();
         }
         
-        
         if (ImGui::BeginTabItem("layers"))
         {
             ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_DefaultOpen;
@@ -556,51 +563,100 @@ void delete_rendertarget(const RenderTarget & rt) {
 }
 
 void ShowMiniViewer(bool *p_open) {
-    if (ImGui::Begin("Viewer", p_open, ImGuiWindowFlags_NoCollapse)) {
-        // Toolbar
-        ImGui::BeginGroup();
+    static float gain = 1.0;
+    static float gamma = 1.0;
+    static bool display_checkerboard=true;
+
+    if (ImGui::Begin("Viewer", p_open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar)) {
+
+        if (ImGui::BeginMenuBar())
         {
-            ImGui::SetNextItemWidth(150);
-            if (ImGui::Combo("##layers", &current_layer, layers)) {
-                on_layer_changed();
-            }
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(150);
-
-            if (views.size() == 1)
+            // Toolbar
+            ImGui::BeginGroup(); // Channel secetion group
             {
-                if (!views[current_view].empty())
+                int combo_width = ImGui::GetTextLineHeight()*2;
+                for (const auto& layer : layers) {
+                    auto w = ImGui::CalcTextSize(layer.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+                    if (w > combo_width) {
+                        combo_width = w;
+                    }
+                }
+                ImGui::SetNextItemWidth(combo_width+ ImGui::GetTextLineHeight());
+                if (ImGui::BeginCombo("##layers", layers.size()>0 ? layers[current_layer].c_str() : "-", ImGuiComboFlags_NoArrowButton)) {
+                    for (auto i = 0; i < layers.size(); i++) {
+                        const bool is_selected = layers[i] == layers[current_layer];
+                        if (ImGui::Selectable(layers[i].c_str(), is_selected)) {
+                            current_layer = i;
+                            on_layer_changed();
+                        }
+
+                        if (is_selected)
+                            ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
+
+                //ImGui::SameLine();
+                combo_width = ImGui::GetTextLineHeight() * 2;
+                for (const auto& name : views) {
+                    auto w = ImGui::CalcTextSize(name.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+                    if (w > combo_width) {
+                        combo_width = w;
+                    }
+                }
+                ImGui::SetNextItemWidth(combo_width + ImGui::GetTextLineHeight());
+                if (views.size() == 1)
                 {
-                    ImGui::Text(views[current_view].c_str());
+                    if (!views[current_view].empty())
+                    {
+                        ImGui::Text(views[current_view].c_str());
+                    }
+                    else {
+                    }
                 }
-                else {
-                    ImGui::Text("-no view-");
+                else if (views.size() > 1)
+                {
+                    if (ImGui::Combo("##views", &current_view, views)) {
+                        on_view_change();
+                    }
                 }
+
+                //ImGui::SameLine();
+
+                for (auto chan : channels) {
+                    ImGui::MenuItem(chan.c_str());
+                };
             }
-            else if (views.size() > 1)
+            ImGui::EndGroup(); // toolbar end
+            
+            ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+
+            ImGui::BeginGroup(); // display correction
             {
-                if (ImGui::Combo("##views", &current_view, views)) {
-                    on_view_change();
-                }
+                ImGui::Text(ICON_FA_ADJUST);
+                ImGui::SetNextItemWidth(120);
+                ImGui::SliderFloat("##gain", &gain, -6.0f, 6.0f);
+                if (ImGui::IsItemClicked(1)) gain = 0.0;
+
+                ImGui::Text("Gamma");
+                ImGui::SetNextItemWidth(120);
+                ImGui::SliderFloat("γ##gamma", &gamma, 0, 4);
+                if (ImGui::IsItemClicked(1)) gamma = 1.0;
             }
+            ImGui::EndGroup();
 
-            ImGui::SameLine();
-
-            for (auto chan : channels) {
-                ImGui::Button(chan.c_str()); ImGui::SameLine();
-            }; ImGui::NewLine();
+            ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+            ImGui::MenuItem(ICON_FA_CHESS_BOARD, "", &display_checkerboard);
+        ImGui::EndMenuBar();
         }
-        ImGui::EndGroup(); // toolbar end
-
-
 
         // Viewport
         {
             static RenderTarget viewport_rt;
-            static bool flip_y{false};
-            if (ImGui::Checkbox("flip", &flip_y)) {
-                camera = Camera({ 0,0,flip_y ? -5 : 5 }, { 0,0,0 }, { 0,flip_y ? -1 : 1,0 }, false, camera.aspect, camera.fov);
-            }
+            //static bool flip_y{ false };
+            //if (ImGui::Checkbox("flip", &flip_y)) {
+            //    camera = Camera({ 0,0,flip_y ? -500 : 500 }, { 0,0,0 }, { 0,flip_y ? -1 : 1,0 }, false, camera.aspect, camera.fov);
+            //}
 
             auto item_pos = ImGui::GetCursorPos();
             auto item_size = ImGui::GetContentRegionAvail();
@@ -635,12 +691,27 @@ void ShowMiniViewer(bool *p_open) {
                 }
             }
             // Display viewport GUI
-            ImGui::SetItemAllowOverlap();
+
+
             ImGui::SetCursorPos(item_pos);
+            ImGui::SetItemAllowOverlap();
             ImGui::Image((ImTextureID)viewport_rt.color_attachment, item_size, ImVec2(0, 1), ImVec2(1, 0));
 
-            // Make Image Correection texture
             OIIO::ImageSpec spec = get_current_spec();
+            //if (spec.full_width > 0)
+
+            //{
+            //    glm::vec2 pos = glm::project(glm::vec3(spec.full_width, spec.full_height, 0), camera.getView(), camera.getProjection(), glm::vec4(0, 0, item_size.x, item_size.y));
+            //    //pos *= glm::vec2(item_size.x, item_size.y);
+            //    ImGui::SetCursorPos(ImVec2(pos.x + item_pos.x, item_size.y - pos.y + item_pos.y));
+            //    ImGui::Text("%dx%d", spec.full_width, spec.full_height);
+            //}
+
+            ImGui::SetCursorPos(item_pos);
+
+
+
+            // Make Image Correction texture
             static RenderTarget correction_rt;
             if (correction_rt.width != spec.full_width || correction_rt.height != spec.full_height) {
                 std::cout << "create corection fbo" << std::endl;
@@ -661,7 +732,7 @@ void ShowMiniViewer(bool *p_open) {
             uniform vec2 resolution;
 
             uniform float gamma_correction;
-            uniform float exposure_correction;
+            uniform float gain_correction;
 
             float sRGB_to_linear(float sRGB_value){
               return sRGB_value <= 0.04045
@@ -699,42 +770,42 @@ void ShowMiniViewer(bool *p_open) {
                 vec2 uv = gl_FragCoord.xy/resolution;
                 vec3 hdrColor = texture(inputTexture, uv).rgb;
                 
+                // apply corrections
+                vec3 mapped = hdrColor;
+
                 // apply exposure correction
+                mapped = mapped * pow(2, gain_correction);
+
                 // exposure tone mapping
-                //vec3 mapped = filmic_tonemap(pow(hdrColor,vec3(exposure_correction)));
-                vec3 mapped = reinhart_tonemap(pow(hdrColor,vec3(exposure_correction)));
+                mapped = reinhart_tonemap(mapped);
 
                 // apply gamma correction
                 mapped = pow(mapped, vec3(gamma_correction));
 
-
                 // sRGB device transform
                 //mapped.rgb = linear_to_sRGB(mapped.rgb);
-                mapped.rgb = pow(mapped.rgb, vec3(1.0/2.2));
-                FragColor = vec4(mapped,1);
+                //mapped.rgb = pow(mapped.rgb, vec3(1.0/2.2));
+                FragColor = vec4(mapped,texture(inputTexture, uv).a);
             }
             
             )");
             BeginRenderToTexture(correction_rt.fbo, 0, 0, spec.full_width, spec.full_height);
             {
-                imdraw::push_program(correction_program);
-                glClearColor(1, 0, 1, 1);
+                glClearColor(0, 0, 0, 0);
                 glClear(GL_COLOR_BUFFER_BIT);
+
+                imdraw::push_program(correction_program);
+
 
                 /// Draw quad with fragment shader
                 static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
                 static auto vao = imdraw::make_vao(correction_program, { {"aPos", {vbo, 3}} });
 
-                static float exposure = 1.0;
-                static float gamma = 1.0;
-                ImGui::SetCursorPos(item_pos);
-                ImGui::SliderFloat("exposure", &exposure, 0, 2.0);
-                ImGui::SliderFloat("gamma", &gamma, 0, 5);
                 imdraw::set_uniforms(correction_program, {
                     {"inputTexture", 0},
                     {"resolution", glm::vec2(spec.full_width, spec.full_height)},
                     {"gamma_correction", gamma},
-                    {"exposure_correction", exposure}
+                    {"gain_correction", gain}
                     });
                 glBindTexture(GL_TEXTURE_2D, tex);
                 glBindVertexArray(vao);
@@ -803,28 +874,30 @@ void ShowMiniViewer(bool *p_open) {
                     int nchannels = chend - chbegin;
 
                     // draw transparency checkboard
-                    imdraw::quad(glazy::checkerboard_tex,
-                        { spec.full_x / DPI,spec.full_y / DPI }, { spec.full_x / DPI + spec.full_width / DPI, spec.full_y / DPI + spec.full_height / DPI },
-                        glm::vec2(spec.full_width / 64, spec.full_height / 64),
-                        glm::vec2(0, 0),
-                        0.7
-                    );
+                    if (display_checkerboard) {
+                        imdraw::quad(glazy::checkerboard_tex,
+                            { spec.full_x,spec.full_y }, { spec.full_x + spec.full_width, spec.full_y + spec.full_height },
+                            glm::vec2(spec.full_width / 64, spec.full_height / 64),
+                            glm::vec2(0, 0),
+                            0.7
+                        );
+                    }
 
                     // draw textured quad
                     imdraw::quad(correction_rt.color_attachment,
-                        { spec.full_x / DPI, spec.full_y / DPI },
-                        { spec.full_x / DPI + spec.full_width / DPI, spec.full_y / DPI + spec.full_height / DPI }
+                        { spec.full_x, spec.full_y },
+                        { spec.full_x + spec.full_width, spec.full_y + spec.full_height }
                     );
 
                     // draw image full boundaries
-                    imdraw::rect({ spec.full_x / DPI,spec.full_y / DPI }, { spec.full_x / DPI + spec.full_width / DPI, spec.full_y / DPI + spec.full_height / DPI });
+                    imdraw::rect({ spec.full_x,spec.full_y }, { spec.full_x + spec.full_width, spec.full_y + spec.full_height });
 
                     // draw image ROI boundaries
-                    imdraw::rect({ spec.x / DPI,spec.y / DPI }, { spec.x / DPI + spec.width / DPI, spec.y / DPI + spec.height / DPI });
+                    imdraw::rect({ spec.x,spec.y }, { spec.x + spec.width, spec.y + spec.height });
                 }
 
                 //imdraw::grid();
-                imdraw::axis();
+                imdraw::axis(100);
 
             }
             EndRenderToTexture();
