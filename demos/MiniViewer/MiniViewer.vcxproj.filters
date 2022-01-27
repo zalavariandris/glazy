@@ -27,5 +27,6 @@
   <ItemGroup>
     <None Include="polka.frag" />
     <None Include="README.md" />
+    <None Include="display_correction.frag" />
   </ItemGroup>
 </Project>

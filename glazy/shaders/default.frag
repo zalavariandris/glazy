@@ -76,5 +76,5 @@ void main()
 	//dash();
 
 	// calc frag color
-	FragColor = vec4(col, alpha*(1.0-opacity));
+	FragColor = vec4(diff, alpha*(1.0-opacity));
 };
