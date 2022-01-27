@@ -17,6 +17,10 @@ namespace imgeo {
 	};
 
 	Trimesh grid(unsigned int slices = 10);
+
+	/// Unit quad, positions from -1 to 1
+	/// UV from 0 to 1
+	/// and -z facing normals
 	Trimesh quad();
 	Trimesh disc(unsigned int segmets = 32);
 	Trimesh cylinder();

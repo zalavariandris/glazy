@@ -157,6 +157,7 @@
     <None Include="display_correction.frag" />
     <None Include="polka.frag" />
     <None Include="README.md" />
+    <None Include="try_shadertoy.frag" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

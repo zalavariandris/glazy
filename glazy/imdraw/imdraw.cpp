@@ -91,11 +91,11 @@ namespace imdraw {
 				{"projection", glm::mat4(1)},
 				{"useInstanceMatrix", false},
 				{"color", glm::vec3(1,1,1)},
+				{"opacity", 0.0f},
 				{"useTextureMap", false},
 				{"textureMap", 0},
 				{"uv_tiling", glm::vec2(1,1)},
-				{"uv_offset", glm::vec2(0,0)},
-				{"opacity", 0.0f}
+				{"uv_offset", glm::vec2(0,0)}
 				});
 			return p;
 		}();
@@ -106,10 +106,9 @@ namespace imdraw {
 	void reset_uniforms() {
 		imdraw::set_uniforms(program(), {
 			{uniform_locations["model"], glm::mat4(1)},
-			//{"view", glm::mat4(1)},
-			//{"projection", glm::mat4(1)},
 			{uniform_locations["useInstanceMatrix"], false},
 			{uniform_locations["color"], glm::vec3(1,1,1)},
+			{uniform_locations["opacity"], 0.0f},
 			{uniform_locations["useTextureMap"], false},
 			{uniform_locations["textureMap"], 0},
 			{uniform_locations["uv_tiling"], glm::vec2(1,1)},
@@ -357,6 +356,52 @@ void imdraw::rect(glm::vec2 rect_min, glm::vec2 rect_max) {
 	glBindVertexArray(vao);
 	glDrawArrays(GL_LINE_LOOP, 0, data.size());
 	glBindVertexArray(0);
+	pop_program();
+
+	glDeleteBuffers(1, &vbo);
+	glDeleteVertexArrays(1, &vao);
+}
+
+void imdraw::rect(glm::vec2 rect_min, glm::vec2 rect_max, imdraw::Material material)
+{
+	std::vector<glm::vec3> data{
+		{rect_min.x, rect_min.y, 0},
+		{rect_max.x, rect_min.y, 0},
+		{rect_max.x, rect_max.y, 0},
+		{rect_min.x, rect_max.y, 0}
+	};
+
+	auto vbo = make_vbo(data);
+	auto vao = make_vao(program(), {
+		{"aPos", {vbo, 3}},
+	});
+
+	// draw
+	push_program(program());
+	{
+		imdraw::reset_uniforms();
+		set_uniforms(program(), {
+			{uniform_locations["model"], glm::mat4(1)},
+			{uniform_locations["color"], material.color},
+			{uniform_locations["useTextureMap"], material.texture > 0},
+			{uniform_locations["opacity"], material.opacity}
+		});
+		if (material.texture > 0) {
+			glBindTexture(GL_TEXTURE_2D, material.texture);
+		}
+		glBindVertexArray(vao);
+
+		if (material.mode == FILL) {
+			glDrawArrays(GL_TRIANGLE_FAN, 0, data.size());
+		}
+		else if (material.mode == LINE) {
+			glDrawArrays(GL_LINE_LOOP, 0, data.size());
+		}
+		glBindVertexArray(0);
+		if (material.texture > 0) {
+			glBindTexture(GL_TEXTURE_2D, 0);
+		}
+	}
 	pop_program();
 
 	glDeleteBuffers(1, &vbo);

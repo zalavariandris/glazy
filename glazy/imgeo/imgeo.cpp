@@ -44,6 +44,7 @@ imgeo::Trimesh imgeo::grid(unsigned int slices) {
 
 imgeo::Trimesh imgeo::quad() {
 	// create geometry
+	
 	static std::vector<glm::vec3> positions{
 		{-1,-1,0}, {1,-1,0}, {1, 1, 0}, {-1, 1, 0}
 	};

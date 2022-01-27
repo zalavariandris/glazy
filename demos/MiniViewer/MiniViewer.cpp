@@ -33,7 +33,7 @@
 
 #include <array>
 
-const char * PASS_CAMERA_VERTEX_CODE = R"(
+const char* PASS_CAMERA_VERTEX_CODE = R"(
 #version 330 core
 layout (location = 0) in vec3 aPos;
 
@@ -43,8 +43,6 @@ uniform mat4 model;
 
 out vec3 nearPoint;
 out vec3 farPoint;
-out mat4 fragView;
-out mat4 fragProj;
 
 vec3 UnprojectPoint(float x, float y, float z, mat4 view, mat4 projection) {
     mat4 viewInv = inverse(view);
@@ -58,11 +56,68 @@ void main()
     //gl_Position = projection * view * model * vec4(aPos, 1.0);
     nearPoint = UnprojectPoint(aPos.x, aPos.y, 0.0, view, projection).xyz;
     farPoint = UnprojectPoint(aPos.x, aPos.y, 1.0, view, projection).xyz;
-    fragView = view;
-    fragProj = projection;
     gl_Position = vec4(aPos, 1.0);
 }
 )";
+
+class ShaderToy {
+private:
+    std::filesystem::path fragment_path;
+    std::filesystem::file_time_type last_compile_time;
+    GLuint m_program;
+    glm::ivec2 m_resolution;
+    imdraw::UniformVariant uniform;
+public:
+    ShaderToy(std::filesystem::path fragment_path, glm::ivec2 resolution):
+        fragment_path(fragment_path),
+        m_program(0),
+        m_resolution(resolution)
+    {}
+
+    // if source files has changed, reload code and recompile shaders
+    bool autoreload()
+    {
+        auto last_write_time = std::filesystem::last_write_time(fragment_path);
+        if (last_write_time != last_compile_time) {
+            last_compile_time = last_write_time;
+            static auto vertex_shader = imdraw::make_shader(GL_VERTEX_SHADER, PASS_CAMERA_VERTEX_CODE);
+            if (glIsProgram(m_program)) {
+                glDeleteProgram(m_program);
+            }
+            // read
+            auto fragment_code = glazy::read_text(fragment_path.string().c_str());
+            // compile
+            auto fragment_shader = imdraw::make_shader(GL_FRAGMENT_SHADER, fragment_code.c_str());
+            // link
+            m_program = imdraw::make_program_from_shaders(vertex_shader, fragment_shader);
+            return true;
+        }
+        return false;
+    }
+
+    void draw(std::map<std::string, imdraw::UniformVariant> uniforms) const
+    {
+        imdraw::push_program(m_program);
+        /// Draw quad with fragment shader
+        imgeo::quad();
+        static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
+        static auto vao = imdraw::make_vao(m_program, { {"aPos", {vbo, 3}} });
+
+        imdraw::set_uniforms(m_program, {
+            {"projection", uniforms.contains("projection") ? uniforms["projection"] : glm::ortho(-1,1,-1,1)},
+            {"view", uniforms.contains("view") ? uniforms["view"] : glm::mat4(1)},
+            {"uResolution", uniforms.contains("resolution") ? uniforms["resolution"] : m_resolution},
+        });
+        //glBindTexture(GL_TEXTURE_2D, tex);
+        glBindVertexArray(vao);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        glBindVertexArray(0);
+        //glBindTexture(GL_TEXTURE_2D, 0);
+        imdraw::pop_program();
+    }
+};
+
+
 
 std::vector<GLuint> fbo_stack;
 std::vector<std::array<GLint, 4>> viewport_stack;
@@ -271,15 +326,16 @@ std::filesystem::path file_pattern{ "" };
 int start_frame{ 0 };
 int end_frame{ 10 };
 
-int frame{ 0 };
+int current_frame{ 0 };
 bool is_playing{ false };
+
 const double DPI = 300;
 Camera camera({ 0,0,5000 }, { 0,0,0 }, { 0,1,0 });
 
 // getters
 std::filesystem::path _current_filename; // depends on file_pattern and frame
 void update_current_filename() {
-    _current_filename = sequence_item(file_pattern, frame);
+    _current_filename = sequence_item(file_pattern, current_frame);
 }
 
 ChannelsTable _channels_table; // depends on current filename
@@ -358,8 +414,8 @@ void open(std::filesystem::path filepath) {
         end_frame = end;
 
         // keep frame within framerange
-        if (frame < start_frame) frame = start_frame;
-        if (frame > end_frame) frame = end_frame;
+        if (current_frame < start_frame) current_frame = start_frame;
+        if (current_frame > end_frame) current_frame = end_frame;
 
         // update filename
         update_current_filename();
@@ -517,28 +573,64 @@ void ShowImageInfo() {
 
 void ShowTimeline() {
     // Timeslider
-    
-    ImGui::SetCursorPosX(ImGui::GetContentRegionAvailWidth() / 2 - 60);
-    if (ImGui::Button(is_playing ? ICON_FA_PAUSE : ICON_FA_PLAY, {120, 0})) {
-        is_playing = !is_playing;
-    }
-
-    if (ImGui::BeginTable("channels table", 3, ImGuiTableFlags_SizingStretchProp)) {
-
-        ImGui::TableNextColumn();
-        ImGui::Text("%d", start_frame); ImGui::SameLine();
-
-        ImGui::TableNextColumn();
-        ImGui::SetNextItemWidth(-1);
-        if (ImGui::SliderInt("##frame", &frame, start_frame, end_frame)) {
+    ImGui::BeginGroup();
+    {
+        ImGui::SetNextItemWidth(ImGui::GetTextLineHeight());
+        if (ImGui::Button(ICON_FA_FAST_BACKWARD "##first frame")) {
+            current_frame = start_frame;
             on_frame_change();
         }
 
-        ImGui::TableNextColumn();
-        ImGui::Text("%d", end_frame);
-
-        ImGui::EndTable();
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(ImGui::GetTextLineHeight());
+        if (ImGui::Button(ICON_FA_STEP_BACKWARD "##step backward")) {
+            current_frame -= 1;
+            if (current_frame < start_frame) current_frame = end_frame;
+            on_frame_change();
+        }
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(ImGui::GetTextLineHeight());
+        if (ImGui::Button(is_playing ? ICON_FA_PAUSE : ICON_FA_PLAY "##play")) {
+            is_playing = !is_playing;
+        }
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(ImGui::GetTextLineHeight());
+        if (ImGui::Button(ICON_FA_STEP_FORWARD "##step forward")) {
+            current_frame += 1;
+            if (current_frame > end_frame) current_frame = start_frame;
+            on_frame_change();
+        }
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(ImGui::GetTextLineHeight());
+        if (ImGui::Button(ICON_FA_FAST_FORWARD "##last frame")) {
+            current_frame = end_frame;
+            on_frame_change();
+        }
     }
+    ImGui::EndGroup();
+
+    ImGui::SameLine();
+    ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+    ImGui::SameLine();
+
+    ImGui::BeginGroup();
+    {
+        ImGui::BeginDisabled();
+        ImGui::SetNextItemWidth(ImGui::GetTextLineHeight() * 2);
+        ImGui::InputInt("##start frame", &start_frame, 0, 0);
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvailWidth() - ImGui::GetTextLineHeight() * 2 - ImGui::GetStyle().ItemSpacing.x);
+        if (ImGui::SliderInt("##frame", &current_frame, start_frame, end_frame)) {
+            on_frame_change();
+        }
+        ImGui::SameLine();
+        ImGui::BeginDisabled();
+        ImGui::SetNextItemWidth(ImGui::GetTextLineHeight() * 2);
+        ImGui::InputInt("##end frame", &end_frame, 0, 0);
+        ImGui::EndDisabled();
+    }
+    ImGui::EndGroup();
 }
 
 struct RenderTarget {
@@ -733,15 +825,15 @@ void ShowMiniViewer(bool *p_open) {
                 correction_program = imdraw::make_program_from_source(PASS_THROUGH_VERTEX_CODE, correction_fragment_code.c_str());
             }
 
+            // render to correction fbo
             BeginRenderToTexture(correction_rt.fbo, 0, 0, spec.full_width, spec.full_height);
             {
                 glClearColor(0, 0, 0, 0);
                 glClear(GL_COLOR_BUFFER_BIT);
 
                 imdraw::push_program(correction_program);
-
-
                 /// Draw quad with fragment shader
+                imgeo::quad();
                 static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
                 static auto vao = imdraw::make_vao(correction_program, { {"aPos", {vbo, 3}} });
 
@@ -750,7 +842,7 @@ void ShowMiniViewer(bool *p_open) {
                     {"resolution", glm::vec2(spec.full_width, spec.full_height)},
                     {"gamma_correction", gamma},
                     {"gain_correction", gain}
-                    });
+                });
                 glBindTexture(GL_TEXTURE_2D, tex);
                 glBindVertexArray(vao);
                 glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -771,6 +863,9 @@ void ShowMiniViewer(bool *p_open) {
                 /// Draw scene
                 // draw background
                 {
+                    static auto toy = ShaderToy("./try_shadertoy.frag", { 512,512 });
+                    toy.autoreload();
+                    toy.draw({ { "projection", camera.getProjection() }, { "view", camera.getView() } });
 
                     static std::filesystem::path fragment_path{ "./polka.frag" };
                     static std::string fragment_code;
@@ -787,7 +882,7 @@ void ShowMiniViewer(bool *p_open) {
 
                     /// Draw quad with fragment shader
                     static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
-                    static auto vao = imdraw::make_vao(polka_program, {{"aPos", {vbo, 3}}});
+                    static auto vao = imdraw::make_vao(polka_program, { {"aPos", {vbo, 3}} });
 
                     imdraw::push_program(polka_program);
                     imdraw::set_uniforms(polka_program, {
@@ -796,7 +891,7 @@ void ShowMiniViewer(bool *p_open) {
                         {"model", glm::mat4(1)},
                         {"uResolution", glm::vec2(item_size.x, item_size.y)},
                         {"radius", 0.01f}
-                    });
+                        });
 
                     glBindVertexArray(vao);
                     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -817,15 +912,28 @@ void ShowMiniViewer(bool *p_open) {
                     int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
                     int nchannels = chend - chbegin;
 
-                    // draw transparency checkboard
-                    if (display_checkerboard) {
-                        imdraw::quad(glazy::checkerboard_tex,
-                            { spec.full_x,spec.full_y }, { spec.full_x + spec.full_width, spec.full_y + spec.full_height },
-                            glm::vec2(spec.full_width / 64, spec.full_height / 64),
-                            glm::vec2(0, 0),
-                            0.7
-                        );
-                    }
+                    //// draw image background
+                    //if (display_checkerboard)
+                    //{ // draw checkerboard background
+                    //    glDisable(GL_BLEND);
+                    //    imdraw::quad(glazy::checkerboard_tex,
+                    //        { spec.full_x,spec.full_y }, { spec.full_x + spec.full_width, spec.full_y + spec.full_height },
+                    //        glm::vec2(spec.full_width / 64, spec.full_height / 64),
+                    //        glm::vec2(0, 0),
+                    //        0.95
+                    //    );
+                    //    glEnable(GL_BLEND);
+                    //}
+                    //else
+                    //{ // draw black background
+                    //    imdraw::rect(
+                    //        { spec.full_x,spec.full_y }, // min rect
+                    //        { spec.full_x + spec.full_width, spec.full_y + spec.full_height }, //max rect
+                    //        { //Material
+                    //            .color = glm::vec3(0,0,0)
+                    //        }
+                    //    );
+                    //}
 
                     // draw textured quad
                     imdraw::quad(correction_rt.color_attachment,
@@ -833,11 +941,20 @@ void ShowMiniViewer(bool *p_open) {
                         { spec.full_x + spec.full_width, spec.full_y + spec.full_height }
                     );
 
-                    // draw image full boundaries
-                    imdraw::rect({ spec.full_x,spec.full_y }, { spec.full_x + spec.full_width, spec.full_y + spec.full_height });
+                    /// Draw boundaries
+                    // full image boundaries
+                    imdraw::rect(
+                        { spec.full_x,spec.full_y }, 
+                        { spec.full_x + spec.full_width, spec.full_y + spec.full_height },
+                        { .mode = imdraw::LINE, .color=glm::vec3(0.5), .opacity=0.3}
+                    );
 
-                    // draw image ROI boundaries
-                    imdraw::rect({ spec.x,spec.y }, { spec.x + spec.width, spec.y + spec.height });
+                    // data window boundaries
+                    imdraw::rect(
+                        { spec.x,spec.y }, 
+                        { spec.x + spec.width, spec.y + spec.height },
+                        { .mode = imdraw::LINE, .color=glm::vec3(0.5), .opacity=0.3}
+                    );
                 }
 
                 //imdraw::grid();
@@ -846,10 +963,9 @@ void ShowMiniViewer(bool *p_open) {
             }
             EndRenderToTexture();
         }
-        ImGui::End(); // End Viewer window
+        
     }
-
-    
+    ImGui::End(); // End Viewer window
 }
 
 int main()
@@ -863,9 +979,9 @@ int main()
     {
         // control playback
         if (is_playing) {
-            frame++;
-            if (frame > end_frame) {
-                frame = start_frame;
+            current_frame++;
+            if (current_frame > end_frame) {
+                current_frame = start_frame;
             }
             on_frame_change();
         }
@@ -912,21 +1028,28 @@ int main()
         
         // ChannelsTable
 
-        if (channels_table_visible && ImGui::Begin("ChannelsTtable", &channels_table_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
-            ShowChannelsTable();
+        if (channels_table_visible) {
+
+            if (ImGui::Begin("ChannelsTtable", &channels_table_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
+                ShowChannelsTable();
+            }
             ImGui::End();
         }
         
         // Image info
         ImGui::SetNextWindowSizeConstraints(ImVec2(100, -1), ImVec2(200, -1));          // Width 400-500
-        if (image_info_visible && ImGui::Begin("Info", &image_info_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
-            ShowImageInfo();
+        if (image_info_visible) {
+            if (ImGui::Begin("Info", &image_info_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
+                ShowImageInfo();
+            }
             ImGui::End();
         }
 
         // Timeliune
-        if (timeline_visible && ImGui::Begin("timeline")) {
-            ShowTimeline();
+        if (timeline_visible){
+            if (ImGui::Begin("timeline")) {
+                ShowTimeline();
+            }
             ImGui::End();
         }
         
