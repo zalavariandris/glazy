@@ -256,7 +256,7 @@ void imdraw::disc(glm::vec3 center, float diameter, glm::vec3 color) {
 		{"aPos",    {make_vbo(geo.positions),      3}},
 		{"aUV",     {make_vbo(geo.uvs.value()),    2}},
 		{"aNormal", {make_vbo(geo.normals.value()),3}}
-		});
+	});
 	static auto ebo = make_ebo(geo.indices);
 	static auto indices_count = (GLuint)geo.indices.size();
 

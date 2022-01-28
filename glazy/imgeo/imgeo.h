@@ -22,6 +22,7 @@ namespace imgeo {
 	/// UV from 0 to 1
 	/// and -z facing normals
 	Trimesh quad();
+	Trimesh rect(glm::vec2 min_rect={-1,-1}, glm::vec2 max_rect={ 1,1 });
 	Trimesh disc(unsigned int segmets = 32);
 	Trimesh cylinder();
 	Trimesh sphere(size_t segs = 8, size_t stacks = 8);

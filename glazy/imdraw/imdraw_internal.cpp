@@ -251,7 +251,8 @@ GLuint imdraw::make_vao(std::map <GLuint, std::tuple<GLuint, GLsizei>> attribute
 	return vao;
 }
 
-GLuint imdraw::make_vao(GLuint program, std::map<std::string, std::tuple<GLuint, GLsizei>> attributes) {
+GLuint imdraw::make_vao(GLuint program, std::map<std::string, std::tuple<GLuint, GLsizei>> attributes){
+	assert(("program is not initalized", glIsProgram(program)));
 	GLuint vao;
 	glGenVertexArrays(1, &vao);
 	glBindVertexArray(vao);

@@ -23,6 +23,17 @@
 
 // utilities
 #include "ChannelsTable.h"
+#include "Instrumentor.h"
+#define PROFILING 1
+#if PROFILING
+#define PROFILE_SCOPE(name) InstrumentationTimer timer##__LINE__(name)
+#define PROFILE_FUNCTION() PROFILE_SCOPE(__FUNCSIG__)
+#else
+#define PROFILE_SCOPE(name)
+#define PROFILE_FUNCTION()
+#endif
+
+
 
 #include <chrono>
 
@@ -44,6 +55,8 @@ uniform mat4 model;
 out vec3 nearPoint;
 out vec3 farPoint;
 
+uniform bool use_geometry;
+
 vec3 UnprojectPoint(float x, float y, float z, mat4 view, mat4 projection) {
     mat4 viewInv = inverse(view);
     mat4 projInv = inverse(projection);
@@ -53,12 +66,13 @@ vec3 UnprojectPoint(float x, float y, float z, mat4 view, mat4 projection) {
 				
 void main()
 {
-    //gl_Position = projection * view * model * vec4(aPos, 1.0);
     nearPoint = UnprojectPoint(aPos.x, aPos.y, 0.0, view, projection).xyz;
     farPoint = UnprojectPoint(aPos.x, aPos.y, 1.0, view, projection).xyz;
-    gl_Position = vec4(aPos, 1.0);
+    gl_Position = use_geometry ? (projection * view * model * vec4(aPos, 1.0)) : vec4(aPos, 1.0);
 }
 )";
+
+
 
 class ShaderToy {
 private:
@@ -67,12 +81,39 @@ private:
     GLuint m_program;
     glm::ivec2 m_resolution;
     imdraw::UniformVariant uniform;
+
+    std::optional<imgeo::Trimesh> geometry;
+    GLuint vbo;
+    GLuint ebo;
+    GLuint vao;
+
 public:
-    ShaderToy(std::filesystem::path fragment_path, glm::ivec2 resolution):
+    ShaderToy(std::filesystem::path fragment_path, glm::ivec2 resolution, std::optional<imgeo::Trimesh> geometry=std::nullopt):
         fragment_path(fragment_path),
         m_program(0),
-        m_resolution(resolution)
-    {}
+        m_resolution(resolution),
+        geometry(geometry)
+    {
+        autoreload();
+        if (geometry) {
+            auto geo = geometry.value();
+            vao = imdraw::make_vao(m_program, {
+                {"aPos",    {imdraw::make_vbo(geo.positions),      3}},
+                {"aUV",     {imdraw::make_vbo(geo.uvs.value()),    2}},
+                {"aNormal", {imdraw::make_vbo(geo.normals.value()),3}}
+            });
+            ebo = imdraw::make_ebo(geo.indices);
+        }
+        else {
+            auto geo = imgeo::quad();
+            vao = imdraw::make_vao(m_program, {
+                {"aPos",    {imdraw::make_vbo(geo.positions),      3}},
+                {"aUV",     {imdraw::make_vbo(geo.uvs.value()),    2}},
+                {"aNormal", {imdraw::make_vbo(geo.normals.value()),3}}
+             });
+            
+        }
+    }
 
     // if source files has changed, reload code and recompile shaders
     bool autoreload()
@@ -95,23 +136,31 @@ public:
         return false;
     }
 
-    void draw(std::map<std::string, imdraw::UniformVariant> uniforms) const
+    void draw(std::map<std::string, imdraw::UniformVariant> uniforms)
     {
         imdraw::push_program(m_program);
         /// Draw quad with fragment shader
-        imgeo::quad();
-        static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
-        static auto vao = imdraw::make_vao(m_program, { {"aPos", {vbo, 3}} });
 
         imdraw::set_uniforms(m_program, {
             {"projection", uniforms.contains("projection") ? uniforms["projection"] : glm::ortho(-1,1,-1,1)},
             {"view", uniforms.contains("view") ? uniforms["view"] : glm::mat4(1)},
+            {"model", uniforms.contains("model") ? uniforms["model"] : glm::mat4(1)},
             {"uResolution", uniforms.contains("resolution") ? uniforms["resolution"] : m_resolution},
+            {"use_geometry", geometry.has_value()}
         });
         //glBindTexture(GL_TEXTURE_2D, tex);
-        glBindVertexArray(vao);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        glBindVertexArray(0);
+        if (geometry.has_value()) {
+            glBindVertexArray(vao);
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+            glDrawElements(geometry.value().mode, geometry.value().indices.size(), GL_UNSIGNED_INT, NULL);
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+            glBindVertexArray(0);
+        }
+        else {
+            glBindVertexArray(vao);
+            glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+            glBindVertexArray(0);
+        }
         //glBindTexture(GL_TEXTURE_2D, 0);
         imdraw::pop_program();
     }
@@ -239,9 +288,9 @@ namespace cacheio {
     }
 }
 
-
 GLuint make_texture_from_file(std::filesystem::path filename, std::vector<ChannelKey> channel_keys = {})
 {
+    PROFILE_FUNCTION();
     /// Validate parameters
     if (channel_keys.empty()) return 0;
     if (!std::filesystem::exists(filename)) return 0;
@@ -863,9 +912,7 @@ void ShowMiniViewer(bool *p_open) {
                 /// Draw scene
                 // draw background
                 {
-                    static auto toy = ShaderToy("./try_shadertoy.frag", { 512,512 });
-                    toy.autoreload();
-                    toy.draw({ { "projection", camera.getProjection() }, { "view", camera.getView() } });
+
 
                     static std::filesystem::path fragment_path{ "./polka.frag" };
                     static std::string fragment_code;
@@ -911,41 +958,46 @@ void ShowMiniViewer(bool *p_open) {
                     int chbegin = std::get<1>(channel_keys[0]);
                     int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
                     int nchannels = chend - chbegin;
+                    glm::vec2 min_rect{ spec.full_x, spec.full_y };
+                    glm::vec2 max_rect{ spec.full_x + spec.full_width, spec.full_y + spec.full_height };
 
-                    //// draw image background
-                    //if (display_checkerboard)
-                    //{ // draw checkerboard background
-                    //    glDisable(GL_BLEND);
-                    //    imdraw::quad(glazy::checkerboard_tex,
-                    //        { spec.full_x,spec.full_y }, { spec.full_x + spec.full_width, spec.full_y + spec.full_height },
-                    //        glm::vec2(spec.full_width / 64, spec.full_height / 64),
-                    //        glm::vec2(0, 0),
-                    //        0.95
-                    //    );
-                    //    glEnable(GL_BLEND);
-                    //}
-                    //else
-                    //{ // draw black background
-                    //    imdraw::rect(
-                    //        { spec.full_x,spec.full_y }, // min rect
-                    //        { spec.full_x + spec.full_width, spec.full_y + spec.full_height }, //max rect
-                    //        { //Material
-                    //            .color = glm::vec3(0,0,0)
-                    //        }
-                    //    );
-                    //}
+
+
+                    // draw image background
+                    if (display_checkerboard)
+                    { // draw checkerboard background
+                        glDisable(GL_BLEND);
+                        static auto toy = ShaderToy("./try_shadertoy.frag", { 512,512 }, imgeo::rect(min_rect, max_rect));
+                        toy.autoreload();
+                        toy.draw({
+                            { "projection", camera.getProjection() },
+                            { "view", camera.getView() },
+                            { "model", glm::scale(glm::mat4(1), glm::vec3(1))}
+                            });
+                        glEnable(GL_BLEND);
+                    }
+                    else
+                    { // draw black background
+                        imdraw::rect(
+                            { spec.full_x,spec.full_y }, // min rect
+                            { spec.full_x + spec.full_width, spec.full_y + spec.full_height }, //max rect
+                            { //Material
+                                .color = glm::vec3(0,0,0)
+                            }
+                        );
+                    }
 
                     // draw textured quad
                     imdraw::quad(correction_rt.color_attachment,
-                        { spec.full_x, spec.full_y },
-                        { spec.full_x + spec.full_width, spec.full_y + spec.full_height }
+                        min_rect,
+                        max_rect
                     );
 
                     /// Draw boundaries
                     // full image boundaries
                     imdraw::rect(
-                        { spec.full_x,spec.full_y }, 
-                        { spec.full_x + spec.full_width, spec.full_y + spec.full_height },
+                        min_rect,
+                        max_rect,
                         { .mode = imdraw::LINE, .color=glm::vec3(0.5), .opacity=0.3}
                     );
 
@@ -970,6 +1022,7 @@ void ShowMiniViewer(bool *p_open) {
 
 int main()
 {
+    Instrumentor::Get().BeginSession("Profile");
     static bool image_viewer_visible{ true };
     static bool image_info_visible{ true };
     static bool channels_table_visible{ true };
@@ -977,6 +1030,7 @@ int main()
     glazy::init();
     while (glazy::is_running())
     {
+        PROFILE_SCOPE("frame");
         // control playback
         if (is_playing) {
             current_frame++;
@@ -995,7 +1049,7 @@ int main()
             if (ImGui::BeginMenu("File"))
             {
                 if (ImGui::MenuItem("Open")) {
-                    auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0");
+                    auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0JPEG images\0*.jpg");
                     open(filepath);
                 }
                 ImGui::EndMenu();
@@ -1023,13 +1077,14 @@ int main()
         
         // Image Viewer
         if (image_viewer_visible) {
+            PROFILE_SCOPE("image viewer");
             ShowMiniViewer(&image_viewer_visible);
         }
         
         // ChannelsTable
 
         if (channels_table_visible) {
-
+            PROFILE_SCOPE("channels table");
             if (ImGui::Begin("ChannelsTtable", &channels_table_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
                 ShowChannelsTable();
             }
@@ -1057,5 +1112,6 @@ int main()
         
     }
     glazy::destroy();
+    Instrumentor::Get().EndSession();
 
 }

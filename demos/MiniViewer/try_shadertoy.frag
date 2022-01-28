@@ -21,7 +21,7 @@ bool ray_ground_intersection(in vec3 ray_origin, in vec3 ray_dir, out float t)
 
 void main(){
     vec2 uv;
-    float TILE_SIZE = 100.0;
+    float TILE_SIZE = 16.0f/uResolution.x;
     // get XY plane UV
     vec3 ray_origin = nearPoint;
     vec3 ray_dir = farPoint-nearPoint;
@@ -35,12 +35,12 @@ void main(){
     
 
     // get screen UV
-    //uv = gl_FragCoord.xy/uResolution.x/TILE_SIZE;
+    uv = gl_FragCoord.xy/uResolution.x/TILE_SIZE;
     
     float H = mod(uv.x, 1);
     H = step(0.5,H);
     float V = mod(uv.y, 1);
     V = step(0.5, V);
     vec3 col = vec3(mix(V, 1-V, H));
-    FragColor = vec4(col,1.0);
+    FragColor = vec4(col,0.03);
 }

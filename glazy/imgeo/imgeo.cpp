@@ -46,7 +46,10 @@ imgeo::Trimesh imgeo::quad() {
 	// create geometry
 	
 	static std::vector<glm::vec3> positions{
-		{-1,-1,0}, {1,-1,0}, {1, 1, 0}, {-1, 1, 0}
+		{-1,-1, 0}, 
+		{ 1,-1, 0}, 
+		{ 1, 1, 0}, 
+		{-1, 1, 0}
 	};
 
 	static std::vector<glm::vec2> uvs{
@@ -62,6 +65,29 @@ imgeo::Trimesh imgeo::quad() {
 	};
 
 	return Trimesh(GL_TRIANGLES, positions, indices, uvs, normals);
+}
+
+imgeo::Trimesh imgeo::rect(glm::vec2 min_rect, glm::vec2 max_rect) {
+	static std::vector<glm::vec3> positions{
+		{min_rect.x, min_rect.y, 0}, 
+		{max_rect.x, min_rect.y, 0}, 
+		{max_rect.x, max_rect.y, 0}, 
+		{min_rect.x, max_rect.y, 0}
+	};
+
+	static std::vector<glm::vec2> uvs{
+		{0,0}, {1,0}, {1, 1}, {0, 1}
+	};
+
+	static std::vector<glm::vec3> normals{
+		{0,0,-1}, {0,0,-1}, {0,0,-1}, {0,0,-1}
+	};
+
+	static std::vector<unsigned int> indices{
+		0,1,2, 0,2,3
+	};
+
+	return Trimesh(GL_TRIANGLE_FAN, positions, indices, uvs, normals);
 }
 
 imgeo::Trimesh imgeo::disc(unsigned int segments) {

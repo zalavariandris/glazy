@@ -4,10 +4,10 @@
 #include <filesystem>
 
 
-std::filesystem::path openexr_images = "C:/Users/andris/Desktop/test_images/openexr-images-master";
+std::filesystem::path test_images_folder = "C:/Users/andris/Desktop/test_images";
 
-TEST(IMAGEIO_TEST_CASE, single_rgb) {
-	auto file = openexr_images / "Beachball" / "singlepart.0001.exr";
+TEST(IMAGEIO_TEST_CASE, singlepart_exr_rgb) {
+	auto file = test_images_folder / "openexr-images-master" / "Beachball" / "singlepart.0001.exr";
 	auto layers = ImageIO::get_layers(file);
 	for (auto layer : layers) std::cout << "- " << layer << "\n";
 
@@ -25,6 +25,18 @@ TEST(IMAGEIO_TEST_CASE, single_rgb) {
 
 	auto whitebarmaks_channels = ImageIO::get_channels(file, "whitebarmask.left");
 	EXPECT_EQ(whitebarmaks_channels, std::vector<std::string>({ "mask" }));
+}
+
+TEST(IMAGEIO_TEST_CASE, jpeg_rgb) {
+	auto file = test_images_folder / "duchamp-akt.jpg";
+	auto layers = ImageIO::get_layers(file);
+	for (auto layer : layers) std::cout << "- " << layer << "\n";
+
+	EXPECT_EQ(layers, std::vector<std::string>({ "color"}));
+
+	auto color_channels = ImageIO::get_channels(file, "color");
+	//for (auto channel : color_channels) std::cout << "- " << channel << "\n";
+	EXPECT_EQ(color_channels, std::vector<std::string>({ "R", "G", "B"}));
 }
 
 /*
