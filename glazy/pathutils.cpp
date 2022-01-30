@@ -68,7 +68,7 @@ std::string to_string(std::vector<std::filesystem::path> sequence) {
     return text;
 }
 
-std::tuple<std::filesystem::path, int, int> scan_for_sequence(const std::filesystem::path & input_path) {
+std::tuple<std::filesystem::path, int, int, int> scan_for_sequence(const std::filesystem::path & input_path) {
     assert(std::filesystem::exists(input_path));
 
     std::vector<std::filesystem::path> sequence;
@@ -77,8 +77,9 @@ std::tuple<std::filesystem::path, int, int> scan_for_sequence(const std::filesys
     // find sequence item in folder
     auto [input_name, input_digits] = split_digits(input_path.stem().string());
     if (input_digits.empty()) {
-        return {input_path, 0, 0};
+        return {input_path, 0, 0, 0};
     }
+    int selected_frame = std::stoi(input_digits);
     auto input_folder = input_path.parent_path();
     std::filesystem::path sequence_pattern = input_folder / (input_name +"%0" + std::to_string(input_digits.size()) + "d" + input_path.extension().string());
 
@@ -101,7 +102,7 @@ std::tuple<std::filesystem::path, int, int> scan_for_sequence(const std::filesys
     }
 
     std::sort(framenumbers.begin(), framenumbers.end());
-    return { sequence_pattern, framenumbers[0], framenumbers.back()};
+    return { sequence_pattern, framenumbers[0], framenumbers.back(), selected_frame};
 }
 
 std::filesystem::path sequence_item(const std::filesystem::path& pattern, int F) {

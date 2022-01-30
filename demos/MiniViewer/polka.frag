@@ -10,9 +10,6 @@ uniform float radius;
 in vec3 nearPoint;
 in vec3 farPoint;
 
-in mat4 fragView;
-in mat4 fragProj;
-
 float near = 0.1;
 float far = 100000;
 
@@ -27,8 +24,8 @@ float grid(in vec2 uv)
 }
 
 ///
-float computeDepth(vec3 pos) {
-    vec4 clip_space_pos = fragProj * fragView * vec4(pos.xyz, 1.0);
+float computeDepth(vec3 pos, mat4 proj, mat4 view) {
+    vec4 clip_space_pos = proj * view * vec4(pos.xyz, 1.0);
     return (clip_space_pos.z / clip_space_pos.w);
 }
 
@@ -48,7 +45,7 @@ void main(){
     float t;
     if(ray_ground_intersection(ray_origin, ray_dir, t)){
         vec3 fragPos3D = ray_origin + t * ray_dir;
-        gl_FragDepth = computeDepth(fragPos3D);
+        //gl_FragDepth = computeDepth(fragPos3D);
 
         vec2 offset_factor = vec2(0.5);
         vec2 uv = mod(fragPos3D.xy/TILE_SIZE+offset_factor, 1.0);
@@ -58,7 +55,5 @@ void main(){
         //col = vec3(uv, 0);
     }
     
-    FragColor = vec4(col, alpha*0.3
-        );
-
+    FragColor = vec4(col, alpha*0.3);
 }

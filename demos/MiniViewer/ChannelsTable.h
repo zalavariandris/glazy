@@ -254,6 +254,29 @@ std::vector<std::string> get_channels_column(const ChannelsTable& df) {
     return channels;
 }
 
+/* filter by */
+ChannelsTable filtered_by_layer(const ChannelsTable& df, const std::string & filter_layer) {
+    ChannelsTable filtered_df;
+    for (const auto& [idx, record] : df) {
+        auto&& [layer, view, channel] = record;
+        if (layer == filter_layer) {
+            filtered_df[idx] = record;
+        }
+    }
+    return filtered_df;
+}
+
+ChannelsTable filtered_by_layer_and_view(const ChannelsTable& df, const std::string& filter_layer, const std::string& filter_view) {
+    ChannelsTable filtered_df;
+    for (const auto& [idx, record] : df) {
+        auto&& [layer, view, channel] = record;
+        if (layer == filter_layer && view == filter_view) {
+            filtered_df[idx] = record;
+        }
+    }
+    return filtered_df;
+}
+
 /* Group by */
 /// Group channels by layer and view
 std::map<std::tuple<std::string, std::string>, ChannelsTable> group_by_layer_view(const ChannelsTable& df) {

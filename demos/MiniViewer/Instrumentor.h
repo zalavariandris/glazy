@@ -21,16 +21,18 @@
 
 #include <thread>
 
-struct ProfileResult
+struct ProfilerItem
 {
-    std::string Name;
+    const char* Name;
     long long Start, End;
+    int level;
     uint32_t ThreadID;
 };
 
 struct InstrumentationSession
 {
     std::string Name;
+    std::vector<ProfilerItem> data;
 };
 
 class Instrumentor
@@ -39,10 +41,17 @@ private:
     InstrumentationSession* m_CurrentSession;
     std::ofstream m_OutputStream;
     int m_ProfileCount;
+    
 public:
+    int current_level = 0;
     Instrumentor()
         : m_CurrentSession(nullptr), m_ProfileCount(0)
     {
+
+    }
+
+    InstrumentationSession* CurrentSession() {
+        return m_CurrentSession;
     }
 
     void BeginSession(const std::string& name, const std::string& filepath = "results.json")
@@ -61,8 +70,12 @@ public:
         m_ProfileCount = 0;
     }
 
-    void WriteProfile(const ProfileResult& result)
+    void WriteProfile(const ProfilerItem& result)
     {
+        // output to data
+        m_CurrentSession->data.push_back(result);
+
+        // output to text
         if (m_ProfileCount++ > 0)
             m_OutputStream << ",";
 
@@ -107,7 +120,7 @@ public:
     InstrumentationTimer(const char* name)
         : m_Name(name), m_Stopped(false)
     {
-        m_StartTimepoint = std::chrono::high_resolution_clock::now();
+        Start();
     }
 
     ~InstrumentationTimer()
@@ -116,15 +129,21 @@ public:
             Stop();
     }
 
+    void Start() {
+        m_StartTimepoint = std::chrono::high_resolution_clock::now();
+        Instrumentor::Get().current_level+=1;
+    }
+
     void Stop()
     {
+        Instrumentor::Get().current_level-=1;
         auto endTimepoint = std::chrono::high_resolution_clock::now();
 
         long long start = std::chrono::time_point_cast<std::chrono::microseconds>(m_StartTimepoint).time_since_epoch().count();
         long long end = std::chrono::time_point_cast<std::chrono::microseconds>(endTimepoint).time_since_epoch().count();
 
         uint32_t threadID = std::hash<std::thread::id>{}(std::this_thread::get_id());
-        Instrumentor::Get().WriteProfile({ m_Name, start, end, threadID });
+        Instrumentor::Get().WriteProfile({ m_Name, start, end, Instrumentor::Get().current_level, threadID});
 
         m_Stopped = true;
     }

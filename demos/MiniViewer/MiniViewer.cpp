@@ -1,4 +1,4 @@
-﻿// MiniViewer.cpp : This file contains the 'main' function. Program execution begins and ends there.
+﻿// MiniViewer.cpp
 //
 
 // std libraries
@@ -6,6 +6,8 @@
 #include <set>
 #include <cassert>
 #include <filesystem>
+#include <chrono>
+#include <array>
 
 // std data structures
 #include <vector>
@@ -21,356 +23,25 @@
 #include "OpenImageIO/imageio.h""
 #include "OpenImageIO/imagecache.h"
 
-// utilities
-#include "ChannelsTable.h"
-#include "Instrumentor.h"
-#define PROFILING 1
-#if PROFILING
-#define PROFILE_SCOPE(name) InstrumentationTimer timer##__LINE__(name)
-#define PROFILE_FUNCTION() PROFILE_SCOPE(__FUNCSIG__)
-#else
-#define PROFILE_SCOPE(name)
-#define PROFILE_FUNCTION()
-#endif
-
-
-
-#include <chrono>
-
+// ImGui
 #include "imgui.h"
 #include "imgui_stdlib.h"
-#include "imgui_internal.h" // use imgui math operators
 #define IMGUI_DEFINE_MATH_OPERATORS
+#include "imgui_internal.h" // use imgui math operators
+// widgets
+#include "imgui_widget_flamegraph.h"
 
-#include <array>
+// utilities
+#include "ChannelsTable.h"
+#include "ShaderToy.h"
 
-const char* PASS_CAMERA_VERTEX_CODE = R"(
-#version 330 core
-layout (location = 0) in vec3 aPos;
+// helpers
+#include "helpers.h"
+#pragma region HELPERS
 
-uniform mat4 projection;
-uniform mat4 view;
-uniform mat4 model;
+#pragma endregion HELPERS
 
-out vec3 nearPoint;
-out vec3 farPoint;
-
-uniform bool use_geometry;
-
-vec3 UnprojectPoint(float x, float y, float z, mat4 view, mat4 projection) {
-    mat4 viewInv = inverse(view);
-    mat4 projInv = inverse(projection);
-    vec4 unprojectedPoint =  viewInv * projInv * vec4(x, y, z, 1.0);
-    return unprojectedPoint.xyz / unprojectedPoint.w;
-}
-				
-void main()
-{
-    nearPoint = UnprojectPoint(aPos.x, aPos.y, 0.0, view, projection).xyz;
-    farPoint = UnprojectPoint(aPos.x, aPos.y, 1.0, view, projection).xyz;
-    gl_Position = use_geometry ? (projection * view * model * vec4(aPos, 1.0)) : vec4(aPos, 1.0);
-}
-)";
-
-
-
-class ShaderToy {
-private:
-    std::filesystem::path fragment_path;
-    std::filesystem::file_time_type last_compile_time;
-    GLuint m_program;
-    glm::ivec2 m_resolution;
-    imdraw::UniformVariant uniform;
-
-    std::optional<imgeo::Trimesh> geometry;
-    GLuint vbo;
-    GLuint ebo;
-    GLuint vao;
-
-public:
-    ShaderToy(std::filesystem::path fragment_path, glm::ivec2 resolution, std::optional<imgeo::Trimesh> geometry=std::nullopt):
-        fragment_path(fragment_path),
-        m_program(0),
-        m_resolution(resolution),
-        geometry(geometry)
-    {
-        autoreload();
-        if (geometry) {
-            auto geo = geometry.value();
-            vao = imdraw::make_vao(m_program, {
-                {"aPos",    {imdraw::make_vbo(geo.positions),      3}},
-                {"aUV",     {imdraw::make_vbo(geo.uvs.value()),    2}},
-                {"aNormal", {imdraw::make_vbo(geo.normals.value()),3}}
-            });
-            ebo = imdraw::make_ebo(geo.indices);
-        }
-        else {
-            auto geo = imgeo::quad();
-            vao = imdraw::make_vao(m_program, {
-                {"aPos",    {imdraw::make_vbo(geo.positions),      3}},
-                {"aUV",     {imdraw::make_vbo(geo.uvs.value()),    2}},
-                {"aNormal", {imdraw::make_vbo(geo.normals.value()),3}}
-             });
-            
-        }
-    }
-
-    // if source files has changed, reload code and recompile shaders
-    bool autoreload()
-    {
-        auto last_write_time = std::filesystem::last_write_time(fragment_path);
-        if (last_write_time != last_compile_time) {
-            last_compile_time = last_write_time;
-            static auto vertex_shader = imdraw::make_shader(GL_VERTEX_SHADER, PASS_CAMERA_VERTEX_CODE);
-            if (glIsProgram(m_program)) {
-                glDeleteProgram(m_program);
-            }
-            // read
-            auto fragment_code = glazy::read_text(fragment_path.string().c_str());
-            // compile
-            auto fragment_shader = imdraw::make_shader(GL_FRAGMENT_SHADER, fragment_code.c_str());
-            // link
-            m_program = imdraw::make_program_from_shaders(vertex_shader, fragment_shader);
-            return true;
-        }
-        return false;
-    }
-
-    void draw(std::map<std::string, imdraw::UniformVariant> uniforms)
-    {
-        imdraw::push_program(m_program);
-        /// Draw quad with fragment shader
-
-        imdraw::set_uniforms(m_program, {
-            {"projection", uniforms.contains("projection") ? uniforms["projection"] : glm::ortho(-1,1,-1,1)},
-            {"view", uniforms.contains("view") ? uniforms["view"] : glm::mat4(1)},
-            {"model", uniforms.contains("model") ? uniforms["model"] : glm::mat4(1)},
-            {"uResolution", uniforms.contains("resolution") ? uniforms["resolution"] : m_resolution},
-            {"use_geometry", geometry.has_value()}
-        });
-        //glBindTexture(GL_TEXTURE_2D, tex);
-        if (geometry.has_value()) {
-            glBindVertexArray(vao);
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-            glDrawElements(geometry.value().mode, geometry.value().indices.size(), GL_UNSIGNED_INT, NULL);
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-            glBindVertexArray(0);
-        }
-        else {
-            glBindVertexArray(vao);
-            glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-            glBindVertexArray(0);
-        }
-        //glBindTexture(GL_TEXTURE_2D, 0);
-        imdraw::pop_program();
-    }
-};
-
-
-
-std::vector<GLuint> fbo_stack;
-std::vector<std::array<GLint, 4>> viewport_stack;
-
-void BeginRenderToTexture(GLuint fbo, GLint x, GLint y, GLsizei width, GLsizei height)
-{
-    // push fbo
-    GLint current_fbo;
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &current_fbo); // TODO: getting fbo is fairly harmful to performance.
-    fbo_stack.push_back(current_fbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-
-    // push viewport
-    GLint viewport[4];
-    glGetIntegerv(GL_VIEWPORT, viewport);
-    viewport_stack.push_back({ viewport[0], viewport[1], viewport[2], viewport[3]});
-    glViewport(x, y, width, height);
-}
-
-void EndRenderToTexture()
-{
-    ASSERT(("Mismatch Begin/End Rendertargets", !fbo_stack.empty()));
-
-    // restore viewport
-    auto last_viewport = viewport_stack.back();
-    viewport_stack.pop_back();
-    glViewport(last_viewport[0], last_viewport[1], last_viewport[2], last_viewport[3]);
-
-    // restore fbo
-    GLuint last_fbo = fbo_stack.back();
-    glBindFramebuffer(GL_FRAMEBUFFER, last_fbo);
-    fbo_stack.pop_back();
-}
-
-namespace ImGui {
-    struct InputTextCallback_UserData
-    {
-        std::string* Str;
-        ImGuiInputTextCallback  ChainCallback;
-        void* ChainCallbackUserData;
-    };
-
-    static int InputTextCallback(ImGuiInputTextCallbackData* data)
-    {
-        InputTextCallback_UserData* user_data = (InputTextCallback_UserData*)data->UserData;
-        if (data->EventFlag == ImGuiInputTextFlags_CallbackResize)
-        {
-            // Resize string callback
-            // If for some reason we refuse the new length (BufTextLen) and/or capacity (BufSize) we need to set them back to what we want.
-            std::string* str = user_data->Str;
-            IM_ASSERT(data->Buf == str->c_str());
-            str->resize(data->BufTextLen);
-            data->Buf = (char*)str->c_str();
-        }
-        else if (user_data->ChainCallback)
-        {
-            // Forward to user callback, if any
-            data->UserData = user_data->ChainCallbackUserData;
-            return user_data->ChainCallback(data);
-        }
-        return 0;
-    }
-
-    bool InputText(const char* label, std::string* str, ImGuiInputTextFlags flags, ImGuiInputTextCallback callback, void* user_data)
-    {
-        IM_ASSERT((flags & ImGuiInputTextFlags_CallbackResize) == 0);
-        flags |= ImGuiInputTextFlags_CallbackResize;
-
-        InputTextCallback_UserData cb_user_data;
-        cb_user_data.Str = str;
-        cb_user_data.ChainCallback = callback;
-        cb_user_data.ChainCallbackUserData = user_data;
-        return InputText(label, (char*)str->c_str(), str->capacity() + 1, flags, InputTextCallback, &cb_user_data);
-    }
-
-    bool InputTextMultiline(const char* label, std::string* str, const ImVec2& size, ImGuiInputTextFlags flags, ImGuiInputTextCallback callback, void* user_data)
-    {
-        IM_ASSERT((flags & ImGuiInputTextFlags_CallbackResize) == 0);
-        flags |= ImGuiInputTextFlags_CallbackResize;
-
-        InputTextCallback_UserData cb_user_data;
-        cb_user_data.Str = str;
-        cb_user_data.ChainCallback = callback;
-        cb_user_data.ChainCallbackUserData = user_data;
-        return InputTextMultiline(label, (char*)str->c_str(), str->capacity() + 1, size, flags, InputTextCallback, &cb_user_data);
-    }
-
-    bool InputTextWithHint(const char* label, const char* hint, std::string* str, ImGuiInputTextFlags flags, ImGuiInputTextCallback callback, void* user_data)
-    {
-        IM_ASSERT((flags & ImGuiInputTextFlags_CallbackResize) == 0);
-        flags |= ImGuiInputTextFlags_CallbackResize;
-
-        InputTextCallback_UserData cb_user_data;
-        cb_user_data.Str = str;
-        cb_user_data.ChainCallback = callback;
-        cb_user_data.ChainCallbackUserData = user_data;
-        return InputTextWithHint(label, hint, (char*)str->c_str(), str->capacity() + 1, flags, InputTextCallback, &cb_user_data);
-    }
-}
-
-
-namespace cacheio {
-    std::map<std::filesystem::path, std::tuple<std::filesystem::file_time_type, std::string>> texts;
-    std::string get_text(const std::filesystem::path& path)
-    {
-        if (!texts.contains(path))
-        {
-            auto timestamp = std::filesystem::last_write_time(path);
-            auto text = glazy::read_text(path.string().c_str());
-            texts[path] = { timestamp, text };
-        }
-        if (std::get<0>(texts[path]) != std::filesystem::last_write_time(path))
-        {
-            auto timestamp = std::filesystem::last_write_time(path);
-            auto text = glazy::read_text(path.string().c_str());
-            texts[path] = { timestamp, text };
-        }
-        return std::get<1>(texts[path]);
-    }
-}
-
-GLuint make_texture_from_file(std::filesystem::path filename, std::vector<ChannelKey> channel_keys = {})
-{
-    PROFILE_FUNCTION();
-    /// Validate parameters
-    if (channel_keys.empty()) return 0;
-    if (!std::filesystem::exists(filename)) return 0;
-
-    /// Read header
-    auto image_cache = OIIO::ImageCache::create(true);
-    OIIO::ImageSpec spec;
-    image_cache->get_imagespec(OIIO::ustring(filename.string()), spec, std::get<0>(channel_keys[0]), 0);
-    auto x = spec.x;
-    auto y = spec.y;
-    int w = spec.width;
-    int h = spec.height;
-    int chbegin = std::get<1>(channel_keys[0]);
-    int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
-    int nchannels = chend - chbegin;
-
-    /// Allocate and read pixels
-    float* data = (float*)malloc(w * h * nchannels * sizeof(float));
-    image_cache->get_pixels(OIIO::ustring(filename.string()), std::get<0>(channel_keys[0]), 0, x, x + w, y, y + h, 0, 1, chbegin, chend, OIIO::TypeFloat, data, OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, chbegin, chend);
-
-    /// Create texture for ROI
-    GLuint tex_roi;
-    glGenTextures(1, &tex_roi);
-    glBindTexture(GL_TEXTURE_2D, tex_roi);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    GLint internalformat;
-    GLint format;
-    if (nchannels == 1) {
-        format = GL_RED;
-        internalformat = GL_RGBA;
-    }
-    if (nchannels == 2) {
-        format = GL_RG;
-        internalformat = GL_RGBA;
-    }
-    if (nchannels == 3) {
-        format = GL_RGB;
-        internalformat = GL_RGBA;
-    }
-    if (nchannels == 4) {
-        format = GL_RGBA;
-        internalformat = GL_RGBA;
-    }
-    GLint type = GL_FLOAT;
-    glTexImage2D(GL_TEXTURE_2D, 0, internalformat, spec.width, spec.height, 0, format, type, data);
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    // Deallocate data after uploaded to GPU
-    free(data);
-
-    /// Render ROI texture to full display window
-    GLuint tex_full = imdraw::make_texture_float(spec.full_width, spec.full_height, NULL, GL_RGBA);
-    GLuint fbo_full = imdraw::make_fbo(tex_full);
-    BeginRenderToTexture(fbo_full, spec.full_x, spec.full_y, spec.full_width, spec.full_height);
-    {
-        glClearColor(0, 0, 0, 0);
-        glClear(GL_COLOR_BUFFER_BIT);
-        
-        imdraw::set_projection(glm::ortho(0.0f, spec.full_width * 1.0f, 0.0f, spec.full_height * 1.0f));
-        glm::mat4 M{ 1 };
-        imdraw::set_view(glm::mat4(M));
-
-        glm::vec2 min_rect{ spec.x * 1.0f,spec.y * 1.0f };
-        glm::vec2 max_rect{ spec.x * 1.0f + spec.width * 1.0f, spec.y * 1.0f + spec.height * 1.0f };
-        imdraw::quad(tex_roi, { spec.x * 1.0f,spec.y * 1.0f }, { spec.x * 1.0f + spec.width * 1.0f, spec.y * 1.0f + spec.height * 1.0f });
-    }
-    EndRenderToTexture();
-
-    // Delete temporary FBO and tetures
-    glDeleteFramebuffers(1, &fbo_full);
-    glDeleteTextures(1, &tex_roi);
-    
-    /// Return final texture
-    return tex_full;
-}
-
-// gui state variables
+// GUI State variables
 std::filesystem::path file_pattern{ "" };
 int start_frame{ 0 };
 int end_frame{ 10 };
@@ -381,7 +52,7 @@ bool is_playing{ false };
 const double DPI = 300;
 Camera camera({ 0,0,5000 }, { 0,0,0 }, { 0,1,0 });
 
-// getters
+#pragma region GETTERS
 std::filesystem::path _current_filename; // depends on file_pattern and frame
 void update_current_filename() {
     _current_filename = sequence_item(file_pattern, current_frame);
@@ -392,14 +63,7 @@ void update_channels_table(){
     _channels_table = get_channelstable(_current_filename);
 };
 
-std::map<std::string, std::map<std::string, ChannelsTable>> _channels_table_tree;
-void update_channels_table_tree() {
-    _channels_table_tree.clear();
-    for (const auto& [layer, channels] : group_by_layer(_channels_table)) {
-        _channels_table_tree[layer] = group_by_view(channels);
-    }
-};
-
+/// layers available
 std::vector<std::string> layers{}; // list of currently available layer names
 void update_layers() {
     layers.clear();
@@ -414,18 +78,36 @@ void update_layers() {
 };
 int current_layer{ 0 }; // currently selected layer index
 
+/// list views available at currently selected layer
 std::vector<std::string> views{}; // list of currently available view names
-void update_views() {
+void update_views()
+{
     views.clear();
-    for (auto [view_name, df] : _channels_table_tree[layers[current_layer]]) {
-        views.push_back(view_name);
+    std::unordered_set<std::string> visited;
+    for (const auto& [idx, record] : _channels_table) {
+        const auto& [layer, view, channel] = record;
+        if (!visited.contains(view))
+        {
+            if (layer == layers[current_layer]) {
+                views.push_back(view);
+                visited.insert(view);
+            }
+        }
     }
 };
-static int current_view{ 0 }; // currently selected view index
 
+static int current_view{ 0 }; // currently selected view index
 ChannelsTable _current_channels_df;
-void update_current_channels_df() {
-    _current_channels_df = _channels_table_tree[layers[current_layer]][views[current_view]];
+void update_current_channels_df()
+{
+    _current_channels_df = ChannelsTable(); // clear current channels table
+    for (const auto& [idx, record] : _channels_table) {
+        const auto& [layer, view, channel] = record;
+        if (layer == layers[current_layer] && view==views[current_view])
+        {
+            _current_channels_df[idx] = record;
+        }
+    }
 };
 
 std::vector<std::string> channels{}; // list of currently available channel names
@@ -437,30 +119,36 @@ void update_channels() {
     }
 };
 
+OIIO::ImageSpec spec;
+void update_spec()
+{
+    auto channel_keys = get_index_column(_current_channels_df);
+    if (channel_keys.empty()) return;
+
+    auto image_cache = OIIO::ImageCache::create(true);
+    auto current_subimage = std::get<0>(channel_keys[0]);
+    image_cache->get_imagespec(OIIO::ustring(_current_filename.string()), spec, current_subimage, 0);
+}
+
 GLuint tex{ 0 };
 void update_texture() {
     if (glIsTexture(tex)) glDeleteTextures(1, &tex);
     tex = make_texture_from_file(_current_filename, get_index_column(_current_channels_df));
 };
 
-OIIO::ImageSpec get_current_spec() {
-    OIIO::ImageSpec spec;
-    auto channel_keys = get_index_column(_current_channels_df);
-    if (channel_keys.empty()) return spec;
+#pragma endregion GETTERS
 
-    auto image_cache = OIIO::ImageCache::create(true);
-    auto current_subimage = std::get<0>(channel_keys[0]);
-    image_cache->get_imagespec(OIIO::ustring(_current_filename.string()), spec, current_subimage, 0);
-    return spec;
-}
-
-// actions
-void open(std::filesystem::path filepath) {
-    if (!filepath.empty()) {
-        auto [pattern, start, end] = scan_for_sequence(filepath);
+#pragma region ACTIONS
+void open(std::filesystem::path filepath, bool sequence=false)
+{
+    if (!filepath.empty())
+    {
+        auto [pattern, start, end, selected_frame] = scan_for_sequence(filepath);
         file_pattern = pattern;
         start_frame = start;
         end_frame = end;
+        current_frame = selected_frame;
+        
 
         // keep frame within framerange
         if (current_frame < start_frame) current_frame = start_frame;
@@ -471,10 +159,10 @@ void open(std::filesystem::path filepath) {
         current_layer = 0; // reset to first layer
         current_view = 0; // reset current view
         update_channels_table();
-        update_channels_table_tree();
         update_layers();
         update_views();
         update_current_channels_df();
+        update_spec();
         update_channels();
         update_texture();
     }
@@ -482,36 +170,47 @@ void open(std::filesystem::path filepath) {
 
 void fit() {
     // read header
-    auto image_cache = OIIO::ImageCache::create(true);
-    OIIO::ImageSpec spec;
-    auto channel_keys = get_index_column(_current_channels_df);
-    image_cache->get_imagespec(OIIO::ustring(_current_filename.string()), spec, std::get<0>(channel_keys[0]), 0);
+    //auto image_cache = OIIO::ImageCache::create(true);
+    //OIIO::ImageSpec spec;
+    //auto channel_keys = get_index_column(_current_channels_df);
+    //image_cache->get_imagespec(OIIO::ustring(_current_filename.string()), spec, std::get<0>(channel_keys[0]), 0);
 
     camera.eye = { spec.full_width / 2.0 / DPI, spec.full_width / 2.0 / DPI, camera.eye.z };
     camera.target = { spec.full_width / 2.0 / DPI, spec.full_width / 2.0 / DPI, 0.0 };
 }
+#pragma endregion ACTIONS
 
-// event handlers
+#pragma region EVENT HANDLERS
 void on_frame_change() {
     update_current_filename();
     update_channels_table();
+    update_current_channels_df();
+    update_spec();
+    update_layers();
+    update_views();
+    update_channels();
     update_texture();
 };
 
-void on_layer_changed() {
+void on_layer_changed()
+{
     update_views();
     current_view = 0;
     update_current_channels_df();
+    update_spec();
     update_channels();
     update_texture();
 };
 
 void on_view_change() {
     update_current_channels_df();
+    update_spec();
     update_channels();
     update_texture();
 };
+#pragma endregion EVENT HANDLERS
 
+#pragma region WINDOWS
 void ShowChannelsTable()
 {
     if (ImGui::BeginTabBar("image header"))
@@ -551,9 +250,7 @@ void ShowChannelsTable()
         if (ImGui::BeginTabItem("layers"))
         {
             ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_DefaultOpen;
-            for (auto [layer, view_groups] : _channels_table_tree) {
-                //ImGui::SetNextItemOpen(true, ImGuiCond_Once);
-                
+            for (auto [layer, view_groups] : get_channels_table_tree(_channels_table)) {
                 if (ImGui::TreeNodeEx(layer.c_str(), node_flags))
                 {
                     for (auto [view, df] : view_groups) {
@@ -575,12 +272,9 @@ void ShowChannelsTable()
 
                             ImGui::TreePop();
                         }
-                        
                     }
                     ImGui::TreePop();
                 }
-                
-
             }
             ImGui::EndTabItem();
         }
@@ -589,34 +283,60 @@ void ShowChannelsTable()
 }
 
 void ShowImageInfo() {
-    if (ImGui::CollapsingHeader("sequence", ImGuiTreeNodeFlags_DefaultOpen))
-    {
-        ImGui::Text("folder: %s", file_pattern.parent_path().string().c_str());
-        ImGui::Text("filename: %s", file_pattern.filename().string().c_str());
-        ImGui::Text("framerange: %d-%d", start_frame, end_frame);
-        ImGui::Text("(%s)", _current_filename.filename().string().c_str());
+    // read OIIO header
+    //auto image_cache = OIIO::ImageCache::create(true);
+    //OIIO::ImageSpec spec;
+    //image_cache->get_imagespec(OIIO::ustring(_current_filename.string()), spec, 0, 0);
+
+    if (ImGui::CollapsingHeader("overview", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::BeginTable("overviewtable", 2))
+        {
+            ImGui::TableNextColumn();
+            ImGui::Text("resolution");ImGui::TableNextColumn();
+            ImGui::Text("%dx%d", spec.full_width, spec.full_height);
+
+            ImGui::TableNextColumn();
+            ImGui::Text("pixel aspect ratio"); ImGui::TableNextColumn();
+            ImGui::Text("%f", spec.get_float_attribute("PixelAspectRatio"));
+
+            ImGui::TableNextColumn();
+            ImGui::Text("file colorspace"); ImGui::TableNextColumn();
+            ImGui::Text("%s", spec.get_string_attribute("OIIO:colorspace").c_str());
+
+            ImGui::EndTable();
+        }
     }
 
-    if (ImGui::CollapsingHeader("overall spec", ImGuiTreeNodeFlags_DefaultOpen))
+    if (ImGui::CollapsingHeader("sequence", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        /*
-        auto in = OIIO::ImageInput::open(_current_filename.string());
-        bool exhausted{ false };
-        while (!exhausted)
+        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvailWidth());
+        if (ImGui::BeginTable("sequence table", 2))
         {
+            ImGui::TableNextColumn();
+            ImGui::Text("folder:"); ImGui::TableNextColumn();
+            ImGui::TextWrapped("%s", file_pattern.parent_path().string().c_str());
+            
+            ImGui::TableNextColumn();
+            ImGui::Text("filename:"); ImGui::TableNextColumn();
+            ImGui::Text("%s", file_pattern.filename().string().c_str());
+
+            ImGui::TableNextColumn();
+            ImGui::Text("framerange:"); ImGui::TableNextColumn();
+            ImGui::Text("%d-%d", start_frame, end_frame);
+
+            ImGui::TableNextRow();
+            ImGui::Text("current filename:"); ImGui::TableNextColumn();
+            ImGui::Text("%s", _current_filename.filename().string().c_str());
+
+            ImGui::EndTable();
         }
-        while (in->seek_subimage(0, nmipmaps))
-        {
-            ++nmipmaps;
-        }
-        const OIIO::ImageSpec& spec = in->spec(subimage, mipmap);
-        */
-        // read header
-        auto image_cache = OIIO::ImageCache::create(true);
-        OIIO::ImageSpec spec;
-        image_cache->get_imagespec(OIIO::ustring(_current_filename.string()), spec, 0, 0);
+        ImGui::PopTextWrapPos();
+    }
+
+    if (ImGui::CollapsingHeader("spec", ImGuiTreeNodeFlags_DefaultOpen))
+    {
         std::string info = spec.serialize(OIIO::ImageSpec::SerialText, OIIO::ImageSpec::SerialDetailedHuman);
-        ImGui::Text("%s", info.c_str());
+        ImGui::TextWrapped("%s", info.c_str());
     }
 }
 
@@ -682,37 +402,17 @@ void ShowTimeline() {
     ImGui::EndGroup();
 }
 
-struct RenderTarget {
-    GLuint fbo=0;
-    GLuint color_attachment=0;
-    int width=0;
-    int height=0;
-};
-
-RenderTarget make_rendertarget(int width, int height) {
-    RenderTarget rt;
-    rt.color_attachment = imdraw::make_texture_float(width, height, NULL, GL_RGBA);
-    rt.fbo = imdraw::make_fbo(rt.color_attachment);
-    rt.width = width;
-    rt.height = height;
-    return rt;
-}
-
-void delete_rendertarget(const RenderTarget & rt) {
-    glDeleteTextures(1, &rt.color_attachment);
-    glDeleteFramebuffers(1, &rt.fbo);
-}
-
 void ShowMiniViewer(bool *p_open) {
     static float gain = 1.0;
     static float gamma = 1.0;
     static bool display_checkerboard=true;
+    static glm::vec4 pipett_color;
+    static bool flip_y{ false };
 
-    if (ImGui::Begin("Viewer", p_open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar)) {
-
-        if (ImGui::BeginMenuBar())
+    if (ImGui::Begin("Viewer", p_open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoScrollbar)) {
+        
+        if (ImGui::BeginMenuBar()) // Toolbar
         {
-            // Toolbar
             ImGui::BeginGroup(); // Channel secetion group
             {
                 int combo_width = ImGui::GetTextLineHeight()*2;
@@ -723,7 +423,8 @@ void ShowMiniViewer(bool *p_open) {
                     }
                 }
                 ImGui::SetNextItemWidth(combo_width+ ImGui::GetTextLineHeight());
-                if (ImGui::BeginCombo("##layers", layers.size()>0 ? layers[current_layer].c_str() : "-", ImGuiComboFlags_NoArrowButton)) {
+                if (ImGui::BeginCombo("##layers", layers.size()>0 ? layers[current_layer].c_str() : "-", ImGuiComboFlags_NoArrowButton))
+                {
                     for (auto i = 0; i < layers.size(); i++) {
                         const bool is_selected = layers[i] == layers[current_layer];
                         if (ImGui::Selectable(layers[i].c_str(), is_selected)) {
@@ -731,8 +432,7 @@ void ShowMiniViewer(bool *p_open) {
                             on_layer_changed();
                         }
 
-                        if (is_selected)
-                            ImGui::SetItemDefaultFocus();
+                        if (is_selected) ImGui::SetItemDefaultFocus();
                     }
                     ImGui::EndCombo();
                 }
@@ -788,330 +488,518 @@ void ShowMiniViewer(bool *p_open) {
 
             ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
             ImGui::MenuItem(ICON_FA_CHESS_BOARD, "", &display_checkerboard);
+
+            ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+            ImGui::BeginGroup();
+            if (ImGui::Checkbox("flip y", &flip_y)) {
+                camera = Camera({ 0,0,flip_y ? -500 : 500 }, { 0,0,0 }, { 0,flip_y ? -1 : 1,0 }, false, camera.aspect, camera.fov);
+            }
+            ImGui::EndGroup();
         ImGui::EndMenuBar();
         }
 
         // Viewport
         {
-            static RenderTarget viewport_rt;
-            //static bool flip_y{ false };
-            //if (ImGui::Checkbox("flip", &flip_y)) {
-            //    camera = Camera({ 0,0,flip_y ? -500 : 500 }, { 0,0,0 }, { 0,flip_y ? -1 : 1,0 }, false, camera.aspect, camera.fov);
-            //}
+            static GLuint viewport_fbo;
+            static GLuint viewport_color_attachment;
+            static glm::ivec2 viewport_size;
 
-            auto item_pos = ImGui::GetCursorPos();
-            auto item_size = ImGui::GetContentRegionAvail();
-
-            // Resize Viewport FBO
-            static ImVec2 display_size;
-            if (display_size.x != item_size.x || display_size.y != item_size.y)
+            if (ImGui::BeginChild("viewport-viewer", ImGui::GetContentRegionAvail()-ImVec2(0, ImGui::GetFrameHeight()), false, ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoScrollbar))
             {
-                std::cout << "update fbo: " << item_size.x << ", " << item_size.y << "\n";
-                display_size = item_size;
-                delete_rendertarget(viewport_rt);
-                viewport_rt = make_rendertarget(item_size.x, item_size.y);
-                camera.aspect = item_size.x / item_size.y;
-            }
+                auto item_size = ImGui::GetContentRegionAvail();
+                auto item_pos = ImGui::GetCursorPos(); // if child window has no border this is: 0,0
 
-            // Control Camera
-            ImGui::InvisibleButton("camera control", item_size);
-            if (ImGui::IsItemActive()) {
-                if (ImGui::IsMouseDragging(0) && (ImGui::GetIO().KeyMods == (ImGuiKeyModFlags_Ctrl | ImGuiKeyModFlags_Alt)))
+                // Resize Viewport FBO
+                if (viewport_size.x != item_size.x || viewport_size.y != item_size.y)
                 {
-                    camera.orbit(-ImGui::GetIO().MouseDelta.x * 0.006, -ImGui::GetIO().MouseDelta.y * 0.006);
+                    std::cout << "update viewport fbo: " << item_size.x << ", " << item_size.y << "\n";
+                    viewport_size = { item_size.x, item_size.y };
+                    if (glIsFramebuffer(viewport_fbo))
+                        glDeleteFramebuffers(1, &viewport_fbo);
+                    if (glIsTexture(viewport_color_attachment))
+                        glDeleteTextures(1, &viewport_color_attachment);
+                    viewport_color_attachment = imdraw::make_texture_float(viewport_size.x, viewport_size.y, NULL, GL_RGBA);
+                    viewport_fbo = imdraw::make_fbo(viewport_color_attachment);
                 }
-                else if (ImGui::IsMouseDragging(0))// && !ImGui::GetIO().KeyMods)
-                {
-                    camera.pan(-ImGui::GetIO().MouseDelta.x / item_size.x, -ImGui::GetIO().MouseDelta.y / item_size.y);
-                }
-            }
-            if (ImGui::IsItemHovered()) {
-                if (ImGui::GetIO().MouseWheel != 0 && !ImGui::GetIO().KeyMods) {
-                    const auto target_distance = camera.get_target_distance();
-                    camera.dolly(-ImGui::GetIO().MouseWheel * target_distance * 0.2);
-                }
-            }
-            // Display viewport GUI
 
-
-            ImGui::SetCursorPos(item_pos);
-            ImGui::SetItemAllowOverlap();
-            ImGui::Image((ImTextureID)viewport_rt.color_attachment, item_size, ImVec2(0, 1), ImVec2(1, 0));
-
-            OIIO::ImageSpec spec = get_current_spec();
-            //if (spec.full_width > 0)
-
-            //{
-            //    glm::vec2 pos = glm::project(glm::vec3(spec.full_width, spec.full_height, 0), camera.getView(), camera.getProjection(), glm::vec4(0, 0, item_size.x, item_size.y));
-            //    //pos *= glm::vec2(item_size.x, item_size.y);
-            //    ImGui::SetCursorPos(ImVec2(pos.x + item_pos.x, item_size.y - pos.y + item_pos.y));
-            //    ImGui::Text("%dx%d", spec.full_width, spec.full_height);
-            //}
-
-            ImGui::SetCursorPos(item_pos);
-
-
-
-            // Make Image Correction texture
-            static RenderTarget correction_rt;
-            if (correction_rt.width != spec.full_width || correction_rt.height != spec.full_height) {
-                std::cout << "create corection fbo" << std::endl;
-                correction_rt = make_rendertarget(spec.full_width, spec.full_height);
-            }
-
-            const char * PASS_THROUGH_VERTEX_CODE = R"(
-            #version 330 core
-            layout (location = 0) in vec3 aPos;
-            void main()
-            {
-                gl_Position = vec4(aPos, 1.0);
-            }
-            )";
-
-            static GLuint correction_program;
-            if (glazy::is_file_modified("display_correction.frag")) {
-                std::string correction_fragment_code = glazy::read_text("display_correction.frag");
-                correction_program = imdraw::make_program_from_source(PASS_THROUGH_VERTEX_CODE, correction_fragment_code.c_str());
-            }
-
-            // render to correction fbo
-            BeginRenderToTexture(correction_rt.fbo, 0, 0, spec.full_width, spec.full_height);
-            {
-                glClearColor(0, 0, 0, 0);
-                glClear(GL_COLOR_BUFFER_BIT);
-
-                imdraw::push_program(correction_program);
-                /// Draw quad with fragment shader
-                imgeo::quad();
-                static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
-                static auto vao = imdraw::make_vao(correction_program, { {"aPos", {vbo, 3}} });
-
-                imdraw::set_uniforms(correction_program, {
-                    {"inputTexture", 0},
-                    {"resolution", glm::vec2(spec.full_width, spec.full_height)},
-                    {"gamma_correction", gamma},
-                    {"gain_correction", gain}
-                });
-                glBindTexture(GL_TEXTURE_2D, tex);
-                glBindVertexArray(vao);
-                glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-                glBindVertexArray(0);
-                glBindTexture(GL_TEXTURE_2D, 0);
-                imdraw::pop_program();
-            }
-            EndRenderToTexture();
-
-            // Render to Viewport FBO
-            BeginRenderToTexture(viewport_rt.fbo, 0, 0, item_size.x, item_size.y);
-            {
-                glClearColor(0.0, 0.0, 0.0, 0.0);
-                glClear(GL_COLOR_BUFFER_BIT);
-                imdraw::set_projection(camera.getProjection());
-                imdraw::set_view(camera.getView());
-
-                /// Draw scene
-                // draw background
-                {
-
-
-                    static std::filesystem::path fragment_path{ "./polka.frag" };
-                    static std::string fragment_code;
-                    static GLuint polka_program;
-                    if (glazy::is_file_modified(fragment_path)) {
-                        // reload shader
-                        fragment_code = glazy::read_text(fragment_path.string().c_str());
-                        if (glIsProgram(polka_program)) glDeleteProgram(polka_program); // recompile shader
-                        polka_program = imdraw::make_program_from_source(
-                            PASS_CAMERA_VERTEX_CODE,
-                            fragment_code.c_str()
-                        );
+                // Control Camera
+                ImGui::InvisibleButton("camera control", item_size);
+                if (ImGui::IsItemActive()) {
+                    if (ImGui::IsMouseDragging(0) && (ImGui::GetIO().KeyMods == (ImGuiKeyModFlags_Ctrl | ImGuiKeyModFlags_Alt)))
+                    {
+                        camera.orbit(-ImGui::GetIO().MouseDelta.x * 0.006, -ImGui::GetIO().MouseDelta.y * 0.006);
                     }
+                    else if (ImGui::IsMouseDragging(0))// && !ImGui::GetIO().KeyMods)
+                    {
+                        camera.pan(-ImGui::GetIO().MouseDelta.x / item_size.x, -ImGui::GetIO().MouseDelta.y / item_size.y);
+                    }
+                }
+                if (ImGui::IsItemHovered()) {
+                    if (ImGui::GetIO().MouseWheel != 0 && !ImGui::GetIO().KeyMods) {
+                        const auto target_distance = camera.get_target_distance();
+                        camera.dolly(-ImGui::GetIO().MouseWheel * target_distance * 0.2);
+                    }
+                }
+                // Display viewport GUI
+                ImGui::SetCursorPos(item_pos);
+                ImGui::SetItemAllowOverlap();
+                ImGui::Image((ImTextureID)viewport_color_attachment, item_size, ImVec2(0, 1), ImVec2(1, 0));
 
+                if (!spec.undefined())
+                {
+                    glm::vec3 screen_pos = glm::project(glm::vec3(spec.full_width, spec.full_height, 0.0), camera.getView(), camera.getProjection(), glm::vec4(0, 0, item_size.x, item_size.y));
+                    screen_pos.y = item_size.y - screen_pos.y; // invert y
+                    ImGui::SetCursorPos(ImVec2(screen_pos.x + item_pos.x, screen_pos.y + item_pos.y));
+                    if (spec.full_width == 1920 && spec.full_height == 1080)
+                    {
+                        ImGui::Text("HD");
+                    }
+                    else if (spec.full_width == 3840 && spec.full_height == 2160)
+                    {
+                        ImGui::Text("UHD 4K");
+                    }
+                    else if (spec.full_width == spec.full_height)
+                    {
+                        ImGui::Text("Square %d", spec.full_width);
+                    }
+                    else
+                    {
+                        ImGui::Text("%dx%d", spec.full_width, spec.full_height);
+                    }
+                }
+                
+                ImGui::SetCursorPos(item_pos);
+
+                // Make Image Correction texture
+                static GLuint correction_fbo;
+                static GLuint correction_color_attachment;
+                static glm::ivec2 correction_size;
+
+                if (!spec.undefined()) {
+                    if (correction_size.x != spec.full_width || correction_size.y != spec.full_height) {
+                        std::cout << "update correction fbo: " << spec.full_width << ", " << spec.full_height << "\n";
+                        correction_size = { spec.full_width, spec.full_height };
+                        if (glIsFramebuffer(correction_fbo))
+                            glDeleteFramebuffers(1, &correction_fbo);
+                        if (glIsTexture(correction_color_attachment))
+                            glDeleteTextures(1, &correction_color_attachment);
+                        correction_color_attachment = imdraw::make_texture_float(correction_size.x, correction_size.y, NULL, GL_RGBA);
+                        correction_fbo = imdraw::make_fbo(correction_color_attachment);
+                    }
+                }
+                //ImGui::PopClipRect();
+
+                const char* PASS_THROUGH_VERTEX_CODE = R"(
+                    #version 330 core
+                    layout (location = 0) in vec3 aPos;
+                    void main()
+                    {
+                        gl_Position = vec4(aPos, 1.0);
+                    }
+                    )";
+
+                static GLuint correction_program;
+                if (glazy::is_file_modified("display_correction.frag")) {
+                    if (glIsProgram(correction_program)) glDeleteProgram(correction_program);
+                    std::string correction_fragment_code = glazy::read_text("display_correction.frag");
+                    correction_program = imdraw::make_program_from_source(PASS_THROUGH_VERTEX_CODE, correction_fragment_code.c_str());
+                }
+
+                // render to correction fbo
+                BeginRenderToTexture(correction_fbo, 0, 0, spec.full_width, spec.full_height);
+                {
+                    glClearColor(0, 0, 0, 0.0);
+                    glClear(GL_COLOR_BUFFER_BIT);
+
+                    imdraw::push_program(correction_program);
                     /// Draw quad with fragment shader
+                    imgeo::quad();
                     static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
-                    static auto vao = imdraw::make_vao(polka_program, { {"aPos", {vbo, 3}} });
+                    static auto vao = imdraw::make_vao(correction_program, { {"aPos", {vbo, 3}} });
 
-                    imdraw::push_program(polka_program);
-                    imdraw::set_uniforms(polka_program, {
-                        {"projection", camera.getProjection()},
-                        {"view", camera.getView()},
-                        {"model", glm::mat4(1)},
-                        {"uResolution", glm::vec2(item_size.x, item_size.y)},
-                        {"radius", 0.01f}
+                    imdraw::set_uniforms(correction_program, {
+                        {"inputTexture", 0},
+                        {"resolution", glm::vec2(spec.full_width, spec.full_height)},
+                        {"gamma_correction", gamma},
+                        {"gain_correction", gain}
                         });
-
+                    glBindTexture(GL_TEXTURE_2D, tex);
                     glBindVertexArray(vao);
                     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
                     glBindVertexArray(0);
+                    glBindTexture(GL_TEXTURE_2D, 0);
                     imdraw::pop_program();
                 }
-                
-                // draw image
-                if (!_current_channels_df.empty()) {
+                EndRenderToTexture();
 
-                    // read header
-                    auto image_cache = OIIO::ImageCache::create(true);
-                    OIIO::ImageSpec spec;
-                    auto channel_keys = get_index_column(_current_channels_df);
-                    int SUBIMAGE = std::get<0>(channel_keys[0]); //todo: ALL SUBIMAGE MUST MATCH
-                    image_cache->get_imagespec(OIIO::ustring(_current_filename.string()), spec, SUBIMAGE, 0);
-                    int chbegin = std::get<1>(channel_keys[0]);
-                    int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
-                    int nchannels = chend - chbegin;
-                    glm::vec2 min_rect{ spec.full_x, spec.full_y };
-                    glm::vec2 max_rect{ spec.full_x + spec.full_width, spec.full_y + spec.full_height };
+                // Render to Viewport FBO
+                BeginRenderToTexture(viewport_fbo, 0, 0, item_size.x, item_size.y);
+                {
+                    glClearColor(0.0, 0.0, 0.0, 0.1);
+                    glClear(GL_COLOR_BUFFER_BIT);
+                    camera.aspect = item_size.x / item_size.y;
+                    imdraw::set_projection(camera.getProjection());
+                    imdraw::set_view(camera.getView());
 
+                    /// Draw scene
+                    // draw background
+                    {
+                        static std::filesystem::path fragment_path{ "./polka.frag" };
+                        static std::string fragment_code;
+                        static GLuint polka_program;
+                        if (glazy::is_file_modified(fragment_path)) {
+                            // reload shader
+                            fragment_code = glazy::read_text(fragment_path.string().c_str());
+                            if (glIsProgram(polka_program)) glDeleteProgram(polka_program); // recompile shader
+                            polka_program = imdraw::make_program_from_source(
+                                PASS_CAMERA_VERTEX_CODE,
+                                fragment_code.c_str()
+                            );
+                        }
 
+                        /// Draw quad with fragment shader
+                        static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
+                        static auto vao = imdraw::make_vao(polka_program, { {"aPos", {vbo, 3}} });
 
-                    // draw image background
-                    if (display_checkerboard)
-                    { // draw checkerboard background
-                        glDisable(GL_BLEND);
-                        static auto toy = ShaderToy("./try_shadertoy.frag", { 512,512 }, imgeo::rect(min_rect, max_rect));
-                        toy.autoreload();
-                        toy.draw({
-                            { "projection", camera.getProjection() },
-                            { "view", camera.getView() },
-                            { "model", glm::scale(glm::mat4(1), glm::vec3(1))}
+                        imdraw::push_program(polka_program);
+                        imdraw::set_uniforms(polka_program, {
+                            {"projection", camera.getProjection()},
+                            {"view", camera.getView()},
+                            {"model", glm::mat4(1)},
+                            {"uResolution", glm::vec2(item_size.x, item_size.y)},
+                            {"radius", 0.01f}
                             });
-                        glEnable(GL_BLEND);
+
+                        glBindVertexArray(vao);
+                        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+                        glBindVertexArray(0);
+                        imdraw::pop_program();
                     }
-                    else
-                    { // draw black background
-                        imdraw::rect(
-                            { spec.full_x,spec.full_y }, // min rect
-                            { spec.full_x + spec.full_width, spec.full_y + spec.full_height }, //max rect
+
+                    // draw image
+                    if (!_current_channels_df.empty()) {
+
+                        // read header
+                        //auto image_cache = OIIO::ImageCache::create(true);
+                        //OIIO::ImageSpec spec;
+                        auto channel_keys = get_index_column(_current_channels_df);
+                        int SUBIMAGE = std::get<0>(channel_keys[0]); //todo: ALL SUBIMAGE MUST MATCH
+                        //image_cache->get_imagespec(OIIO::ustring(_current_filename.string()), spec, SUBIMAGE, 0);
+                        int chbegin = std::get<1>(channel_keys[0]);
+                        int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
+                        int nchannels = chend - chbegin;
+                        glm::vec2 min_rect{ spec.full_x, spec.full_y };
+                        glm::vec2 max_rect{ spec.full_x + spec.full_width, spec.full_y + spec.full_height };
+
+
+
+                        // draw image background
+                        if (display_checkerboard)
+                        { // draw checkerboard background
+                            glDisable(GL_BLEND);
+                            static auto toy = ShaderToy("./try_shadertoy.frag", { 512,512 }, imgeo::rect(min_rect, max_rect));
+                            toy.autoreload();
+                            toy.draw({
+                                { "projection", camera.getProjection() },
+                                { "view", camera.getView() },
+                                { "model", glm::scale(glm::mat4(1), glm::vec3(1))}
+                                });
+                            glEnable(GL_BLEND);
+                        }
+                        else
+                        { // draw black background
+                            imdraw::rect(
+                                { spec.full_x,spec.full_y }, // min rect
+                                { spec.full_x + spec.full_width, spec.full_y + spec.full_height }, //max rect
                             { //Material
                                 .color = glm::vec3(0,0,0)
                             }
+                            );
+                        }
+
+                        // draw textured quad
+                        imdraw::quad(correction_color_attachment,
+                            min_rect,
+                            max_rect
+                        );
+
+                        /// Draw boundaries
+                        // full image boundaries
+                        imdraw::rect(
+                            min_rect,
+                            max_rect,
+                            { .mode = imdraw::LINE, .color = glm::vec3(0.5), .opacity = 0.3 }
+                        );
+
+                        // data window boundaries
+                        imdraw::rect(
+                            { spec.x,spec.y },
+                            { spec.x + spec.width, spec.y + spec.height },
+                            { .mode = imdraw::LINE, .color = glm::vec3(0.5), .opacity = 0.3 }
                         );
                     }
 
-                    // draw textured quad
-                    imdraw::quad(correction_rt.color_attachment,
-                        min_rect,
-                        max_rect
-                    );
+                    //imdraw::grid();
+                    imdraw::axis(100);
 
-                    /// Draw boundaries
-                    // full image boundaries
-                    imdraw::rect(
-                        min_rect,
-                        max_rect,
-                        { .mode = imdraw::LINE, .color=glm::vec3(0.5), .opacity=0.3}
-                    );
+                    ImVec2 mousepos = ImGui::GetMousePos() - ImGui::GetWindowPos();
+                    auto worldpos = camera.screen_to_planeXY(mousepos.x, ImGui::GetWindowSize().y-mousepos.y, { 0,0, item_size.x, item_size.y });
+                    glm::ivec2 pixelpos = { floor(worldpos.x), floor(worldpos.y) };
+                    imdraw::rect({ pixelpos.x, pixelpos.y }, { pixelpos.x + 1, pixelpos.y + 1 });
 
-                    // data window boundaries
-                    imdraw::rect(
-                        { spec.x,spec.y }, 
-                        { spec.x + spec.width, spec.y + spec.height },
-                        { .mode = imdraw::LINE, .color=glm::vec3(0.5), .opacity=0.3}
-                    );
+                    if (!spec.undefined()) {
+                        int x = pixelpos.x;
+                        int y = pixelpos.y;
+                        int w = 1;
+                        int h = 1;
+                        auto channel_keys = get_index_column(_current_channels_df);
+                        int chbegin = std::get<1>(channel_keys[0]);
+                        int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
+                        int nchannels = chend - chbegin;
+
+                        auto image_cache = OIIO::ImageCache::create(true);
+                        float* data = (float*)malloc(w * h * nchannels * sizeof(float));
+                        image_cache->get_pixels(OIIO::ustring(_current_filename.string()), std::get<0>(channel_keys[0]), 0, x, x + w, y, y + h, 0, 1, chbegin, chend, OIIO::TypeFloat, data, OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, chbegin, chend);
+
+                        for (auto i = 0; i < nchannels; i++)
+                        {
+                            pipett_color[i] = data[i];
+                        }
+                    }
                 }
-
-                //imdraw::grid();
-                imdraw::axis(100);
-
+                EndRenderToTexture();
             }
-            EndRenderToTexture();
+            ImGui::EndChild();
+
+            {
+                ImGuiWindowFlags flags =
+                    ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+                    ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollWithMouse |
+                    ImGuiWindowFlags_NoSavedSettings |
+                    ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoBackground |
+                    ImGuiWindowFlags_MenuBar;
+
+                if (ImGui::BeginChild("viewport-sidebar_down", ImGui::GetContentRegionAvail(), false, flags))
+                {
+                    if (ImGui::BeginMenuBar())
+                    {
+                        ImGui::ColorButton("pipett", { pipett_color[0], pipett_color[1], pipett_color[2], pipett_color[3] });
+                        ImGui::SameLine();
+                        ImGui::Text("%.2f %.2f %.2f %.2f", pipett_color[0], pipett_color[1], pipett_color[2], pipett_color[3]);
+                        ImGui::EndMenuBar();
+                    }
+                }
+                ImGui::EndChild();
+            }
         }
         
     }
     ImGui::End(); // End Viewer window
 }
+#pragma endregion WINDOWS
+
+
+#include "Instrumentor.h"
+
+struct SessionItem {
+    const char* Name;
+    long long Start;
+    long long End;
+    int Level;
+    uint32_t thread_id;
+};
+//using SessionItem = std::tuple<const char*, long long, long long, int, uint32_t>;
+std::vector<SessionItem> session_data;
+
+void ProfilerValueGetter(float* startTimestamp, float* endTimestamp, ImU8* level, const char** caption, const void* data, int idx)
+{
+    auto entry = reinterpret_cast<const std::vector<SessionItem>*>(data);
+    const SessionItem item = (*entry)[idx];
+    //auto [name, start, end, rec_level, thread] = record;
+    if (startTimestamp)
+    {
+        *startTimestamp = item.Start;
+    }
+    if (endTimestamp)
+    {
+        *endTimestamp = item.End;
+    }
+    if (level)
+    {
+        *level = item.Level;
+    }
+    if (caption)
+    {
+        *caption = item.Name;
+    }
+}
+class MyTimer
+{
+public:
+    MyTimer(const char* name)
+    : Name(name), 
+      StartTimepoint(std::chrono::high_resolution_clock::now())
+    {
+        Level = MyTimer::current_level;
+        MyTimer::current_level+=1;
+    }
+
+    ~MyTimer()
+    {
+        MyTimer::current_level-=1;
+        StopTimepoint = std::chrono::high_resolution_clock::now();
+
+        // write to console
+        
+
+        std::cout << Name << ": " << std::chrono::duration_cast<std::chrono::milliseconds>(StopTimepoint - StartTimepoint) << " (" << Level << ")" << "\n";
+
+        // push to current session
+        session_data.push_back({
+            Name,
+            std::chrono::time_point_cast<std::chrono::milliseconds>(StartTimepoint).time_since_epoch().count(),
+            std::chrono::time_point_cast<std::chrono::milliseconds>(StopTimepoint).time_since_epoch().count(),
+            Level,
+            (uint32_t)0
+        });
+    }
+    
+public:
+    std::chrono::time_point<std::chrono::high_resolution_clock> StartTimepoint;
+    std::chrono::time_point<std::chrono::high_resolution_clock> StopTimepoint;
+    int Level;
+    const char* Name;
+    uint32_t ThreadID;
+
+private:
+    static int current_level; // keep track of current level
+};
+int MyTimer::current_level = 0;
+
+
+#define PROFILING 0
+#if PROFILING
+#define PROFILE_SCOPE(name) MyTimer timer##__LINE__(name)
+#define PROFILE_FUNCTION() PROFILE_SCOPE(__FUNCSIG__)
+#else
+#define PROFILE_SCOPE(name)
+#define PROFILE_FUNCTION()
+#endif
 
 int main()
 {
-    Instrumentor::Get().BeginSession("Profile");
     static bool image_viewer_visible{ true };
     static bool image_info_visible{ true };
     static bool channels_table_visible{ true };
     static bool timeline_visible{ true };
+    static bool profiler_visible{ false };
     glazy::init();
+    
     while (glazy::is_running())
     {
-        PROFILE_SCOPE("frame");
-        // control playback
-        if (is_playing) {
-            current_frame++;
-            if (current_frame > end_frame) {
-                current_frame = start_frame;
-            }
-            on_frame_change();
-        }
-
-        // GUI
-        glazy::new_frame();
-        
-        // Main menubar
-        
-        if (ImGui::BeginMainMenuBar()) {
-            if (ImGui::BeginMenu("File"))
+        PROFILE_SCOPE("Frame");
+        {
+            // control playback
+            if (is_playing)
             {
-                if (ImGui::MenuItem("Open")) {
-                    auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0JPEG images\0*.jpg");
-                    open(filepath);
+                current_frame++;
+                if (current_frame > end_frame) {
+                    current_frame = start_frame;
                 }
-                ImGui::EndMenu();
+                on_frame_change();
             }
 
-            if (ImGui::BeginMenu("View")) {
-                if(ImGui::MenuItem("Fit", "f")) {
-                    fit();
-                }
-                ImGui::EndMenu();
-            }
-
-            if (ImGui::BeginMenu("Windows"))
+            // GUI
+            glazy::new_frame();
             {
-                ImGui::MenuItem("image viewer", "", &image_viewer_visible);
-                ImGui::MenuItem("image info", "", &image_info_visible);
-                ImGui::MenuItem("image channels table", "", &channels_table_visible);
-                ImGui::EndMenu();
-            }
-            ImGui::Spacing();
-            ImGui::Text("%s", file_pattern.string().c_str());
-            
-            ImGui::EndMainMenuBar();
-        }
-        
-        // Image Viewer
-        if (image_viewer_visible) {
-            PROFILE_SCOPE("image viewer");
-            ShowMiniViewer(&image_viewer_visible);
-        }
-        
-        // ChannelsTable
+                // Main menubar
+                if (ImGui::BeginMainMenuBar())
+                {
+                    if (ImGui::BeginMenu("File"))
+                    {
+                        if (ImGui::MenuItem("Open"))
+                        {
+                            auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0JPEG images\0*.jpg");
+                            open(filepath);
+                        }
+                        ImGui::EndMenu();
+                    }
 
-        if (channels_table_visible) {
-            PROFILE_SCOPE("channels table");
-            if (ImGui::Begin("ChannelsTtable", &channels_table_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
-                ShowChannelsTable();
-            }
-            ImGui::End();
-        }
-        
-        // Image info
-        ImGui::SetNextWindowSizeConstraints(ImVec2(100, -1), ImVec2(200, -1));          // Width 400-500
-        if (image_info_visible) {
-            if (ImGui::Begin("Info", &image_info_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
-                ShowImageInfo();
-            }
-            ImGui::End();
-        }
+                    if (ImGui::BeginMenu("View")) {
+                        if (ImGui::MenuItem("Fit", "f")) {
+                            fit();
+                        }
+                        ImGui::EndMenu();
+                    }
 
-        // Timeliune
-        if (timeline_visible){
-            if (ImGui::Begin("timeline")) {
-                ShowTimeline();
+                    if (ImGui::BeginMenu("Windows"))
+                    {
+                        ImGui::MenuItem("image viewer", "", &image_viewer_visible);
+                        ImGui::MenuItem("image info", "", &image_info_visible);
+                        ImGui::MenuItem("channels table", "", &channels_table_visible);
+                        ImGui::MenuItem("timeline", "", &timeline_visible);
+                        ImGui::MenuItem("iprofiler", "", &profiler_visible);
+                        ImGui::EndMenu();
+                    }
+                    ImGui::Spacing();
+                    ImGui::Text("%s", file_pattern.string().c_str());
+
+                    ImGui::EndMainMenuBar();
+                }
+
+                // Image Viewer
+                if (image_viewer_visible)
+                {
+                    PROFILE_SCOPE("Image viewer window");
+                    ShowMiniViewer(&image_viewer_visible);
+                }
+
+                // ChannelsTable
+                if (channels_table_visible)
+                {
+                    PROFILE_SCOPE("Channels table window");
+                    if (ImGui::Begin("Channels table", &channels_table_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
+                        ShowChannelsTable();
+                    }
+                    ImGui::End();
+                }
+
+                // Image info
+                ImGui::SetNextWindowSizeConstraints(ImVec2(100, -1), ImVec2(200, -1));          // Width 400-500
+                if (image_info_visible)
+                {
+                    PROFILE_SCOPE("Info window");
+                    if (ImGui::Begin("Info", &image_info_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
+                        ShowImageInfo();
+                    }
+                    ImGui::End();
+                }
+
+                // Timeliune
+                if (timeline_visible)
+                {
+                    PROFILE_SCOPE("Timeline window");
+                    if (ImGui::Begin("Timeline")) {
+                        ShowTimeline();
+                    }
+                    ImGui::End();
+                }
+
+                if (profiler_visible)
+                {
+                    PROFILE_SCOPE("Profiler window");
+
+                    ImGui::Begin("Profiler", &profiler_visible);
+                    ImGuiWidgetFlameGraph::PlotFlame("CPU graph", &ProfilerValueGetter, &session_data, session_data.size(), 0, "Main Thread", FLT_MAX, FLT_MAX, ImGui::GetContentRegionAvail());
+                    ImGui::End();
+                    session_data.clear();
+                }
             }
-            ImGui::End();
+            glazy::end_frame();
         }
-        
-        glazy::end_frame();
-        
     }
     glazy::destroy();
-    Instrumentor::Get().EndSession();
+    
+    
 
 }

@@ -489,7 +489,7 @@ namespace glazy {
 
 		// configure
 		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
 		//glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 		glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_TRUE);
 
@@ -536,6 +536,7 @@ namespace glazy {
 		ImGuiIO& io = ImGui::GetIO();
 		io.ConfigFlags |= ImGuiConfigFlags_DockingEnable; // enable docking
 		io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable; // enable multiviewports
+		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // enable keyboard navigation
 		
 		
 		ImGuiStyle& style = ImGui::GetStyle();
@@ -678,6 +679,10 @@ namespace glazy {
 		return !glfwWindowShouldClose(window);
 	}
 
+	void quit() {
+		glfwSetWindowShouldClose(window, 1);
+	}
+
 	void new_frame(bool wait_events = false) {
 		// poll events
 		if (wait_events) {
@@ -745,6 +750,9 @@ namespace glazy {
 					ImGui::MenuItem("stats", "", &stats);
 					ImGui::MenuItem("imgui demo", "", &imgui_demo);
 					ImGui::MenuItem("imgui style", "", &imgui_style);
+					if (ImGui::MenuItem("quit")) {
+						quit();
+					}
 					ImGui::EndMenu();
 				}
 
