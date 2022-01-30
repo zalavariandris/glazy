@@ -43,8 +43,7 @@ private:
     std::filesystem::path fragment_path;
     std::filesystem::file_time_type last_compile_time;
     GLuint m_program;
-    glm::ivec2 m_resolution;
-    imdraw::UniformVariant uniform;
+    //imdraw::UniformVariant uniform;
 
     std::optional<imgeo::Trimesh> geometry;
     GLuint vbo;
@@ -52,10 +51,9 @@ private:
     GLuint vao;
 
 public:
-    ShaderToy(std::filesystem::path fragment_path, glm::ivec2 resolution, std::optional<imgeo::Trimesh> geometry = std::nullopt) :
+    ShaderToy(std::filesystem::path fragment_path, std::optional<imgeo::Trimesh> geometry = std::nullopt) :
         fragment_path(fragment_path),
         m_program(0),
-        m_resolution(resolution),
         geometry(geometry)
     {
         autoreload();
@@ -74,8 +72,7 @@ public:
                 {"aPos",    {imdraw::make_vbo(geo.positions),      3}},
                 {"aUV",     {imdraw::make_vbo(geo.uvs.value()),    2}},
                 {"aNormal", {imdraw::make_vbo(geo.normals.value()),3}}
-                });
-
+            });
         }
     }
 
@@ -112,7 +109,7 @@ public:
             {"projection", uniforms.contains("projection") ? uniforms["projection"] : glm::ortho(-1,1,-1,1)},
             {"view", uniforms.contains("view") ? uniforms["view"] : glm::mat4(1)},
             {"model", uniforms.contains("model") ? uniforms["model"] : glm::mat4(1)},
-            {"uResolution", uniforms.contains("resolution") ? uniforms["resolution"] : m_resolution},
+            {"uResolution", uniforms.contains("uResolution") ? uniforms["uResolution"] : glm::ivec2(1,1)},
             {"use_geometry", geometry.has_value()}
             });
         //glBindTexture(GL_TEXTURE_2D, tex);

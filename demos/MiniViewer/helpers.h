@@ -120,9 +120,9 @@ namespace ImGui {
 GLuint make_texture_from_file(std::filesystem::path filename, std::vector<ChannelKey> channel_keys = {})
 {
     /// Validate parameters
-    if (channel_keys.empty()) return 0;
     if (!std::filesystem::exists(filename)) return 0;
-
+    if (channel_keys.empty()) return 0;
+    
     /// Read header
     auto image_cache = OIIO::ImageCache::create(true);
     OIIO::ImageSpec spec;

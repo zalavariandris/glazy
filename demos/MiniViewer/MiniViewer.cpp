@@ -42,49 +42,55 @@
 #pragma endregion HELPERS
 
 // GUI State variables
-std::filesystem::path file_pattern{ "" };
-int start_frame{ 0 };
-int end_frame{ 10 };
+struct State {
+    std::filesystem::path file_pattern{ "" };
+    int start_frame{ 0 };
+    int end_frame{ 10 };
 
-int current_frame{ 0 };
-bool is_playing{ false };
+    int current_frame{ 0 };
+    bool is_playing{ false };
 
-const double DPI = 300;
-Camera camera({ 0,0,5000 }, { 0,0,0 }, { 0,1,0 });
+    double DPI = 300;
+    Camera camera = Camera({ 0,0,5000 }, { 0,0,0 }, { 0,1,0 });
+
+    // computed
+    std::filesystem::path _current_filename; // depends on file_pattern and frame
+    ChannelsTable _channels_table; // depends on current filename
+    std::vector<std::string> layers{}; // list of currently available layer names
+    int current_layer{ 0 }; // currently selected layer index
+    std::vector<std::string> views{}; // list of currently available view names
+    int current_view{ 0 }; // currently selected view index
+    ChannelsTable _current_channels_df;
+    std::vector<std::string> channels{}; // list of currently available channel names
+    OIIO::ImageSpec spec;
+    GLuint tex{ 0 };
+};
+State state = State();
 
 #pragma region GETTERS
-std::filesystem::path _current_filename; // depends on file_pattern and frame
-void update_current_filename() {
-    _current_filename = sequence_item(file_pattern, current_frame);
+
+auto get_current_filename(const std::filesystem::path& file_pattern, int current_frame) {
+    return sequence_item(file_pattern, current_frame);
 }
 
-ChannelsTable _channels_table; // depends on current filename
-void update_channels_table(){
-    _channels_table = get_channelstable(_current_filename);
-};
-
-/// layers available
-std::vector<std::string> layers{}; // list of currently available layer names
-void update_layers() {
-    layers.clear();
+auto get_layers(const ChannelsTable& channels_table)
+{
+    std::vector<std::string> layers;
     std::unordered_set<std::string> visited;
-    for (const auto& [idx, record] : _channels_table) {
+    for (const auto& [idx, record] : channels_table) {
         const auto& [layer, view, channel] = record;
         if (!visited.contains(layer)) {
             layers.push_back(layer);
             visited.insert(layer);
         }
     }
-};
-int current_layer{ 0 }; // currently selected layer index
+    return layers;
+}
 
-/// list views available at currently selected layer
-std::vector<std::string> views{}; // list of currently available view names
-void update_views()
-{
-    views.clear();
+auto get_views(const ChannelsTable& channels_table, const std::vector<std::string>& layers, int current_layer) {
+    std::vector<std::string> views;
     std::unordered_set<std::string> visited;
-    for (const auto& [idx, record] : _channels_table) {
+    for (const auto& [idx, record] : channels_table) {
         const auto& [layer, view, channel] = record;
         if (!visited.contains(view))
         {
@@ -94,77 +100,74 @@ void update_views()
             }
         }
     }
-};
-
-static int current_view{ 0 }; // currently selected view index
-ChannelsTable _current_channels_df;
-void update_current_channels_df()
-{
-    _current_channels_df = ChannelsTable(); // clear current channels table
-    for (const auto& [idx, record] : _channels_table) {
-        const auto& [layer, view, channel] = record;
-        if (layer == layers[current_layer] && view==views[current_view])
-        {
-            _current_channels_df[idx] = record;
-        }
-    }
-};
-
-std::vector<std::string> channels{}; // list of currently available channel names
-void update_channels() {
-    channels.clear();
-    for (auto [index, record] : _current_channels_df) {
-        auto [layer, view, channel_name] = record;
-        channels.push_back(channel_name);
-    }
-};
-
-OIIO::ImageSpec spec;
-void update_spec()
-{
-    auto channel_keys = get_index_column(_current_channels_df);
-    if (channel_keys.empty()) return;
-
-    auto image_cache = OIIO::ImageCache::create(true);
-    auto current_subimage = std::get<0>(channel_keys[0]);
-    image_cache->get_imagespec(OIIO::ustring(_current_filename.string()), spec, current_subimage, 0);
+    return views;
 }
 
-GLuint tex{ 0 };
-void update_texture() {
-    if (glIsTexture(tex)) glDeleteTextures(1, &tex);
-    tex = make_texture_from_file(_current_filename, get_index_column(_current_channels_df));
-};
+ChannelsTable get_current_chanels_df(const ChannelsTable& channels_table, const std::vector<std::string>& layers, int current_layer, const std::vector<std::string>& views, int current_view) {
+    ChannelsTable current_channels_df; // clear current channels table
+    for (const auto& [idx, record] : channels_table) {
+        const auto& [layer, view, channel] = record;
+        if (layer == layers[current_layer] && view == views[current_view])
+        {
+            current_channels_df[idx] = record;
+        }
+    }
+    return current_channels_df;
+}
+
+std::vector<std::string> get_channels(const ChannelsTable& current_channels_df)
+{
+    return get_channels_column(current_channels_df);
+}
+
+OIIO::ImageSpec get_spec(const std::filesystem::path& current_filename, const ChannelsTable& current_channels_df)
+{
+    if (!std::filesystem::exists(current_filename)) return OIIO::ImageSpec();
+    if (current_channels_df.empty()) return OIIO::ImageSpec();
+
+    OIIO::ImageSpec spec;
+    auto channel_keys = get_index_column(current_channels_df);
+    auto image_cache = OIIO::ImageCache::create(true);
+    auto current_subimage = std::get<0>(channel_keys[0]);
+    image_cache->get_imagespec(OIIO::ustring(current_filename.string()), spec, current_subimage, 0);
+    return spec;
+}
+
+GLuint get_texture(const std::filesystem::path& current_filename, const ChannelsTable& current_channels_df){
+    return make_texture_from_file(current_filename, get_index_column(current_channels_df));
+}
 
 #pragma endregion GETTERS
 
 #pragma region ACTIONS
-void open(std::filesystem::path filepath, bool sequence=false)
+void open(const std::filesystem::path& filepath, bool sequence=false)
 {
     if (!filepath.empty())
     {
         auto [pattern, start, end, selected_frame] = scan_for_sequence(filepath);
-        file_pattern = pattern;
-        start_frame = start;
-        end_frame = end;
-        current_frame = selected_frame;
+        state.file_pattern = pattern;
+        state.start_frame = start;
+        state.end_frame = end;
+        state.current_frame = selected_frame;
         
-
         // keep frame within framerange
-        if (current_frame < start_frame) current_frame = start_frame;
-        if (current_frame > end_frame) current_frame = end_frame;
+        if (state.current_frame < state.start_frame) state.current_frame = state.start_frame;
+        if (state.current_frame > state.end_frame) state.current_frame = state.end_frame;
 
-        // update filename
-        update_current_filename();
-        current_layer = 0; // reset to first layer
-        current_view = 0; // reset current view
-        update_channels_table();
-        update_layers();
-        update_views();
-        update_current_channels_df();
-        update_spec();
-        update_channels();
-        update_texture();
+        // reset selection
+        state.current_layer = 0; // reset to first layer
+        state.current_view = 0; // reset current view
+
+        // update computed state
+        state._current_filename = get_current_filename(state.file_pattern, state.current_frame);
+        state._channels_table = get_channelstable(state._current_filename);
+        state.layers = get_layers(state._channels_table);
+        state.views = get_views(state._channels_table, state.layers, state.current_layer);
+        state._current_channels_df = get_current_chanels_df(state._channels_table, state.layers, state.current_layer, state.views, state.current_view);
+        state.spec = get_spec(state._current_filename, state._current_channels_df);
+        state.channels = get_channels(state._current_channels_df);
+        if (glIsTexture(state.tex)) glDeleteTextures(1, &state.tex);
+        state.tex = get_texture(state._current_filename, state._current_channels_df);
     }
 };
 
@@ -175,38 +178,41 @@ void fit() {
     //auto channel_keys = get_index_column(_current_channels_df);
     //image_cache->get_imagespec(OIIO::ustring(_current_filename.string()), spec, std::get<0>(channel_keys[0]), 0);
 
-    camera.eye = { spec.full_width / 2.0 / DPI, spec.full_width / 2.0 / DPI, camera.eye.z };
-    camera.target = { spec.full_width / 2.0 / DPI, spec.full_width / 2.0 / DPI, 0.0 };
+    state.camera.eye = { state.spec.full_width / 2.0 / state.DPI, state.spec.full_width / 2.0 / state.DPI, state.camera.eye.z };
+    state.camera.target = { state.spec.full_width / 2.0 / state.DPI, state.spec.full_width / 2.0 / state.DPI, 0.0 };
 }
 #pragma endregion ACTIONS
 
 #pragma region EVENT HANDLERS
 void on_frame_change() {
-    update_current_filename();
-    update_channels_table();
-    update_current_channels_df();
-    update_spec();
-    update_layers();
-    update_views();
-    update_channels();
-    update_texture();
+    state._current_filename = get_current_filename(state.file_pattern, state.current_frame);
+    state._channels_table = get_channelstable(state._current_filename);
+    state.layers = get_layers(state._channels_table);
+    state.views = get_views(state._channels_table, state.layers, state.current_layer);
+    state._current_channels_df = get_current_chanels_df(state._channels_table, state.layers, state.current_layer, state.views, state.current_view);
+    state.spec = get_spec(state._current_filename, state._current_channels_df);
+    state.channels = get_channels(state._current_channels_df);
+    if (glIsTexture(state.tex)) glDeleteTextures(1, &state.tex);
+    state.tex = get_texture(state._current_filename, state._current_channels_df);
 };
 
-void on_layer_changed()
+void on_layer_change()
 {
-    update_views();
-    current_view = 0;
-    update_current_channels_df();
-    update_spec();
-    update_channels();
-    update_texture();
+    state.views = get_views(state._channels_table, state.layers, state.current_layer);
+    state.current_view = 0;
+    state._current_channels_df = get_current_chanels_df(state._channels_table, state.layers, state.current_layer, state.views, state.current_view);
+    state.spec = get_spec(state._current_filename, state._current_channels_df);
+    state.channels = get_channels(state._current_channels_df);
+    if (glIsTexture(state.tex)) glDeleteTextures(1, &state.tex);
+    state.tex = get_texture(state._current_filename, state._current_channels_df);
 };
 
 void on_view_change() {
-    update_current_channels_df();
-    update_spec();
-    update_channels();
-    update_texture();
+    state._current_channels_df = get_current_chanels_df(state._channels_table, state.layers, state.current_layer, state.views, state.current_view);
+    state.spec = get_spec(state._current_filename, state._current_channels_df);
+    state.channels = get_channels(state._current_channels_df);
+    if (glIsTexture(state.tex)) glDeleteTextures(1, &state.tex);
+    state.tex = get_texture(state._current_filename, state._current_channels_df);
 };
 #pragma endregion EVENT HANDLERS
 
@@ -225,7 +231,7 @@ void ShowChannelsTable()
                 ImGui::TableSetupColumn("view");
                 ImGui::TableSetupColumn("channel");
                 ImGui::TableHeadersRow();
-                for (const auto& [subimage_chan, layer_view_channel] : _channels_table) {
+                for (const auto& [subimage_chan, layer_view_channel] : state._channels_table) {
                     auto [subimage, chan] = subimage_chan;
                     auto [layer, view, channel] = layer_view_channel;
 
@@ -250,7 +256,7 @@ void ShowChannelsTable()
         if (ImGui::BeginTabItem("layers"))
         {
             ImGuiTreeNodeFlags node_flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_DefaultOpen;
-            for (auto [layer, view_groups] : get_channels_table_tree(_channels_table)) {
+            for (auto [layer, view_groups] : get_channels_table_tree(state._channels_table)) {
                 if (ImGui::TreeNodeEx(layer.c_str(), node_flags))
                 {
                     for (auto [view, df] : view_groups) {
@@ -293,15 +299,15 @@ void ShowImageInfo() {
         {
             ImGui::TableNextColumn();
             ImGui::Text("resolution");ImGui::TableNextColumn();
-            ImGui::Text("%dx%d", spec.full_width, spec.full_height);
+            ImGui::Text("%dx%d", state.spec.full_width, state.spec.full_height);
 
             ImGui::TableNextColumn();
             ImGui::Text("pixel aspect ratio"); ImGui::TableNextColumn();
-            ImGui::Text("%f", spec.get_float_attribute("PixelAspectRatio"));
+            ImGui::Text("%f", state.spec.get_float_attribute("PixelAspectRatio"));
 
             ImGui::TableNextColumn();
             ImGui::Text("file colorspace"); ImGui::TableNextColumn();
-            ImGui::Text("%s", spec.get_string_attribute("OIIO:colorspace").c_str());
+            ImGui::Text("%s", state.spec.get_string_attribute("OIIO:colorspace").c_str());
 
             ImGui::EndTable();
         }
@@ -314,19 +320,19 @@ void ShowImageInfo() {
         {
             ImGui::TableNextColumn();
             ImGui::Text("folder:"); ImGui::TableNextColumn();
-            ImGui::TextWrapped("%s", file_pattern.parent_path().string().c_str());
+            ImGui::TextWrapped("%s", state.file_pattern.parent_path().string().c_str());
             
             ImGui::TableNextColumn();
             ImGui::Text("filename:"); ImGui::TableNextColumn();
-            ImGui::Text("%s", file_pattern.filename().string().c_str());
+            ImGui::Text("%s", state.file_pattern.filename().string().c_str());
 
             ImGui::TableNextColumn();
             ImGui::Text("framerange:"); ImGui::TableNextColumn();
-            ImGui::Text("%d-%d", start_frame, end_frame);
+            ImGui::Text("%d-%d", state.start_frame, state.end_frame);
 
             ImGui::TableNextRow();
             ImGui::Text("current filename:"); ImGui::TableNextColumn();
-            ImGui::Text("%s", _current_filename.filename().string().c_str());
+            ImGui::Text("%s", state._current_filename.filename().string().c_str());
 
             ImGui::EndTable();
         }
@@ -335,7 +341,7 @@ void ShowImageInfo() {
 
     if (ImGui::CollapsingHeader("spec", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        std::string info = spec.serialize(OIIO::ImageSpec::SerialText, OIIO::ImageSpec::SerialDetailedHuman);
+        std::string info = state.spec.serialize(OIIO::ImageSpec::SerialText, OIIO::ImageSpec::SerialDetailedHuman);
         ImGui::TextWrapped("%s", info.c_str());
     }
 }
@@ -346,33 +352,33 @@ void ShowTimeline() {
     {
         ImGui::SetNextItemWidth(ImGui::GetTextLineHeight());
         if (ImGui::Button(ICON_FA_FAST_BACKWARD "##first frame")) {
-            current_frame = start_frame;
+            state.current_frame = state.start_frame;
             on_frame_change();
         }
 
         ImGui::SameLine();
         ImGui::SetNextItemWidth(ImGui::GetTextLineHeight());
         if (ImGui::Button(ICON_FA_STEP_BACKWARD "##step backward")) {
-            current_frame -= 1;
-            if (current_frame < start_frame) current_frame = end_frame;
+            state.current_frame -= 1;
+            if (state.current_frame < state.start_frame) state.current_frame = state.end_frame;
             on_frame_change();
         }
         ImGui::SameLine();
         ImGui::SetNextItemWidth(ImGui::GetTextLineHeight());
-        if (ImGui::Button(is_playing ? ICON_FA_PAUSE : ICON_FA_PLAY "##play")) {
-            is_playing = !is_playing;
+        if (ImGui::Button(state.is_playing ? ICON_FA_PAUSE : ICON_FA_PLAY "##play")) {
+            state.is_playing = !state.is_playing;
         }
         ImGui::SameLine();
         ImGui::SetNextItemWidth(ImGui::GetTextLineHeight());
         if (ImGui::Button(ICON_FA_STEP_FORWARD "##step forward")) {
-            current_frame += 1;
-            if (current_frame > end_frame) current_frame = start_frame;
+            state.current_frame += 1;
+            if (state.current_frame > state.end_frame) state.current_frame = state.start_frame;
             on_frame_change();
         }
         ImGui::SameLine();
         ImGui::SetNextItemWidth(ImGui::GetTextLineHeight());
         if (ImGui::Button(ICON_FA_FAST_FORWARD "##last frame")) {
-            current_frame = end_frame;
+            state.current_frame = state.end_frame;
             on_frame_change();
         }
     }
@@ -386,17 +392,17 @@ void ShowTimeline() {
     {
         ImGui::BeginDisabled();
         ImGui::SetNextItemWidth(ImGui::GetTextLineHeight() * 2);
-        ImGui::InputInt("##start frame", &start_frame, 0, 0);
+        ImGui::InputInt("##start frame", &state.start_frame, 0, 0);
         ImGui::EndDisabled();
         ImGui::SameLine();
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvailWidth() - ImGui::GetTextLineHeight() * 2 - ImGui::GetStyle().ItemSpacing.x);
-        if (ImGui::SliderInt("##frame", &current_frame, start_frame, end_frame)) {
+        if (ImGui::SliderInt("##frame", &state.current_frame, state.start_frame, state.end_frame)) {
             on_frame_change();
         }
         ImGui::SameLine();
         ImGui::BeginDisabled();
         ImGui::SetNextItemWidth(ImGui::GetTextLineHeight() * 2);
-        ImGui::InputInt("##end frame", &end_frame, 0, 0);
+        ImGui::InputInt("##end frame", &state.end_frame, 0, 0);
         ImGui::EndDisabled();
     }
     ImGui::EndGroup();
@@ -416,20 +422,20 @@ void ShowMiniViewer(bool *p_open) {
             ImGui::BeginGroup(); // Channel secetion group
             {
                 int combo_width = ImGui::GetTextLineHeight()*2;
-                for (const auto& layer : layers) {
+                for (const auto& layer : state.layers) {
                     auto w = ImGui::CalcTextSize(layer.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
                     if (w > combo_width) {
                         combo_width = w;
                     }
                 }
                 ImGui::SetNextItemWidth(combo_width+ ImGui::GetTextLineHeight());
-                if (ImGui::BeginCombo("##layers", layers.size()>0 ? layers[current_layer].c_str() : "-", ImGuiComboFlags_NoArrowButton))
+                if (ImGui::BeginCombo("##layers", state.layers.size()>0 ? state.layers[state.current_layer].c_str() : "-", ImGuiComboFlags_NoArrowButton))
                 {
-                    for (auto i = 0; i < layers.size(); i++) {
-                        const bool is_selected = layers[i] == layers[current_layer];
-                        if (ImGui::Selectable(layers[i].c_str(), is_selected)) {
-                            current_layer = i;
-                            on_layer_changed();
+                    for (auto i = 0; i < state.layers.size(); i++) {
+                        const bool is_selected = state.layers[i] == state.layers[state.current_layer];
+                        if (ImGui::Selectable(state.layers[i].c_str(), is_selected)) {
+                            state.current_layer = i;
+                            on_layer_change();
                         }
 
                         if (is_selected) ImGui::SetItemDefaultFocus();
@@ -439,32 +445,32 @@ void ShowMiniViewer(bool *p_open) {
 
                 //ImGui::SameLine();
                 combo_width = ImGui::GetTextLineHeight() * 2;
-                for (const auto& name : views) {
+                for (const auto& name : state.views) {
                     auto w = ImGui::CalcTextSize(name.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
                     if (w > combo_width) {
                         combo_width = w;
                     }
                 }
                 ImGui::SetNextItemWidth(combo_width + ImGui::GetTextLineHeight());
-                if (views.size() == 1)
+                if (state.views.size() == 1)
                 {
-                    if (!views[current_view].empty())
+                    if (!state.views[state.current_view].empty())
                     {
-                        ImGui::Text(views[current_view].c_str());
+                        ImGui::Text(state.views[state.current_view].c_str());
                     }
                     else {
                     }
                 }
-                else if (views.size() > 1)
+                else if (state.views.size() > 1)
                 {
-                    if (ImGui::Combo("##views", &current_view, views)) {
+                    if (ImGui::Combo("##views", &state.current_view, state.views)) {
                         on_view_change();
                     }
                 }
 
                 //ImGui::SameLine();
 
-                for (auto chan : channels) {
+                for (auto chan : state.channels) {
                     ImGui::MenuItem(chan.c_str());
                 };
             }
@@ -492,7 +498,7 @@ void ShowMiniViewer(bool *p_open) {
             ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
             ImGui::BeginGroup();
             if (ImGui::Checkbox("flip y", &flip_y)) {
-                camera = Camera({ 0,0,flip_y ? -500 : 500 }, { 0,0,0 }, { 0,flip_y ? -1 : 1,0 }, false, camera.aspect, camera.fov);
+                state.camera = Camera({ 0,0,flip_y ? -500 : 500 }, { 0,0,0 }, { 0,flip_y ? -1 : 1,0 }, false, state.camera.aspect, state.camera.fov);
             }
             ImGui::EndGroup();
         ImGui::EndMenuBar();
@@ -527,17 +533,17 @@ void ShowMiniViewer(bool *p_open) {
                 if (ImGui::IsItemActive()) {
                     if (ImGui::IsMouseDragging(0) && (ImGui::GetIO().KeyMods == (ImGuiKeyModFlags_Ctrl | ImGuiKeyModFlags_Alt)))
                     {
-                        camera.orbit(-ImGui::GetIO().MouseDelta.x * 0.006, -ImGui::GetIO().MouseDelta.y * 0.006);
+                        state.camera.orbit(-ImGui::GetIO().MouseDelta.x * 0.006, -ImGui::GetIO().MouseDelta.y * 0.006);
                     }
                     else if (ImGui::IsMouseDragging(0))// && !ImGui::GetIO().KeyMods)
                     {
-                        camera.pan(-ImGui::GetIO().MouseDelta.x / item_size.x, -ImGui::GetIO().MouseDelta.y / item_size.y);
+                        state.camera.pan(-ImGui::GetIO().MouseDelta.x / item_size.x, -ImGui::GetIO().MouseDelta.y / item_size.y);
                     }
                 }
                 if (ImGui::IsItemHovered()) {
                     if (ImGui::GetIO().MouseWheel != 0 && !ImGui::GetIO().KeyMods) {
-                        const auto target_distance = camera.get_target_distance();
-                        camera.dolly(-ImGui::GetIO().MouseWheel * target_distance * 0.2);
+                        const auto target_distance = state.camera.get_target_distance();
+                        state.camera.dolly(-ImGui::GetIO().MouseWheel * target_distance * 0.2);
                     }
                 }
                 // Display viewport GUI
@@ -545,26 +551,26 @@ void ShowMiniViewer(bool *p_open) {
                 ImGui::SetItemAllowOverlap();
                 ImGui::Image((ImTextureID)viewport_color_attachment, item_size, ImVec2(0, 1), ImVec2(1, 0));
 
-                if (!spec.undefined())
+                if (!state.spec.undefined())
                 {
-                    glm::vec3 screen_pos = glm::project(glm::vec3(spec.full_width, spec.full_height, 0.0), camera.getView(), camera.getProjection(), glm::vec4(0, 0, item_size.x, item_size.y));
+                    glm::vec3 screen_pos = glm::project(glm::vec3(state.spec.full_width, state.spec.full_height, 0.0), state.camera.getView(), state.camera.getProjection(), glm::vec4(0, 0, item_size.x, item_size.y));
                     screen_pos.y = item_size.y - screen_pos.y; // invert y
                     ImGui::SetCursorPos(ImVec2(screen_pos.x + item_pos.x, screen_pos.y + item_pos.y));
-                    if (spec.full_width == 1920 && spec.full_height == 1080)
+                    if (state.spec.full_width == 1920 && state.spec.full_height == 1080)
                     {
                         ImGui::Text("HD");
                     }
-                    else if (spec.full_width == 3840 && spec.full_height == 2160)
+                    else if (state.spec.full_width == 3840 && state.spec.full_height == 2160)
                     {
                         ImGui::Text("UHD 4K");
                     }
-                    else if (spec.full_width == spec.full_height)
+                    else if (state.spec.full_width == state.spec.full_height)
                     {
-                        ImGui::Text("Square %d", spec.full_width);
+                        ImGui::Text("Square %d", state.spec.full_width);
                     }
                     else
                     {
-                        ImGui::Text("%dx%d", spec.full_width, spec.full_height);
+                        ImGui::Text("%dx%d", state.spec.full_width, state.spec.full_height);
                     }
                 }
                 
@@ -575,10 +581,10 @@ void ShowMiniViewer(bool *p_open) {
                 static GLuint correction_color_attachment;
                 static glm::ivec2 correction_size;
 
-                if (!spec.undefined()) {
-                    if (correction_size.x != spec.full_width || correction_size.y != spec.full_height) {
-                        std::cout << "update correction fbo: " << spec.full_width << ", " << spec.full_height << "\n";
-                        correction_size = { spec.full_width, spec.full_height };
+                if (!state.spec.undefined()) {
+                    if (correction_size.x != state.spec.full_width || correction_size.y != state.spec.full_height) {
+                        std::cout << "update correction fbo: " << state.spec.full_width << ", " << state.spec.full_height << "\n";
+                        correction_size = { state.spec.full_width, state.spec.full_height };
                         if (glIsFramebuffer(correction_fbo))
                             glDeleteFramebuffers(1, &correction_fbo);
                         if (glIsTexture(correction_color_attachment))
@@ -587,7 +593,6 @@ void ShowMiniViewer(bool *p_open) {
                         correction_fbo = imdraw::make_fbo(correction_color_attachment);
                     }
                 }
-                //ImGui::PopClipRect();
 
                 const char* PASS_THROUGH_VERTEX_CODE = R"(
                     #version 330 core
@@ -606,7 +611,7 @@ void ShowMiniViewer(bool *p_open) {
                 }
 
                 // render to correction fbo
-                BeginRenderToTexture(correction_fbo, 0, 0, spec.full_width, spec.full_height);
+                BeginRenderToTexture(correction_fbo, 0, 0, state.spec.full_width, state.spec.full_height);
                 {
                     glClearColor(0, 0, 0, 0.0);
                     glClear(GL_COLOR_BUFFER_BIT);
@@ -619,11 +624,11 @@ void ShowMiniViewer(bool *p_open) {
 
                     imdraw::set_uniforms(correction_program, {
                         {"inputTexture", 0},
-                        {"resolution", glm::vec2(spec.full_width, spec.full_height)},
+                        {"resolution", glm::vec2(state.spec.full_width, state.spec.full_height)},
                         {"gamma_correction", gamma},
                         {"gain_correction", gain}
                         });
-                    glBindTexture(GL_TEXTURE_2D, tex);
+                    glBindTexture(GL_TEXTURE_2D, state.tex);
                     glBindVertexArray(vao);
                     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
                     glBindVertexArray(0);
@@ -637,9 +642,9 @@ void ShowMiniViewer(bool *p_open) {
                 {
                     glClearColor(0.0, 0.0, 0.0, 0.1);
                     glClear(GL_COLOR_BUFFER_BIT);
-                    camera.aspect = item_size.x / item_size.y;
-                    imdraw::set_projection(camera.getProjection());
-                    imdraw::set_view(camera.getView());
+                    state.camera.aspect = item_size.x / item_size.y;
+                    imdraw::set_projection(state.camera.getProjection());
+                    imdraw::set_view(state.camera.getView());
 
                     /// Draw scene
                     // draw background
@@ -663,8 +668,8 @@ void ShowMiniViewer(bool *p_open) {
 
                         imdraw::push_program(polka_program);
                         imdraw::set_uniforms(polka_program, {
-                            {"projection", camera.getProjection()},
-                            {"view", camera.getView()},
+                            {"projection", state.camera.getProjection()},
+                            {"view", state.camera.getView()},
                             {"model", glm::mat4(1)},
                             {"uResolution", glm::vec2(item_size.x, item_size.y)},
                             {"radius", 0.01f}
@@ -677,40 +682,48 @@ void ShowMiniViewer(bool *p_open) {
                     }
 
                     // draw image
-                    if (!_current_channels_df.empty()) {
+                    if (!state._current_channels_df.empty()) {
 
                         // read header
                         //auto image_cache = OIIO::ImageCache::create(true);
                         //OIIO::ImageSpec spec;
-                        auto channel_keys = get_index_column(_current_channels_df);
+                        auto channel_keys = get_index_column(state._current_channels_df);
                         int SUBIMAGE = std::get<0>(channel_keys[0]); //todo: ALL SUBIMAGE MUST MATCH
                         //image_cache->get_imagespec(OIIO::ustring(_current_filename.string()), spec, SUBIMAGE, 0);
                         int chbegin = std::get<1>(channel_keys[0]);
                         int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
                         int nchannels = chend - chbegin;
-                        glm::vec2 min_rect{ spec.full_x, spec.full_y };
-                        glm::vec2 max_rect{ spec.full_x + spec.full_width, spec.full_y + spec.full_height };
+                        glm::vec2 min_rect{ state.spec.full_x, state.spec.full_y };
+                        glm::vec2 max_rect{ state.spec.full_x + state.spec.full_width, state.spec.full_y + state.spec.full_height };
 
 
 
-                        // draw image background
+                        // draw checkerboard or black background
                         if (display_checkerboard)
                         { // draw checkerboard background
                             glDisable(GL_BLEND);
-                            static auto toy = ShaderToy("./try_shadertoy.frag", { 512,512 }, imgeo::rect(min_rect, max_rect));
+                            static auto toy = ShaderToy("./try_shadertoy.frag", imgeo::rect({ 0,0 }, {1,1}));
                             toy.autoreload();
+
+                            glm::mat4 M{1};
+                            auto size = max_rect - min_rect;
+
+                            M = glm::translate(M, { min_rect.x, min_rect.y, 0 });
+                            
+                           
                             toy.draw({
-                                { "projection", camera.getProjection() },
-                                { "view", camera.getView() },
-                                { "model", glm::scale(glm::mat4(1), glm::vec3(1))}
-                                });
+                                { "uResolution", glm::ivec2(state.spec.full_width, state.spec.full_height) },
+                                { "projection", state.camera.getProjection() },
+                                { "view", state.camera.getView() },
+                                { "model", M}
+                            });
                             glEnable(GL_BLEND);
                         }
                         else
                         { // draw black background
                             imdraw::rect(
-                                { spec.full_x,spec.full_y }, // min rect
-                                { spec.full_x + spec.full_width, spec.full_y + spec.full_height }, //max rect
+                                { state.spec.full_x, state.spec.full_y }, // min rect
+                                { state.spec.full_x + state.spec.full_width, state.spec.full_y + state.spec.full_height }, //max rect
                             { //Material
                                 .color = glm::vec3(0,0,0)
                             }
@@ -718,9 +731,12 @@ void ShowMiniViewer(bool *p_open) {
                         }
 
                         // draw textured quad
+                        static float image_opacity;
+                        ImGui::SliderFloat("image opacity", &image_opacity, 0.0f, 1.0f);
                         imdraw::quad(correction_color_attachment,
                             min_rect,
-                            max_rect
+                            max_rect,
+                            glm::vec2(1,1), glm::vec2(0,0), image_opacity
                         );
 
                         /// Draw boundaries
@@ -733,8 +749,8 @@ void ShowMiniViewer(bool *p_open) {
 
                         // data window boundaries
                         imdraw::rect(
-                            { spec.x,spec.y },
-                            { spec.x + spec.width, spec.y + spec.height },
+                            { state.spec.x, state.spec.y },
+                            { state.spec.x + state.spec.width, state.spec.y + state.spec.height },
                             { .mode = imdraw::LINE, .color = glm::vec3(0.5), .opacity = 0.3 }
                         );
                     }
@@ -743,23 +759,23 @@ void ShowMiniViewer(bool *p_open) {
                     imdraw::axis(100);
 
                     ImVec2 mousepos = ImGui::GetMousePos() - ImGui::GetWindowPos();
-                    auto worldpos = camera.screen_to_planeXY(mousepos.x, ImGui::GetWindowSize().y-mousepos.y, { 0,0, item_size.x, item_size.y });
+                    auto worldpos = state.camera.screen_to_planeXY(mousepos.x, ImGui::GetWindowSize().y-mousepos.y, { 0,0, item_size.x, item_size.y });
                     glm::ivec2 pixelpos = { floor(worldpos.x), floor(worldpos.y) };
                     imdraw::rect({ pixelpos.x, pixelpos.y }, { pixelpos.x + 1, pixelpos.y + 1 });
 
-                    if (!spec.undefined()) {
+                    if (!state.spec.undefined()) {
                         int x = pixelpos.x;
                         int y = pixelpos.y;
                         int w = 1;
                         int h = 1;
-                        auto channel_keys = get_index_column(_current_channels_df);
+                        auto channel_keys = get_index_column(state._current_channels_df);
                         int chbegin = std::get<1>(channel_keys[0]);
                         int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
                         int nchannels = chend - chbegin;
 
                         auto image_cache = OIIO::ImageCache::create(true);
                         float* data = (float*)malloc(w * h * nchannels * sizeof(float));
-                        image_cache->get_pixels(OIIO::ustring(_current_filename.string()), std::get<0>(channel_keys[0]), 0, x, x + w, y, y + h, 0, 1, chbegin, chend, OIIO::TypeFloat, data, OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, chbegin, chend);
+                        image_cache->get_pixels(OIIO::ustring(state._current_filename.string()), std::get<0>(channel_keys[0]), 0, x, x + w, y, y + h, 0, 1, chbegin, chend, OIIO::TypeFloat, data, OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, chbegin, chend);
 
                         for (auto i = 0; i < nchannels; i++)
                         {
@@ -900,11 +916,11 @@ int main()
         PROFILE_SCOPE("Frame");
         {
             // control playback
-            if (is_playing)
+            if (state.is_playing)
             {
-                current_frame++;
-                if (current_frame > end_frame) {
-                    current_frame = start_frame;
+                state.current_frame++;
+                if (state.current_frame > state.end_frame) {
+                    state.current_frame = state.start_frame;
                 }
                 on_frame_change();
             }
@@ -942,7 +958,7 @@ int main()
                         ImGui::EndMenu();
                     }
                     ImGui::Spacing();
-                    ImGui::Text("%s", file_pattern.string().c_str());
+                    ImGui::Text("%s", state.file_pattern.string().c_str());
 
                     ImGui::EndMainMenuBar();
                 }

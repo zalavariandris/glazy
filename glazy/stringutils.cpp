@@ -33,7 +33,7 @@ std::tuple<std::string, std::string> split_digits(const std::string& stem) {
     if (stem.empty()) return { "","" };
 
     int digits_count = 0;
-    while (std::isdigit(stem[stem.size() - 1 - digits_count])) {
+    while (stem.size()>digits_count && std::isdigit(stem[stem.size() - 1 - digits_count])) {
         digits_count++;
     }
 

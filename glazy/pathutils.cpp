@@ -92,7 +92,6 @@ std::tuple<std::filesystem::path, int, int, int> scan_for_sequence(const std::fi
             //std::cout << name << " <> " << input_name << std::endl;
             if (IsSequenceItem) {
                 sequence.push_back(path);
-                std::cout << "digits: " << digits << "\n";
                 framenumbers.push_back(std::stoi(digits));
             }
         }
