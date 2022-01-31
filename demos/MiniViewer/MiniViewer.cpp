@@ -408,6 +408,23 @@ void ShowTimeline() {
     ImGui::EndGroup();
 }
 
+namespace ImGui {
+    int CalcComboWidth(const std::vector<std::string>& values, ImGuiComboFlags flags=0)
+    {
+        int min_width = ImGui::GetTextLineHeight();
+        for (const auto& layer : values)
+        {
+            auto item_width = ImGui::CalcTextSize(layer.c_str()).x;
+            if (item_width > min_width) {
+                min_width = item_width;
+            }
+        }
+        min_width += ImGui::GetStyle().FramePadding.x * 2;
+        if ((flags & ImGuiComboFlags_NoArrowButton) == 0) min_width += ImGui::GetTextLineHeight()+ImGui::GetStyle().FramePadding.y*2;
+        return min_width;
+    }
+}
+
 void ShowMiniViewer(bool *p_open) {
     static float gain = 0.0;
     static float gamma = 1.0;
@@ -422,18 +439,10 @@ void ShowMiniViewer(bool *p_open) {
 
         if (ImGui::BeginMenuBar()) // Toolbar
         {
+
             ImGui::BeginGroup(); // Channel secetion group
             {
-                int combo_width = ImGui::GetTextLineHeight()*2;
-                for (const auto& layer : state.layers)
-                {
-                    ImGui::CalcItemWidth
-                    auto w = ImGui::CalcTextSize(layer.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
-                    if (w > combo_width) {
-                        combo_width = w;
-                    }
-                }
-                ImGui::SetNextItemWidth(combo_width+ ImGui::GetTextLineHeight());
+                ImGui::SetNextItemWidth(ImGui::CalcComboWidth(state.layers, ImGuiComboFlags_NoArrowButton));
                 if (ImGui::BeginCombo("##layers", state.layers.size()>0 ? state.layers[state.current_layer].c_str() : "-", ImGuiComboFlags_NoArrowButton))
                 {
                     for (auto i = 0; i < state.layers.size(); i++) {
@@ -450,14 +459,7 @@ void ShowMiniViewer(bool *p_open) {
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("layers");
 
                 //ImGui::SameLine();
-                combo_width = ImGui::GetTextLineHeight() * 2;
-                for (const auto& name : state.views) {
-                    auto w = ImGui::CalcTextSize(name.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
-                    if (w > combo_width) {
-                        combo_width = w;
-                    }
-                }
-                ImGui::SetNextItemWidth(combo_width + ImGui::GetTextLineHeight());
+
                 if (state.views.size() == 1)
                 {
                     if (!state.views[state.current_view].empty())
@@ -469,6 +471,7 @@ void ShowMiniViewer(bool *p_open) {
                 }
                 else if (state.views.size() > 1)
                 {
+                    ImGui::SetNextItemWidth(ImGui::CalcComboWidth(state.views));
                     if (ImGui::Combo("##views", &state.current_view, state.views)) {
                         on_view_change();
                     }
@@ -483,55 +486,52 @@ void ShowMiniViewer(bool *p_open) {
             }
             ImGui::EndGroup(); // toolbar end
 
-            ImGui::Dummy({ sep_width / 2.0f, 0 });
-            ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
-            ImGui::Dummy({ sep_width / 2.0f, 0 });
-
+            // center align
+            auto style = ImGui::GetStyle();
+            float center_group_width = ImGui::CalcTextSize("fit").x + ImGui::CalcTextSize("flip y").x + ImGui::CalcTextSize(ICON_FA_CHESS_BOARD).x + style.ItemSpacing.x * 2 + style.FramePadding.x * 4;
+            ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x/2 - center_group_width/2.0);
             ImGui::BeginGroup();
-            if (ImGui::Button("fit")) {
-                fit();
+            {
+                if (ImGui::Button("fit")) {
+                    fit();
+                }
+                if (ImGui::Button("flip y")) {
+                    state.camera = Camera(
+                        state.camera.eye * glm::vec3(1, 1, -1),
+                        state.camera.target * glm::vec3(1, 1, -1),
+                        state.camera.up * glm::vec3(1, -1, 1),
+                        state.camera.ortho,
+                        state.camera.aspect,
+                        state.camera.fovy,
+                        state.camera.tiltshift,
+                        state.camera.near_plane,
+                        state.camera.far_plane
+                    );
+                }
+                ImGui::MenuItem(ICON_FA_CHESS_BOARD, "", &display_checkerboard);
             }
-            if (ImGui::Button("flip y")) {
-                state.camera = Camera(
-                    state.camera.eye * glm::vec3(1, 1, -1),
-                    state.camera.target * glm::vec3(1, 1, -1),
-                    state.camera.up * glm::vec3(1, -1, 1),
-                    state.camera.ortho,
-                    state.camera.aspect,
-                    state.camera.fovy,
-                    state.camera.tiltshift,
-                    state.camera.near_plane,
-                    state.camera.far_plane
-                );
-            }
-            ImGui::MenuItem(ICON_FA_CHESS_BOARD, "", &display_checkerboard);
             ImGui::EndGroup();
-            
-            ImGui::Dummy({ sep_width / 2.0f, 0 });
-            ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
-            ImGui::Dummy({ sep_width / 2.0f, 0 });
 
+            // right align
+            static const std::vector<std::string> devices{ "linear", "sRGB", "Rec.709" };
+            int devices_combo_width = ImGui::CalcComboWidth(devices);
+            
+            auto right_group_width = ImGui::GetTextLineHeight() * 6*2 + ImGui::CalcTextSize(ICON_FA_ADJUST).x + style.ItemInnerSpacing.x + style.ItemSpacing.x + style.ItemSpacing.x*2 + devices_combo_width;
+            ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - right_group_width);
             ImGui::BeginGroup(); // display correction
             {
-                ImGui::SetNextItemWidth(120);
+                ImGui::SetNextItemWidth(ImGui::GetTextLineHeight()*6);
                 ImGui::SliderFloat(ICON_FA_ADJUST "##gain", &gain, -6.0f, 6.0f);
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("gain");
                 if (ImGui::IsItemClicked(1)) gain = 0.0;
 
-                ImGui::SetNextItemWidth(120);
+                ImGui::SetNextItemWidth(ImGui::GetTextLineHeight() * 6);
                 ImGui::SliderFloat("##gamma", &gamma, 0, 4);
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("gamma");
                 if (ImGui::IsItemClicked(1)) gamma = 1.0;
 
-                int combo_width = ImGui::GetTextLineHeight() * 2;
-                for (const auto& item : { "linear", "sRGB", "Rec.709" }) {
-                    auto w = ImGui::CalcTextSize(item).x + ImGui::GetStyle().FramePadding.x * 2.0f;
-                    if (w > combo_width) {
-                        combo_width = w;
-                    }
-                }
-                static std::vector<std::string> devices{ "linear", "sRGB", "Rec.709" };
-                ImGui::SetNextItemWidth(combo_width + ImGui::GetTextLineHeight());
+                
+                ImGui::SetNextItemWidth(devices_combo_width);
                 ImGui::Combo("##device", &selected_device, "linear\0sRGB\0Rec.709\0");
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("device");
 
