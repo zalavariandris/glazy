@@ -50,7 +50,6 @@ struct State {
     int current_frame{ 0 };
     bool is_playing{ false };
 
-    double DPI = 300;
     Camera camera = Camera({ 0,0,5000 }, { 0,0,0 }, { 0,1,0 });
 
     // computed
@@ -178,8 +177,9 @@ void fit() {
     //auto channel_keys = get_index_column(_current_channels_df);
     //image_cache->get_imagespec(OIIO::ustring(_current_filename.string()), spec, std::get<0>(channel_keys[0]), 0);
 
-    state.camera.eye = { state.spec.full_width / 2.0 / state.DPI, state.spec.full_width / 2.0 / state.DPI, state.camera.eye.z };
-    state.camera.target = { state.spec.full_width / 2.0 / state.DPI, state.spec.full_width / 2.0 / state.DPI, 0.0 };
+    float camDistance = std::max(state.spec.full_width / 2 / tan(state.camera.fovx() / 2), state.spec.full_height / 2 / tan(state.camera.fovy / 2));
+    state.camera.eye = { state.spec.full_width / 2.0, state.spec.full_height / 2.0, camDistance };
+    state.camera.target = { state.spec.full_width / 2.0, state.spec.full_height / 2.0, 0.0 };
 }
 #pragma endregion ACTIONS
 
@@ -409,20 +409,25 @@ void ShowTimeline() {
 }
 
 void ShowMiniViewer(bool *p_open) {
-    static float gain = 1.0;
+    static float gain = 0.0;
     static float gamma = 1.0;
     static bool display_checkerboard=true;
     static glm::vec4 pipett_color;
     static bool flip_y{ false };
 
+    static int selected_device = 1;
+    static int sep_width = 50;
+    ImGui::SliderInt("sep width", &sep_width, 0, 1000);
     if (ImGui::Begin("Viewer", p_open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoScrollbar)) {
-        
+
         if (ImGui::BeginMenuBar()) // Toolbar
         {
             ImGui::BeginGroup(); // Channel secetion group
             {
                 int combo_width = ImGui::GetTextLineHeight()*2;
-                for (const auto& layer : state.layers) {
+                for (const auto& layer : state.layers)
+                {
+                    ImGui::CalcItemWidth
                     auto w = ImGui::CalcTextSize(layer.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
                     if (w > combo_width) {
                         combo_width = w;
@@ -442,6 +447,7 @@ void ShowMiniViewer(bool *p_open) {
                     }
                     ImGui::EndCombo();
                 }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("layers");
 
                 //ImGui::SameLine();
                 combo_width = ImGui::GetTextLineHeight() * 2;
@@ -466,6 +472,7 @@ void ShowMiniViewer(bool *p_open) {
                     if (ImGui::Combo("##views", &state.current_view, state.views)) {
                         on_view_change();
                     }
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("views");
                 }
 
                 //ImGui::SameLine();
@@ -475,30 +482,59 @@ void ShowMiniViewer(bool *p_open) {
                 };
             }
             ImGui::EndGroup(); // toolbar end
-            
+
+            ImGui::Dummy({ sep_width / 2.0f, 0 });
             ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+            ImGui::Dummy({ sep_width / 2.0f, 0 });
+
+            ImGui::BeginGroup();
+            if (ImGui::Button("fit")) {
+                fit();
+            }
+            if (ImGui::Button("flip y")) {
+                state.camera = Camera(
+                    state.camera.eye * glm::vec3(1, 1, -1),
+                    state.camera.target * glm::vec3(1, 1, -1),
+                    state.camera.up * glm::vec3(1, -1, 1),
+                    state.camera.ortho,
+                    state.camera.aspect,
+                    state.camera.fovy,
+                    state.camera.tiltshift,
+                    state.camera.near_plane,
+                    state.camera.far_plane
+                );
+            }
+            ImGui::MenuItem(ICON_FA_CHESS_BOARD, "", &display_checkerboard);
+            ImGui::EndGroup();
+            
+            ImGui::Dummy({ sep_width / 2.0f, 0 });
+            ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+            ImGui::Dummy({ sep_width / 2.0f, 0 });
 
             ImGui::BeginGroup(); // display correction
             {
-                ImGui::Text(ICON_FA_ADJUST);
                 ImGui::SetNextItemWidth(120);
-                ImGui::SliderFloat("##gain", &gain, -6.0f, 6.0f);
+                ImGui::SliderFloat(ICON_FA_ADJUST "##gain", &gain, -6.0f, 6.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("gain");
                 if (ImGui::IsItemClicked(1)) gain = 0.0;
 
-                ImGui::Text("Gamma");
                 ImGui::SetNextItemWidth(120);
-                ImGui::SliderFloat("γ##gamma", &gamma, 0, 4);
+                ImGui::SliderFloat("##gamma", &gamma, 0, 4);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("gamma");
                 if (ImGui::IsItemClicked(1)) gamma = 1.0;
-            }
-            ImGui::EndGroup();
 
-            ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
-            ImGui::MenuItem(ICON_FA_CHESS_BOARD, "", &display_checkerboard);
+                int combo_width = ImGui::GetTextLineHeight() * 2;
+                for (const auto& item : { "linear", "sRGB", "Rec.709" }) {
+                    auto w = ImGui::CalcTextSize(item).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+                    if (w > combo_width) {
+                        combo_width = w;
+                    }
+                }
+                static std::vector<std::string> devices{ "linear", "sRGB", "Rec.709" };
+                ImGui::SetNextItemWidth(combo_width + ImGui::GetTextLineHeight());
+                ImGui::Combo("##device", &selected_device, "linear\0sRGB\0Rec.709\0");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("device");
 
-            ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
-            ImGui::BeginGroup();
-            if (ImGui::Checkbox("flip y", &flip_y)) {
-                state.camera = Camera({ 0,0,flip_y ? -500 : 500 }, { 0,0,0 }, { 0,flip_y ? -1 : 1,0 }, false, state.camera.aspect, state.camera.fov);
             }
             ImGui::EndGroup();
         ImGui::EndMenuBar();
@@ -611,6 +647,7 @@ void ShowMiniViewer(bool *p_open) {
                 }
 
                 // render to correction fbo
+
                 BeginRenderToTexture(correction_fbo, 0, 0, state.spec.full_width, state.spec.full_height);
                 {
                     glClearColor(0, 0, 0, 0.0);
@@ -625,8 +662,9 @@ void ShowMiniViewer(bool *p_open) {
                     imdraw::set_uniforms(correction_program, {
                         {"inputTexture", 0},
                         {"resolution", glm::vec2(state.spec.full_width, state.spec.full_height)},
-                        {"gamma_correction", gamma},
-                        {"gain_correction", gain}
+                        {"gain_correction", gain},
+                        {"gamma_correction", 1.0f/gamma},
+                        {"convert_to_device", selected_device},
                         });
                     glBindTexture(GL_TEXTURE_2D, state.tex);
                     glBindVertexArray(vao);
@@ -937,6 +975,7 @@ int main()
                         {
                             auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0JPEG images\0*.jpg");
                             open(filepath);
+                            fit();
                         }
                         ImGui::EndMenu();
                     }
@@ -958,7 +997,14 @@ int main()
                         ImGui::EndMenu();
                     }
                     ImGui::Spacing();
-                    ImGui::Text("%s", state.file_pattern.string().c_str());
+
+                    if (!state.file_pattern.empty())
+                    {
+                        ImGui::Text(" - %s", state.file_pattern.filename().string().c_str());
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip(state.file_pattern.string().c_str());
+                        }
+                    }
 
                     ImGui::EndMainMenuBar();
                 }

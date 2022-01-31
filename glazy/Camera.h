@@ -7,7 +7,8 @@ public:
 	glm::vec3 eye;
 	glm::vec3 target;
 	glm::vec3 up;
-	float fov; //fovy
+
+	float fovy;
 	glm::vec2 tiltshift;
 	float aspect;
 	float near_plane;
@@ -18,7 +19,7 @@ public:
 		eye = glm::vec3(0, 0, -5);
 		target = glm::vec3(0, 0, 0);
 		up = glm::vec3(0, 1, 0);
-		fov = 1.57 / 2;
+		fovy = 1.57 / 2;
 		tiltshift = glm::vec2(0.0, 0.0);
 		aspect = 1.0;
 		near_plane = 0.1;
@@ -26,12 +27,16 @@ public:
 		ortho = false;
 	}
 
-	Camera(glm::vec3 eye, glm::vec3 target, glm::vec3 up, bool ortho=false, float aspect = 1.0, float fov=1.57/2, glm::vec2 tiltshif=glm::vec2(0.0f,0.0f), float near_plane=0.1, float far_plane=100000) :
+	/// <summary>
+	/// A 3D camera
+	/// </summary>
+	/// <param name="fov">y field of view in radians</param>
+	Camera(glm::vec3 eye, glm::vec3 target, glm::vec3 up, bool ortho=false, float aspect = 1.0, float fovy=1.57/2, glm::vec2 tiltshift=glm::vec2(0.0f,0.0f), float near_plane=0.1, float far_plane=100000) :
 		eye(eye),
 		target(target),
 		up(up),
 		ortho(ortho),
-		fov(fov),
+		fovy(fovy),
 		aspect(aspect),
 		tiltshift(tiltshift),
 		near_plane(near_plane),
@@ -39,6 +44,10 @@ public:
 	{
 
 	};
+
+	float fovx() {
+		return 2 * atan(tan(fovy / 2) * aspect);
+	}
 
 	glm::mat4 getProjection() const;
 

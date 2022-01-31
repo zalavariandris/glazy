@@ -5,34 +5,52 @@ uniform vec2 resolution;
 
 uniform float gamma_correction;
 uniform float gain_correction;
+uniform int convert_to_device; // 0:linear | 1:sRGB | 2:Rec709
 
-float sRGB_to_linear(float sRGB_value){
-    return sRGB_value <= 0.04045
-        ? sRGB_value / 12.92
-        : pow((sRGB_value + 0.055) / 1.055, 2.4);
+float sRGB_to_linear(float channel){
+    return channel <= 0.04045
+        ? channel / 12.92
+        : pow((channel + 0.055) / 1.055, 2.4);
 }
 
-float linear_to_sRGB(float linear_value){
-        return linear_value <= 0.0031308f
-        ? linear_value * 12.92
-        : pow(linear_value, 1.0f/2.4) * 1.055f - 0.055f;
-}
-
-vec3 sRGB_to_linear(vec3 sRGB){
+vec3 sRGB_to_linear(vec3 color){
     return vec3(
-        sRGB_to_linear(sRGB.r),
-        sRGB_to_linear(sRGB.g),
-        sRGB_to_linear(sRGB.b)
+        sRGB_to_linear(color.r),
+        sRGB_to_linear(color.g),
+        sRGB_to_linear(color.b)
         );
 }
 
-vec3 linear_to_sRGB(vec3 linear){
-    return vec3(
-        linear_to_sRGB(linear.r),
-        linear_to_sRGB(linear.g),
-        linear_to_sRGB(linear.b)
-        );
+float linear_to_sRGB(float channel){
+        return channel <= 0.0031308f
+        ? channel * 12.92
+        : pow(channel, 1.0f/2.4) * 1.055f - 0.055f;
 }
+
+vec3 linear_to_sRGB(vec3 color){
+    return vec3(
+        linear_to_sRGB(color.r),
+        linear_to_sRGB(color.g),
+        linear_to_sRGB(color.b)
+    );
+}
+
+const float REC709_ALPHA = 0.099f;
+float linear_to_rec709(float channel) {
+    if(channel <= 0.018f)
+        return 4.5f * channel;
+    else
+        return (1.0 + REC709_ALPHA) * pow(channel, 0.45f) - REC709_ALPHA;
+}
+
+vec3 linear_to_rec709(vec3 rgb) {
+    return vec3(
+        linear_to_rec709(rgb.r),
+        linear_to_rec709(rgb.g),
+        linear_to_rec709(rgb.b)
+    );
+}
+
 
 vec3 reinhart_tonemap(vec3 hdrColor){
     return vec3(1.0) - exp(-hdrColor);
@@ -40,22 +58,33 @@ vec3 reinhart_tonemap(vec3 hdrColor){
 
 void main(){
     vec2 uv = gl_FragCoord.xy/resolution;
-    vec3 hdrColor = texture(inputTexture, uv).rgb;
+    vec3 rawColor = texture(inputTexture, uv).rgb;
                 
     // apply corrections
-    vec3 mapped = hdrColor;
+    vec3 color = rawColor;
 
     // apply exposure correction
-    mapped = mapped * pow(2, gain_correction);
+    color = color * pow(2, gain_correction);
 
     // exposure tone mapping
-    mapped = reinhart_tonemap(mapped);
+    //mapped = reinhart_tonemap(mapped);
 
     // apply gamma correction
-    mapped = pow(mapped, vec3(gamma_correction));
+    color = pow(color, vec3(gamma_correction));
 
-    // sRGB device transform
-    //mapped.rgb = linear_to_sRGB(mapped.rgb);
-    //mapped.rgb = pow(mapped.rgb, vec3(1.0/2.2));
-    FragColor = vec4(mapped,texture(inputTexture, uv).a);
+    // convert color to device
+    if(convert_to_device==0) // linear, no conversion
+    {
+
+    }
+    else if(convert_to_device==1) // sRGB
+    {
+        color = linear_to_sRGB(color);
+    }
+    if(convert_to_device==2) // Rec.709
+    {
+        color = linear_to_rec709(color);
+    }
+
+    FragColor = vec4(color, texture(inputTexture, uv).a);
 }

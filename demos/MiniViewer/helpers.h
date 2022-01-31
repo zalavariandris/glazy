@@ -143,23 +143,30 @@ GLuint make_texture_from_file(std::filesystem::path filename, std::vector<Channe
     GLuint tex_roi;
     glGenTextures(1, &tex_roi);
     glBindTexture(GL_TEXTURE_2D, tex_roi);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     GLint internalformat;
     GLint format;
-    if (nchannels == 1) {
+    if (nchannels == 1)
+    {
         format = GL_RED;
         internalformat = GL_RGBA;
+        GLint const Swizzle[] = { GL_RED, GL_RED, GL_RED, GL_ONE };
+        glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, Swizzle);
     }
     if (nchannels == 2) {
         format = GL_RG;
         internalformat = GL_RGBA;
+        GLint const Swizzle[] = { GL_RED, GL_GREEN, GL_ZERO, GL_ONE };
+        glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, Swizzle);
     }
     if (nchannels == 3) {
         format = GL_RGB;
         internalformat = GL_RGBA;
+        GLint const Swizzle[] = { GL_RED, GL_GREEN, GL_BLUE, GL_ONE };
+        glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, Swizzle);
     }
     if (nchannels == 4) {
         format = GL_RGBA;
@@ -179,14 +186,78 @@ GLuint make_texture_from_file(std::filesystem::path filename, std::vector<Channe
     {
         glClearColor(0, 0, 0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
+        static GLuint prog = imdraw::make_program_from_source(R"(
+            #version 330 core
+            layout (location = 0) in vec3 aPos;
+            void main()
+            {
+                gl_Position = vec4(aPos, 1.0);
+            }
+        )", 
+        R"(
+            #version 330 core
+            uniform sampler2D textureMap;
 
-        imdraw::set_projection(glm::ortho(0.0f, spec.full_width * 1.0f, 0.0f, spec.full_height * 1.0f));
-        glm::mat4 M{ 1 };
-        imdraw::set_view(glm::mat4(M));
+            uniform ivec2 uPos;
+            uniform ivec2 uSize;
+            uniform ivec2 uFullSize;
+            uniform bool use_sRGB_to_linear_conversion;
 
-        glm::vec2 min_rect{ spec.x * 1.0f,spec.y * 1.0f };
-        glm::vec2 max_rect{ spec.x * 1.0f + spec.width * 1.0f, spec.y * 1.0f + spec.height * 1.0f };
-        imdraw::quad(tex_roi, { spec.x * 1.0f,spec.y * 1.0f }, { spec.x * 1.0f + spec.width * 1.0f, spec.y * 1.0f + spec.height * 1.0f });
+            float sRGB_to_linear(float sRGB_value){
+                return sRGB_value <= 0.04045
+                    ? sRGB_value / 12.92
+                    : pow((sRGB_value + 0.055) / 1.055, 2.4);
+            }
+
+            vec3 sRGB_to_linear(vec3 sRGB){
+                return vec3(
+                    sRGB_to_linear(sRGB.r),
+                    sRGB_to_linear(sRGB.g),
+                    sRGB_to_linear(sRGB.b)
+                    );
+            }
+
+            void main()
+            {
+                vec2 uv = (gl_FragCoord.xy-uPos)/uSize;
+                vec3 raw_color = texture(textureMap, uv).rgb;
+                float alpha = texture(textureMap, uv).a;
+                vec3 color;
+                if(use_sRGB_to_linear_conversion)
+                {
+                    color = sRGB_to_linear(raw_color);
+                }else{
+                    color = raw_color;
+                }
+                
+                gl_FragColor = vec4(color,alpha);
+            }
+        )");
+
+        static auto geo = imgeo::quad();
+        static auto vao = imdraw::make_vao(prog, {
+            {"aPos", {imdraw::make_vbo(geo.positions), 3}},
+        });
+
+        
+        bool use_sRGB_to_linear_conversion = spec.get_string_attribute("oiio:ColorSpace") != "Linear";
+        std::cout << "make_texture_from_file" << "\n";
+        std::cout << "  colorspace: " << spec.get_string_attribute("oiio:ColorSpace").c_str() << "\n";
+        std::cout << "  use_sRGB_to_linear_conversion: " << use_sRGB_to_linear_conversion << "\n";
+
+        imdraw::push_program(prog);
+        imdraw::set_uniforms(prog,
+            { 
+            {"uPos", glm::ivec2(spec.x, spec.y)},
+            {"uSize", glm::ivec2(spec.width, spec.height)},
+            {"uFullSize", glm::ivec2(spec.full_width,spec.full_height) },
+            {"use_sRGB_to_linear_conversion", use_sRGB_to_linear_conversion}
+        });
+        // draw
+        glBindTexture(GL_TEXTURE_2D, tex_roi);
+        imdraw::draw(geo.mode, vao, imdraw::make_ebo(geo.indices), geo.indices.size());
+        glBindTexture(GL_TEXTURE_2D, 0);
+        imdraw::pop_program();
     }
     EndRenderToTexture();
 

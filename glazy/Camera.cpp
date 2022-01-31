@@ -42,7 +42,7 @@ glm::vec3 ray_plane_intersection(glm::vec3 p0, glm::vec3 p1,
 glm::mat4 Camera::getProjection() const {
 	if (ortho) {
 		auto target_distance = glm::distance(eye, target);
-		auto t = tan(fov / 2) * target_distance;
+		auto t = tan(fovy / 2) * target_distance;
 		return glm::ortho(
 			-1.0f * aspect * t,
 			+1.0f * aspect * t,
@@ -52,7 +52,7 @@ glm::mat4 Camera::getProjection() const {
 	}
 	else {
 		auto tilt = tiltshift * (float)near_plane;
-		auto t = tan(fov / 2);
+		auto t = tan(fovy / 2);
 		return glm::frustum(
 			-1.0f * aspect * t * near_plane,
 			+1.0f * aspect * t * near_plane,
@@ -96,7 +96,7 @@ void Camera::pan(double horizontal, double vertical) {
 
 	auto target_distance = glm::distance(eye, target);
 	auto offset = right * (float)horizontal - up * (float)vertical;
-	offset *= tan(fov / 2) * 2;
+	offset *= tan(fovy / 2) * 2;
 	offset *= target_distance;
 	target += offset;
 	eye += offset;
