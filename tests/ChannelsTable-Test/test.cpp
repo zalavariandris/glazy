@@ -12,7 +12,6 @@ void print(ChannelsTable df) {
 
 TEST(TestCaseName, TestName)
 {
-
 	ChannelsTable df = get_channelstable("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr");
 	//print(df);
 	ChannelsTable expected{

@@ -51,7 +51,7 @@ private:
     GLuint vao;
 
 public:
-    ShaderToy(std::filesystem::path fragment_path, std::optional<imgeo::Trimesh> geometry = std::nullopt) :
+    ShaderToy(const std::filesystem::path& fragment_path, const std::optional<imgeo::Trimesh>& geometry = std::nullopt) :
         fragment_path(fragment_path),
         m_program(0),
         geometry(geometry)
@@ -100,16 +100,16 @@ public:
         return false;
     }
 
-    void draw(std::map<std::string, imdraw::UniformVariant> uniforms)
+    void draw(const std::map<std::string, imdraw::UniformVariant>& uniforms) const
     {
         imdraw::push_program(m_program);
         /// Draw quad with fragment shader
-
+       
         imdraw::set_uniforms(m_program, {
-            {"projection", uniforms.contains("projection") ? uniforms["projection"] : glm::ortho(-1,1,-1,1)},
-            {"view", uniforms.contains("view") ? uniforms["view"] : glm::mat4(1)},
-            {"model", uniforms.contains("model") ? uniforms["model"] : glm::mat4(1)},
-            {"uResolution", uniforms.contains("uResolution") ? uniforms["uResolution"] : glm::ivec2(1,1)},
+            {"projection", uniforms.contains("projection") ? uniforms.at("projection") : glm::ortho(-1,1,-1,1)},
+            {"view", uniforms.contains("view") ? uniforms.at("view") : glm::mat4(1)},
+            {"model", uniforms.contains("model") ? uniforms.at("model") : glm::mat4(1)},
+            {"uResolution", uniforms.contains("uResolution") ? uniforms.at("uResolution") : glm::ivec2(1,1)},
             {"use_geometry", geometry.has_value()}
             });
         //glBindTexture(GL_TEXTURE_2D, tex);

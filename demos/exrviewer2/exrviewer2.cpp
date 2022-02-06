@@ -24,6 +24,7 @@
 #include "ChannelsTable.h"
 #include "Store.h"
 
+
 std::set<GLuint> textures_to_delete;
 void delete_texture_later(GLuint tex) {
     textures_to_delete.insert(tex);
@@ -510,6 +511,7 @@ auto subimages = Computed<std::vector<std::string>>([]() {
         result.push_back( in->spec().get_string_attribute("name"));
         ++nsubimages;
     }
+    in->close();
     return result;
 }, "subimages");
 

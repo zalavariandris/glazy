@@ -33,7 +33,7 @@ int indexOf(const std::vector<std::string>& v, const std::string element) {
 
 /// define Channel Types
 using ChannelKey = std::tuple<int, int>;                                 // subimage, channel index
-using ChannelRecord = std::tuple<std::string, std::string, std::string>; // layer.view.channel
+using ChannelRecord = std::tuple<std::string, std::string, std::string, std::string, std::string>; // subname, subview | layer.view.channel
 using ChannelsTable = std::map<ChannelKey, ChannelRecord>;
 
 /// Retrieve any metadata attribute, converted to a stringvector./
@@ -65,15 +65,13 @@ std::vector<std::string> get_stringvector_attribute(const OIIO::ImageSpec& spec,
 /// - left.Z; right,left  -> depth left Z
 /// - disparityR.x -> disparityL _ R
 /// 
-/// 
 
-
-#define COLOR_LAYER "[color]"
-#define DEPTH_LAYER "[depth]"
-#define OTHER_LAYER "[other]"
+#define COLOR_LAYER ""
+#define DEPTH_LAYER ""
+#define OTHER_LAYER ""
 #define DATA_VIEW ""
 
-ChannelRecord parse_channel_name(std::string channel_name, std::vector<std::string> views_hint) {
+std::tuple<std::string, std::string, std::string> parse_channel_name(const std::string& channel_name, const std::vector<std::string>& views_hint) {
     bool isMultiView = !views_hint.empty();
 
     auto channel_segments = split_string(channel_name, ".");
@@ -161,34 +159,79 @@ ChannelsTable get_channelstable(const std::filesystem::path& filename)
 
     // create a dataframe from all available channels
     // subimage <name,channelname> -> <layer,view,channel>
-    std::map<std::tuple<int, int>, std::tuple<std::string, std::string, std::string>> layers_dataframe;
+    ChannelsTable layers_dataframe;
 
     auto in = OIIO::ImageInput::open(filename.string());
     auto spec = in->spec();
     std::vector<std::string> views = get_stringvector_attribute(spec, "multiView");
     int nsubimages = 0;
 
-    while (in->seek_subimage(nsubimages, 0)) {
+    while (in->seek_subimage(nsubimages, 0))
+    {
         auto spec = in->spec();
         std::string subimage_name = spec.get_string_attribute("name");
-        for (auto chan = 0; chan < spec.nchannels; chan++) {
+        std::string subimage_view = spec.get_string_attribute("view");
+        if (ends_with(subimage_name, subimage_view))
+        {
+            subimage_name = subimage_name.substr(0, subimage_name.size() - subimage_view.size());
+            subimage_name = trim(subimage_name, " _.-");
+        }
+
+        for (auto chan = 0; chan < spec.nchannels; chan++)
+        {
             std::string channel_name = spec.channel_name(chan);
             auto [layer, view, channel] = parse_channel_name(spec.channel_name(chan), views);
-            
-            if (view.empty()) {
-                view = std::string{ spec.get_string_attribute("view") };
+            //std::cout << "  layer:" << layer << " sub-name: " << subimage_name << "\n";
+            //std::cout << "  view:" << view << " sub-view: " << subimage_view << "\n";
+
+            // figure out layer name
+            if (nsubimages == 0 && layer.empty())
+            {
+                layer = subimage_name;
             }
+            else if (subimage_name == layer) {
+
+            }
+            else if (layer.empty()) {
+                layer = subimage_name;
+            }
+            else {
+                if (subimage_name != "rgba") {
+                    layer = subimage_name + "." + layer;
+                }
+            }
+
+            // split depth channel only with RGBAZ colors. keep XYZ as one layer
+
+
+            // figure out view name
+            if (view.empty()) {
+                view = subimage_view;
+            }
+
             std::tuple<int, int> key{ nsubimages, chan };
-            layers_dataframe[key] = { layer, view, channel};
+            layers_dataframe[key] = {subimage_name, subimage_view, layer, view, channel};
         }
         ++nsubimages;
     }
 
+    in->close();
     return layers_dataframe;
 }
 
+ChannelsTable get_rows(const ChannelsTable& df, const std::vector<ChannelKey>& keys) {
+    ChannelsTable result;
+    for (auto [idx, record] : df) {
+        if (std::find(keys.begin(), keys.end(), idx) != keys.end()) {
+            result[idx] = record;
+        }
+    }
+    return result;
+}
+
 /// Get index column
-std::vector<ChannelKey> get_index_column(const ChannelsTable& df) {
+std::vector<ChannelKey> get_index_column(const ChannelsTable& df)
+{
     std::vector<ChannelKey> indices;
     for (auto [key, value] : df) {
         indices.push_back(key);
@@ -197,9 +240,11 @@ std::vector<ChannelKey> get_index_column(const ChannelsTable& df) {
 }
 
 /// Get index-subimage Column
-std::vector<int> get_subimage_idx_column(const ChannelsTable& df) {
+std::vector<int> get_subimage_idx_column(const ChannelsTable& df)
+{
     std::vector<int> subimages;
-    for (auto&& [subimage_chan, layer_view_channel] : df) {
+    for (auto&& [subimage_chan, layer_view_channel] : df)
+    {
         auto&& [subimage, chan] = subimage_chan;
 
         subimages.push_back(subimage);
@@ -208,9 +253,11 @@ std::vector<int> get_subimage_idx_column(const ChannelsTable& df) {
 }
 
 /// Get index-chan Column
-std::vector<int> get_chan_idx_column(const ChannelsTable& df) {
+std::vector<int> get_chan_idx_column(const ChannelsTable& df)
+{
     std::vector<int> chans;
-    for (auto&& [subimage_chan, layer_view_channel] : df) {
+    for (auto&& [subimage_chan, layer_view_channel] : df)
+    {
         auto&& [subimage, chan] = subimage_chan;
 
         chans.push_back(chan);
@@ -219,11 +266,13 @@ std::vector<int> get_chan_idx_column(const ChannelsTable& df) {
 }
 
 /// Get layers Column
-std::vector<std::string> get_layers_column(const ChannelsTable& df) {
+std::vector<std::string> get_layers_column(const ChannelsTable& df)
+{
     std::vector<std::string> layers;
-    for (auto&& [subimage_chan, layer_view_channel] : df) {
+    for (auto&& [subimage_chan, layer_view_channel] : df)
+    {
         auto&& [subimage, chan] = subimage_chan;
-        auto&& [layer, view, channel] = layer_view_channel;
+        auto&& [subimage_name, subimage_view, layer, view, channel] = layer_view_channel;
 
         layers.push_back(layer);
     }
@@ -231,11 +280,13 @@ std::vector<std::string> get_layers_column(const ChannelsTable& df) {
 }
 
 /// Get views Column
-std::vector<std::string> get_views_column(const ChannelsTable& df) {
+std::vector<std::string> get_views_column(const ChannelsTable& df)
+{
     std::vector<std::string> views;
-    for (auto&& [subimage_chan, layer_view_channel] : df) {
+    for (auto&& [subimage_chan, layer_view_channel] : df)
+    {
         auto&& [subimage, chan] = subimage_chan;
-        auto&& [layer, view, channel] = layer_view_channel;
+        auto&& [subimage_name, subimage_view, layer, view, channel] = layer_view_channel;
 
         views.push_back(view);
     }
@@ -243,11 +294,13 @@ std::vector<std::string> get_views_column(const ChannelsTable& df) {
 }
 
 /// Get channels Column
-std::vector<std::string> get_channels_column(const ChannelsTable& df) {
+std::vector<std::string> get_channels_column(const ChannelsTable& df)
+{
     std::vector<std::string> channels;
-    for (auto&& [subimage_chan, layer_view_channel] : df) {
+    for (auto&& [subimage_chan, layer_view_channel] : df)
+    {
         auto&& [subimage, chan] = subimage_chan;
-        auto&& [layer, view, channel] = layer_view_channel;
+        auto&& [subimage_name, subimage_view, layer, view, channel] = layer_view_channel;
 
         channels.push_back(channel);
     }
@@ -255,10 +308,12 @@ std::vector<std::string> get_channels_column(const ChannelsTable& df) {
 }
 
 /* filter by */
-ChannelsTable filtered_by_layer(const ChannelsTable& df, const std::string & filter_layer) {
+ChannelsTable filtered_by_layer(const ChannelsTable& df, const std::string& filter_layer)
+{
     ChannelsTable filtered_df;
-    for (const auto& [idx, record] : df) {
-        auto&& [layer, view, channel] = record;
+    for (const auto& [idx, record] : df)
+    {
+        auto&& [subimage_name, subimage_view, layer, view, channel] = record;
         if (layer == filter_layer) {
             filtered_df[idx] = record;
         }
@@ -266,10 +321,11 @@ ChannelsTable filtered_by_layer(const ChannelsTable& df, const std::string & fil
     return filtered_df;
 }
 
-ChannelsTable filtered_by_layer_and_view(const ChannelsTable& df, const std::string& filter_layer, const std::string& filter_view) {
+ChannelsTable filtered_by_layer_and_view(const ChannelsTable& df, const std::string& filter_layer, const std::string& filter_view)
+{
     ChannelsTable filtered_df;
     for (const auto& [idx, record] : df) {
-        auto&& [layer, view, channel] = record;
+        auto&& [subimage_name, subimage_view, layer, view, channel] = record;
         if (layer == filter_layer && view == filter_view) {
             filtered_df[idx] = record;
         }
@@ -279,11 +335,12 @@ ChannelsTable filtered_by_layer_and_view(const ChannelsTable& df, const std::str
 
 /* Group by */
 /// Group channels by layer and view
-std::map<std::tuple<std::string, std::string>, ChannelsTable> group_by_layer_view(const ChannelsTable& df) {
+std::map<std::tuple<std::string, std::string>, ChannelsTable> group_by_layer_view(const ChannelsTable& df)
+{
     std::map<std::tuple<std::string, std::string>, ChannelsTable> layer_view_groups;
     for (auto&& [subimage_chan, layer_view_channel] : df) {
         auto&& [subimage, chan] = subimage_chan;
-        auto&& [layer, view, channel] = layer_view_channel;
+        auto&& [subimage_name, subimage_view, layer, view, channel] = layer_view_channel;
 
         std::tuple<std::string, std::string> key{ layer, view };
         if (!layer_view_groups.contains(key)) layer_view_groups[key] = ChannelsTable();
@@ -294,11 +351,13 @@ std::map<std::tuple<std::string, std::string>, ChannelsTable> group_by_layer_vie
 }
 
 /// Group channels by layer
-std::map<std::string, ChannelsTable> group_by_layer(const ChannelsTable& df) {
+std::map<std::string, ChannelsTable> group_by_layer(const ChannelsTable& df)
+{
     std::map<std::string, ChannelsTable> layer_groups;
-    for (auto&& [subimage_chan, layer_view_channel] : df) {
+    for (auto&& [subimage_chan, layer_view_channel] : df)
+    {
         auto&& [subimage, chan] = subimage_chan;
-        auto&& [layer, view, channel] = layer_view_channel;
+        auto&& [subimage_name, subimage_view, layer, view, channel] = layer_view_channel;
 
 
         if (!layer_groups.contains(layer)) layer_groups[layer] = ChannelsTable();
@@ -309,11 +368,12 @@ std::map<std::string, ChannelsTable> group_by_layer(const ChannelsTable& df) {
 }
 
 /// Group channels by view
-std::map<std::string, ChannelsTable> group_by_view(const ChannelsTable& df) {
+std::map<std::string, ChannelsTable> group_by_view(const ChannelsTable& df)
+{
     std::map<std::string, ChannelsTable> view_groups;
     for (auto&& [subimage_chan, layer_view_channel] : df) {
         auto&& [subimage, chan] = subimage_chan;
-        auto&& [layer, view, channel] = layer_view_channel;
+        auto&& [subimage_name, subimage_view, layer, view, channel] = layer_view_channel;
 
 
         if (!view_groups.contains(view)) view_groups[view] = ChannelsTable();

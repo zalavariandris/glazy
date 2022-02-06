@@ -171,7 +171,7 @@ ChannelsTable get_channelstable(const std::filesystem::path &filename)
         }
         ++nsubimages;
     }
-
+    in->close();
     return layers_dataframe;
 }
 

@@ -36,7 +36,7 @@ void EndRenderToTexture()
 }
 #pragma endregion RenderToTexture
 
-bool ray_ground_intersection(glm::vec3 ray_origin, glm::vec3 ray_dir, float *t)
+bool ray_ground_intersection(const glm::vec3& ray_origin, const glm::vec3& ray_dir, float *t)
 {
     *t = -ray_origin.z / ray_dir.z;
     return *t > 0.0;
@@ -117,11 +117,12 @@ namespace ImGui {
     }
 }
 
-GLuint make_texture_from_file(std::filesystem::path filename, std::vector<ChannelKey> channel_keys = {})
+GLuint make_texture_from_file(const std::filesystem::path& filename, const std::vector<ChannelKey>& channel_keys = {})
 {
     /// Validate parameters
     if (!std::filesystem::exists(filename)) return 0;
     if (channel_keys.empty()) return 0;
+    assert(("cant create a texture from more than 4 channels", channel_keys.size() <= 4));
     
     /// Read header
     auto image_cache = OIIO::ImageCache::create(true);
