@@ -15,34 +15,8 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="MiniViewer.cpp">
+    <ClCompile Include="profile_sequence_read.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="imgui_widget_flamegraph.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="ChannelsTable.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="imgui_widget_flamegraph.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="ShaderToy.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="helpers.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="widgets\ImageCacheWidget.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="polka.frag" />
-    <None Include="README.md" />
-    <None Include="display_correction.frag" />
-    <None Include="try_shadertoy.frag" />
   </ItemGroup>
 </Project>

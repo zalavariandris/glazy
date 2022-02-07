@@ -67,11 +67,13 @@ std::tuple<std::filesystem::path, int, int, int> scan_for_sequence(const std::fi
 std::filesystem::path sequence_item(const std::filesystem::path& pattern, int F) {
     if (pattern.empty()) return std::filesystem::path();
 
-    // copy from educative.io educative.io/edpresso/how-to-use-the-sprintf-method-in-c
+    // ref: educative.io educative.io/edpresso/how-to-use-the-sprintf-method-in-c
     int size_s = std::snprintf(nullptr, 0, pattern.string().c_str(), F) + 1; // Extra space for '\0'
     if (size_s <= 0) { throw std::runtime_error("Error during formatting."); }
     auto size = static_cast<size_t>(size_s);
     auto buf = std::make_unique<char[]>(size);
     std::snprintf(buf.get(), size, pattern.string().c_str(), F);
-    return std::filesystem::path(std::string(buf.get(), buf.get() + size - 1));
+
+    auto filename = std::string(buf.get(), buf.get() + size - 1);
+    return std::filesystem::path(filename);
 }

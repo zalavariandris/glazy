@@ -49,8 +49,9 @@ std::vector<std::string> get_stringvector_attribute(const OIIO::ImageSpec& spec,
             for (auto i = 0; i < attribute_type.arraylen; i++) {
                 result.push_back(data[i]);
             }
-            free(data);
+            
         }
+        free(data);
     }
     return result;
 }
@@ -155,20 +156,23 @@ ChannelsTable get_channelstable(const std::filesystem::path& filename)
     if (!std::filesystem::exists(filename)) {
         return {};
     }
-    auto image_cache = OIIO::ImageCache::create(true);
 
     // create a dataframe from all available channels
     // subimage <name,channelname> -> <layer,view,channel>
     ChannelsTable layers_dataframe;
 
-    auto in = OIIO::ImageInput::open(filename.string());
-    auto spec = in->spec();
-    std::vector<std::string> views = get_stringvector_attribute(spec, "multiView");
-    int nsubimages = 0;
 
-    while (in->seek_subimage(nsubimages, 0))
-    {
-        auto spec = in->spec();
+    auto image_cache = OIIO::ImageCache::create(true);
+    int nsubimages;
+    image_cache->get_image_info(OIIO::ustring(filename.string().c_str()), 0, 0, OIIO::ustring("subimages"), OIIO::TypeInt, &nsubimages);
+
+    OIIO::ImageSpec spec;
+    image_cache->get_imagespec(OIIO::ustring(filename.string().c_str()), spec, 0, 0);
+    std::vector<std::string> views = get_stringvector_attribute(spec, "multiView");
+
+    for (int i = 0; i < nsubimages; i++) {
+        OIIO::ImageSpec spec;
+        image_cache->get_imagespec(OIIO::ustring(filename.string().c_str()), spec, i, 0);
         std::string subimage_name = spec.get_string_attribute("name");
         std::string subimage_view = spec.get_string_attribute("view");
         if (ends_with(subimage_name, subimage_view))
@@ -185,7 +189,7 @@ ChannelsTable get_channelstable(const std::filesystem::path& filename)
             //std::cout << "  view:" << view << " sub-view: " << subimage_view << "\n";
 
             // figure out layer name
-            if (nsubimages == 0 && layer.empty())
+            if (i == 0 && layer.empty())
             {
                 layer = subimage_name;
             }
@@ -209,21 +213,21 @@ ChannelsTable get_channelstable(const std::filesystem::path& filename)
                 view = subimage_view;
             }
 
-            std::tuple<int, int> key{ nsubimages, chan };
-            layers_dataframe[key] = {subimage_name, subimage_view, layer, view, channel};
+            std::tuple<int, int> key{ i, chan };
+            layers_dataframe.insert({ key, {subimage_name, subimage_view, layer, view, channel} });
         }
-        ++nsubimages;
     }
 
-    in->close();
+    OIIO::ImageCache::destroy(image_cache);
     return layers_dataframe;
 }
 
 ChannelsTable get_rows(const ChannelsTable& df, const std::vector<ChannelKey>& keys) {
     ChannelsTable result;
     for (auto [idx, record] : df) {
-        if (std::find(keys.begin(), keys.end(), idx) != keys.end()) {
-            result[idx] = record;
+        if (std::find(keys.begin(), keys.end(), idx) != keys.end())
+        {
+            result.insert({ idx, record });
         }
     }
     return result;
@@ -315,7 +319,7 @@ ChannelsTable filtered_by_layer(const ChannelsTable& df, const std::string& filt
     {
         auto&& [subimage_name, subimage_view, layer, view, channel] = record;
         if (layer == filter_layer) {
-            filtered_df[idx] = record;
+            filtered_df.insert({ idx,record });
         }
     }
     return filtered_df;
@@ -327,7 +331,7 @@ ChannelsTable filtered_by_layer_and_view(const ChannelsTable& df, const std::str
     for (const auto& [idx, record] : df) {
         auto&& [subimage_name, subimage_view, layer, view, channel] = record;
         if (layer == filter_layer && view == filter_view) {
-            filtered_df[idx] = record;
+            filtered_df.insert({ idx,record });
         }
     }
     return filtered_df;
@@ -343,9 +347,9 @@ std::map<std::tuple<std::string, std::string>, ChannelsTable> group_by_layer_vie
         auto&& [subimage_name, subimage_view, layer, view, channel] = layer_view_channel;
 
         std::tuple<std::string, std::string> key{ layer, view };
-        if (!layer_view_groups.contains(key)) layer_view_groups[key] = ChannelsTable();
+        if (!layer_view_groups.contains(key)) layer_view_groups.insert({ key, ChannelsTable() });
 
-        layer_view_groups[key][subimage_chan] = layer_view_channel;
+        layer_view_groups.at(key).insert({ subimage_chan, layer_view_channel });
     }
     return layer_view_groups;
 }
@@ -360,9 +364,9 @@ std::map<std::string, ChannelsTable> group_by_layer(const ChannelsTable& df)
         auto&& [subimage_name, subimage_view, layer, view, channel] = layer_view_channel;
 
 
-        if (!layer_groups.contains(layer)) layer_groups[layer] = ChannelsTable();
+        if (!layer_groups.contains(layer)) layer_groups.insert({ layer, ChannelsTable() });
 
-        layer_groups[layer][subimage_chan] = layer_view_channel;
+        layer_groups.at(layer).insert({ subimage_chan, layer_view_channel });
     }
     return layer_groups;
 }
@@ -376,9 +380,9 @@ std::map<std::string, ChannelsTable> group_by_view(const ChannelsTable& df)
         auto&& [subimage_name, subimage_view, layer, view, channel] = layer_view_channel;
 
 
-        if (!view_groups.contains(view)) view_groups[view] = ChannelsTable();
+        if (!view_groups.contains(view)) view_groups.insert({ view, ChannelsTable() });
 
-        view_groups[view][subimage_chan] = layer_view_channel;
+        view_groups.at(view).insert({ subimage_chan, layer_view_channel });
     }
     return view_groups;
 }

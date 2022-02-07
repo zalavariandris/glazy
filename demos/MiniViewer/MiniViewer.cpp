@@ -878,26 +878,26 @@ void ShowMiniViewer(bool *p_open) {
                     glm::ivec2 pixelpos = { floor(worldpos.x), floor(worldpos.y) };
                     imdraw::rect({ pixelpos.x, pixelpos.y }, { pixelpos.x + 1, pixelpos.y + 1 });
 
-                    if (!state.spec.undefined()) {
-                        int x = pixelpos.x;
-                        int y = pixelpos.y;
-                        int w = 1;
-                        int h = 1;
-                        auto channel_keys = get_index_column(state._current_channels_df);
-                        int chbegin = std::get<1>(channel_keys[0]);
-                        int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
-                        int nchannels = chend - chbegin;
-                        
-                        auto image_cache = OIIO::ImageCache::create(true);
-                        float* data = (float*)malloc(w * h * nchannels * sizeof(float));
-                        image_cache->get_pixels(OIIO::ustring(state._current_filename.string()), std::get<0>(channel_keys[0]), 0, x, x + w, y, y + h, 0, 1, chbegin, chend, OIIO::TypeFloat, data, OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, chbegin, chend);
+                    //if (!state.spec.undefined()) {
+                    //    int x = pixelpos.x;
+                    //    int y = pixelpos.y;
+                    //    int w = 1;
+                    //    int h = 1;
+                    //    auto channel_keys = get_index_column(state._current_channels_df);
+                    //    int chbegin = std::get<1>(channel_keys[0]);
+                    //    int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
+                    //    int nchannels = chend - chbegin;
+                    //    
+                    //    auto image_cache = OIIO::ImageCache::create(true);
+                    //    float* data = (float*)malloc(w * h * nchannels * sizeof(float));
+                    //    image_cache->get_pixels(OIIO::ustring(state._current_filename.string()), std::get<0>(channel_keys[0]), 0, x, x + w, y, y + h, 0, 1, chbegin, chend, OIIO::TypeFloat, data, OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, chbegin, chend);
 
-                        for (auto i = 0; i < nchannels && i<4; i++)
-                        {
-                            pipett_color[i] = data[i];
-                        }
-                        free(data);
-                    }
+                    //    for (auto i = 0; i < nchannels && i<4; i++)
+                    //    {
+                    //        pipett_color[i] = data[i];
+                    //    }
+                    //    free(data);
+                    //}
                 }
                 EndRenderToTexture();
             }
@@ -929,91 +929,6 @@ void ShowMiniViewer(bool *p_open) {
 }
 #pragma endregion WINDOWS
 
-struct SessionItem {
-    const char* Name;
-    long long Start;
-    long long End;
-    int Level;
-    uint32_t thread_id;
-};
-//using SessionItem = std::tuple<const char*, long long, long long, int, uint32_t>;
-std::vector<SessionItem> session_data;
-
-void ProfilerValueGetter(float* startTimestamp, float* endTimestamp, ImU8* level, const char** caption, const void* data, int idx)
-{
-    auto entry = reinterpret_cast<const std::vector<SessionItem>*>(data);
-    const SessionItem item = (*entry)[idx];
-    //auto [name, start, end, rec_level, thread] = record;
-    if (startTimestamp)
-    {
-        *startTimestamp = item.Start;
-    }
-    if (endTimestamp)
-    {
-        *endTimestamp = item.End;
-    }
-    if (level)
-    {
-        *level = item.Level;
-    }
-    if (caption)
-    {
-        *caption = item.Name;
-    }
-}
-class MyTimer
-{
-public:
-    MyTimer(const char* name)
-    : Name(name), 
-      StartTimepoint(std::chrono::high_resolution_clock::now())
-    {
-        Level = MyTimer::current_level;
-        MyTimer::current_level+=1;
-    }
-
-    ~MyTimer()
-    {
-        MyTimer::current_level-=1;
-        StopTimepoint = std::chrono::high_resolution_clock::now();
-
-        // write to console
-        
-
-        std::cout << Name << ": " << std::chrono::duration_cast<std::chrono::milliseconds>(StopTimepoint - StartTimepoint) << " (" << Level << ")" << "\n";
-
-        // push to current session
-        session_data.push_back({
-            Name,
-            std::chrono::time_point_cast<std::chrono::milliseconds>(StartTimepoint).time_since_epoch().count(),
-            std::chrono::time_point_cast<std::chrono::milliseconds>(StopTimepoint).time_since_epoch().count(),
-            Level,
-            (uint32_t)0
-        });
-    }
-    
-public:
-    std::chrono::time_point<std::chrono::high_resolution_clock> StartTimepoint;
-    std::chrono::time_point<std::chrono::high_resolution_clock> StopTimepoint;
-    int Level;
-    const char* Name;
-    uint32_t ThreadID;
-
-private:
-    static int current_level; // keep track of current level
-};
-int MyTimer::current_level = 0;
-
-
-#define PROFILING 0
-#if PROFILING
-#define PROFILE_SCOPE(name) MyTimer timer##__LINE__(name)
-#define PROFILE_FUNCTION() PROFILE_SCOPE(__FUNCSIG__)
-#else
-#define PROFILE_SCOPE(name)
-#define PROFILE_FUNCTION()
-#endif
-
 int main()
 {
     static bool image_viewer_visible{ true };
@@ -1023,15 +938,17 @@ int main()
     static bool profiler_visible{ false };
 
     auto image_cache = OIIO::ImageCache::create(true);
-    image_cache->attribute("max_memory_MB", 1024.0f*16);
+    image_cache->attribute("max_memory_MB", 1024.0f*4);
     image_cache->attribute("autotile", 64);
+    image_cache->attribute("max_open_files", 1);
     
     glazy::init();
     
     while (glazy::is_running())
     {
-        PROFILE_SCOPE("Frame");
+       
         {
+
             // control playback
             if (state.is_playing)
             {
@@ -1088,13 +1005,66 @@ int main()
                     ImGui::EndMainMenuBar();
                 }
 
+
+                
                 // Image Viewer
                 if (image_viewer_visible)
                 {
-                    PROFILE_SCOPE("Image viewer window");
                     ShowMiniViewer(&image_viewer_visible);
                 }
 
+                // Timeliune
+                if (timeline_visible)
+                {
+                    if (ImGui::Begin("Timeline")) {
+                        ShowTimeline();
+                    }
+                    ImGui::End();
+                }
+
+                if (ImGui::Begin("ImageCache")) {
+                    int max_open_files;
+                    int autotile;
+                    int autoscanline;
+                    int automip;
+                    int forcefloat;
+
+                    image_cache->getattribute("max_open_files", max_open_files);
+                    image_cache->getattribute("autotile", autotile);
+                    image_cache->getattribute("autoscanline ", autoscanline);
+                    image_cache->getattribute("automip", automip);
+                    image_cache->getattribute("forcefloat", forcefloat);
+
+                    ImGui::Text("max open files: %d", max_open_files);
+                    ImGui::Text("autotile: %d", autotile);
+                    ImGui::Text("autoscanline: %d", autoscanline);
+                    ImGui::Text("automip: %d", automip);
+                    ImGui::Text("forcefloat: %d", forcefloat);
+
+                    int total_files;
+                    image_cache->getattribute("total_files", total_files);
+
+                    // stats
+                    int64_t cache_memory_used;
+                    int open_files_peak;
+                    int64_t image_size;
+                    int64_t file_size;
+                    int64_t bytes_read;
+                    image_cache->getattribute("stat:cache_memory_used", OIIO::TypeInt64, &cache_memory_used);
+                    image_cache->getattribute("stat:open_files_peak", open_files_peak);
+                    image_cache->getattribute("stat:image_size", OIIO::TypeInt64, &image_size);
+                    image_cache->getattribute("stat:file_size", OIIO::TypeInt64, &file_size);
+                    image_cache->getattribute("stat:bytes_read", OIIO::TypeInt64, &bytes_read);
+
+                    ImGui::Text("cache memory used: %d", cache_memory_used);
+                    ImGui::Text("open_files_peak: %d", open_files_peak);
+                    ImGui::Text("image_size: %d", image_size);
+                    ImGui::Text("file_size: %d", file_size);
+                    ImGui::Text("bytes_read: %d", bytes_read);
+                    ImGui::End();
+                }
+
+                /*
                 // ChannelsTable
                 if (channels_table_visible)
                 {
@@ -1105,26 +1075,18 @@ int main()
                     ImGui::End();
                 }
 
-                // Image info
-                ImGui::SetNextWindowSizeConstraints(ImVec2(100, -1), ImVec2(200, -1));          // Width 400-500
-                if (info_visible)
-                {
-                    PROFILE_SCOPE("Info window");
-                    if (ImGui::Begin("Info", &info_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
-                        ShowInfo();
-                    }
-                    ImGui::End();
-                }
+                //// Image info
+                //ImGui::SetNextWindowSizeConstraints(ImVec2(100, -1), ImVec2(200, -1));          // Width 400-500
+                //if (info_visible)
+                //{
+                //    PROFILE_SCOPE("Info window");
+                //    if (ImGui::Begin("Info", &info_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
+                //        ShowInfo();
+                //    }
+                //    ImGui::End();
+                //}
 
-                // Timeliune
-                if (timeline_visible)
-                {
-                    PROFILE_SCOPE("Timeline window");
-                    if (ImGui::Begin("Timeline")) {
-                        ShowTimeline();
-                    }
-                    ImGui::End();
-                }
+
 
                 if (profiler_visible)
                 {
@@ -1135,7 +1097,9 @@ int main()
                     ImGui::End();
                     session_data.clear();
                 }
+                */
             }
+            
             glazy::end_frame();
         }
     }

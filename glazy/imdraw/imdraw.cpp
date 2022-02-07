@@ -79,9 +79,11 @@ namespace imdraw {
 			};
 			std::cout << "init default glazy program" << "\n";
 			std::cout << "uniform locations: " << "\n";
-			for (std::string name : uniform_names) {
-				uniform_locations[name] = glGetUniformLocation(p, name.c_str());
-				std::cout << "- " << name << ": " << uniform_locations[name] << "\n";
+			for (std::string name : uniform_names)
+			{
+				auto loc = glGetUniformLocation(p, name.c_str());
+				uniform_locations.insert({ name, loc });
+				std::cout << "- " << name << ": " << uniform_locations.at(name) << "\n";
 			}
 
 			// set default uniforms
@@ -132,7 +134,8 @@ namespace imdraw {
 
 static glm::mat4 projection_matrix;
 void imdraw::set_projection(glm::mat4 M) {
-	imdraw::set_uniforms(imdraw::program(), {
+	auto prog = imdraw::program();
+	imdraw::set_uniforms(prog, {
 		{uniform_locations.at("projection"), M}
 	});
 	projection_matrix = M;
