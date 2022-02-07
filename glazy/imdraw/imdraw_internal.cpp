@@ -273,51 +273,6 @@ GLuint imdraw::make_vao(GLuint program, std::map<std::string, std::tuple<GLuint,
 	return vao;
 }
 
-/*
-GLuint imdraw::make_vao_from_trimesh(imgeo::Trimesh const& mesh, std::map<std::string, GLint> locations)
-{
-	GLuint vao;
-	GLuint pos_vbo;
-	GLuint uv_vbo;
-	GLuint normal_vbo;
-	GLuint color_vbo;
-
-	// Create Vertex Array
-	glGenVertexArrays(1, &vao);
-	glBindVertexArray(vao);
-
-	// Create and bind vbos
-	pos_vbo = make_vbo(mesh.positions);
-	glBindBuffer(GL_ARRAY_BUFFER, pos_vbo);
-	glEnableVertexAttribArray(locations["aPos"]);
-	glVertexAttribPointer(locations["aPos"], 3, GL_FLOAT, GL_FALSE, 0, nullptr);
-
-	if (mesh.uvs.has_value()) {
-		uv_vbo = make_vbo(mesh.positions);
-		glBindBuffer(GL_ARRAY_BUFFER, uv_vbo);
-		glEnableVertexAttribArray(locations["aUV"]);
-		glVertexAttribPointer(locations["aPUV"], 2, GL_FLOAT, GL_FALSE, 0, nullptr);
-	}
-	if (mesh.normals.has_value()) {
-		normal_vbo = make_vbo(mesh.positions);
-		glBindBuffer(GL_ARRAY_BUFFER, normal_vbo);
-		glEnableVertexAttribArray(locations["aNormal"]);
-		glVertexAttribPointer(locations["aNormal"], 3, GL_FLOAT, GL_FALSE, 0, nullptr);
-	}
-	if (mesh.colors.has_value()) {
-		color_vbo = make_vbo(mesh.positions);
-		glBindBuffer(GL_ARRAY_BUFFER, color_vbo);
-		glEnableVertexAttribArray(locations["aColor"]);
-		glVertexAttribPointer(locations["aColor"], 3, GL_FLOAT, GL_FALSE, 0, nullptr);
-	}
-
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindVertexArray(0);
-
-	return vao;
-}
-*/
-
 /* Shader */
 GLuint imdraw::make_shader(GLenum type, const char* shaderSource) {
 	// create shader

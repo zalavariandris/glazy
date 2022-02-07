@@ -150,7 +150,6 @@
     <ClInclude Include="ChannelsTable.h" />
     <ClInclude Include="helpers.h" />
     <ClInclude Include="imgui_widget_flamegraph.h" />
-    <ClInclude Include="Instrumentor.h" />
     <ClInclude Include="ShaderToy.h" />
   </ItemGroup>
   <ItemGroup>

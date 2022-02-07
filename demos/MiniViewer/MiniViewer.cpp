@@ -140,7 +140,6 @@ OIIO::ImageSpec get_spec(const std::filesystem::path& current_filename, const Ch
 
 GLuint get_texture(const std::filesystem::path& current_filename, const ChannelsTable& current_channels_df)
 {
-    return 0;
     auto indices = get_index_column(current_channels_df);
     if (indices.size() > 4) {
         indices.erase(indices.begin()+ 4, indices.end());
@@ -810,12 +809,8 @@ void ShowMiniViewer(bool *p_open) {
                         // read header
                         //auto image_cache = OIIO::ImageCache::create(true);
                         //OIIO::ImageSpec spec;
-                        auto channel_keys = get_index_column(state._current_channels_df);
-                        int SUBIMAGE = std::get<0>(channel_keys[0]); //todo: ALL SUBIMAGE MUST MATCH
-                        //image_cache->get_imagespec(OIIO::ustring(_current_filename.string()), spec, SUBIMAGE, 0);
-                        //int chbegin = std::get<1>(channel_keys[0]);
-                        //int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
-                        //int nchannels = chend - chbegin;
+                        //auto channel_keys = get_index_column(state._current_channels_df);
+                        //int SUBIMAGE = std::get<0>(channel_keys[0]); //todo: ALL SUBIMAGE MUST MATCH
                         glm::vec2 min_rect{ state.spec.full_x, state.spec.full_y };
                         glm::vec2 max_rect{ state.spec.full_x + state.spec.full_width, state.spec.full_y + state.spec.full_height };
 
@@ -830,8 +825,7 @@ void ShowMiniViewer(bool *p_open) {
                             auto size = max_rect - min_rect;
 
                             M = glm::translate(M, { min_rect.x, min_rect.y, 0 });
-                            
-                           
+
                             toy.draw({
                                 { "uResolution", glm::ivec2(state.spec.full_width, state.spec.full_height) },
                                 { "projection", state.camera.getProjection() },
@@ -884,25 +878,26 @@ void ShowMiniViewer(bool *p_open) {
                     glm::ivec2 pixelpos = { floor(worldpos.x), floor(worldpos.y) };
                     imdraw::rect({ pixelpos.x, pixelpos.y }, { pixelpos.x + 1, pixelpos.y + 1 });
 
-                    //if (!state.spec.undefined()) {
-                    //    int x = pixelpos.x;
-                    //    int y = pixelpos.y;
-                    //    int w = 1;
-                    //    int h = 1;
-                    //    auto channel_keys = get_index_column(state._current_channels_df);
-                    //    int chbegin = std::get<1>(channel_keys[0]);
-                    //    int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
-                    //    int nchannels = chend - chbegin;
+                    if (!state.spec.undefined()) {
+                        int x = pixelpos.x;
+                        int y = pixelpos.y;
+                        int w = 1;
+                        int h = 1;
+                        auto channel_keys = get_index_column(state._current_channels_df);
+                        int chbegin = std::get<1>(channel_keys[0]);
+                        int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
+                        int nchannels = chend - chbegin;
+                        
+                        auto image_cache = OIIO::ImageCache::create(true);
+                        float* data = (float*)malloc(w * h * nchannels * sizeof(float));
+                        image_cache->get_pixels(OIIO::ustring(state._current_filename.string()), std::get<0>(channel_keys[0]), 0, x, x + w, y, y + h, 0, 1, chbegin, chend, OIIO::TypeFloat, data, OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, chbegin, chend);
 
-                    //    auto image_cache = OIIO::ImageCache::create(true);
-                    //    float* data = (float*)malloc(w * h * nchannels * sizeof(float));
-                    //    image_cache->get_pixels(OIIO::ustring(state._current_filename.string()), std::get<0>(channel_keys[0]), 0, x, x + w, y, y + h, 0, 1, chbegin, chend, OIIO::TypeFloat, data, OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, chbegin, chend);
-
-                    //    for (auto i = 0; i < nchannels; i++)
-                    //    {
-                    //        pipett_color[i] = data[i];
-                    //    }
-                    //}
+                        for (auto i = 0; i < nchannels && i<4; i++)
+                        {
+                            pipett_color[i] = data[i];
+                        }
+                        free(data);
+                    }
                 }
                 EndRenderToTexture();
             }
@@ -928,15 +923,11 @@ void ShowMiniViewer(bool *p_open) {
                 }
                 ImGui::EndChild();
             }
-        }
-        
+        }   
     }
     ImGui::End(); // End Viewer window
 }
 #pragma endregion WINDOWS
-
-
-#include "Instrumentor.h"
 
 struct SessionItem {
     const char* Name;

@@ -28,9 +28,9 @@ std::map<std::string, std::vector<int>> group_channels(const OIIO::ImageSpec& sp
     std::map<std::string, std::vector<int>> channel_groups;
 
     // main channels
-    channel_groups["RGB_color"] = { 0,1,2 };
-    channel_groups["Alpha"] = { 3 };
-    channel_groups["ZDepth"] = { 4 };
+    channel_groups.at("RGB_color") = { 0,1,2 };
+    channel_groups.at("Alpha") = { 3 };
+    channel_groups.at("ZDepth") = { 4 };
 
     // AOVs
     for (auto i = 5; i < spec.nchannels; i++) {

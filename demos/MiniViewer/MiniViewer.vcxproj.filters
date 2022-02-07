@@ -26,9 +26,6 @@
     <ClInclude Include="ChannelsTable.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Instrumentor.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="imgui_widget_flamegraph.h">
       <Filter>Header Files</Filter>
     </ClInclude>

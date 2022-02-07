@@ -83,9 +83,9 @@ std::map<std::string, std::vector<int>> group_channels(const OIIO::ImageSpec& sp
     std::map<std::string, std::vector<int>> channel_groups;
 
     // main channels
-    channel_groups["RGB_color"] = { 0,1,2 };
-    channel_groups["Alpha"] = { 3 };
-    channel_groups["ZDepth"] = { 4 };
+    channel_groups.at("RGB_color") = { 0,1,2 };
+    channel_groups.at("Alpha") = { 3 };
+    channel_groups.at("ZDepth") = { 4 };
 
     // AOVs
     for (auto i = 5; i < spec.nchannels; i++) {
@@ -94,9 +94,9 @@ std::map<std::string, std::vector<int>> group_channels(const OIIO::ImageSpec& sp
         auto channel_array = split_string(channel_name, ".");
         auto layer_name = channel_array.front();
         if (!channel_groups.contains(layer_name)) {
-            channel_groups[layer_name] = std::vector<int>();
+            channel_groups.at(layer_name) = std::vector<int>();
         }
-        channel_groups[layer_name].push_back(i);
+        channel_groups.at(layer_name).push_back(i);
     }
     return channel_groups;
 }

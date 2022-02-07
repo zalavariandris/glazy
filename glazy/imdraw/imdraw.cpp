@@ -105,14 +105,14 @@ namespace imdraw {
 
 	void reset_uniforms() {
 		imdraw::set_uniforms(program(), {
-			{uniform_locations["model"], glm::mat4(1)},
-			{uniform_locations["useInstanceMatrix"], false},
-			{uniform_locations["color"], glm::vec3(1,1,1)},
-			{uniform_locations["opacity"], 0.0f},
-			{uniform_locations["useTextureMap"], false},
-			{uniform_locations["textureMap"], 0},
-			{uniform_locations["uv_tiling"], glm::vec2(1,1)},
-			{uniform_locations["uv_offset"], glm::vec2(0,0) }
+			{uniform_locations.at("model"), glm::mat4(1)},
+			{uniform_locations.at("useInstanceMatrix"), false},
+			{uniform_locations.at("color"), glm::vec3(1,1,1)},
+			{uniform_locations.at("opacity"), 0.0f},
+			{uniform_locations.at("useTextureMap"), false},
+			{uniform_locations.at("textureMap"), 0},
+			{uniform_locations.at("uv_tiling"), glm::vec2(1,1)},
+			{uniform_locations.at("uv_offset"), glm::vec2(0,0) }
 		});
 	}
 }
@@ -133,14 +133,14 @@ namespace imdraw {
 static glm::mat4 projection_matrix;
 void imdraw::set_projection(glm::mat4 M) {
 	imdraw::set_uniforms(imdraw::program(), {
-		{uniform_locations["projection"], M}
+		{uniform_locations.at("projection"), M}
 	});
 	projection_matrix = M;
 }
 static glm::mat4 view_matrix;
 void imdraw::set_view(glm::mat4 M) {
 	imdraw::set_uniforms(imdraw::program(), {
-		{uniform_locations["view"], M}
+		{uniform_locations.at("view"), M}
 	});
 	view_matrix = M;
 }
@@ -201,11 +201,11 @@ void imdraw::quad(GLuint texture, glm::vec2 min_rect, glm::vec2 max_rect, glm::v
 	push_program(program());
 	imdraw::reset_uniforms();
 	imdraw::set_uniforms(program(), {
-		{uniform_locations["useTextureMap"], true },
-		{uniform_locations["model"], M},
-		{uniform_locations["uv_tiling"], uv_tiling},
-		{uniform_locations["uv_offset"], uv_offset},
-		{uniform_locations["opacity"], opacity}
+		{uniform_locations.at("useTextureMap"), true },
+		{uniform_locations.at("model"), M},
+		{uniform_locations.at("uv_tiling"), uv_tiling},
+		{uniform_locations.at("uv_offset"), uv_offset},
+		{uniform_locations.at("opacity"), opacity}
 	});
 	glBindTexture(GL_TEXTURE_2D, texture);
 	glBindVertexArray(vao);
@@ -237,9 +237,9 @@ void imdraw::grid() {
 	push_program(program());
 	imdraw::reset_uniforms();
 	imdraw::set_uniforms(program(), {
-		{uniform_locations["model"], glm::mat4(1)},
-		{uniform_locations["color"], glm::vec3(0.5)},
-		{uniform_locations["useTextureMap"], false }
+		{uniform_locations.at("model"), glm::mat4(1)},
+		{uniform_locations.at("color"), glm::vec3(0.5)},
+		{uniform_locations.at("useTextureMap"), false}
 	});
 	glBindVertexArray(vao);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
@@ -264,9 +264,9 @@ void imdraw::disc(glm::vec3 center, float diameter, glm::vec3 color) {
 	push_program(program());
 	imdraw::reset_uniforms();
 	set_uniforms(program(), {
-		{uniform_locations["color"], color},
-		{uniform_locations["model"], glm::scale(glm::translate(glm::mat4(1), center), glm::vec3(diameter/2))},
-		{uniform_locations["useTextureMap"], false}
+		{uniform_locations.at("color"), color},
+		{uniform_locations.at("model"), glm::scale(glm::translate(glm::mat4(1), center), glm::vec3(diameter/2))},
+		{uniform_locations.at("useTextureMap"), false}
 	});
 	glBindVertexArray(vao);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
@@ -321,10 +321,10 @@ void imdraw::disc(std::vector<glm::vec3> centers, float diameter, glm::vec3 colo
 	push_program(program());
 	imdraw::reset_uniforms();
 	set_uniforms(program(), {
-		{uniform_locations["color"], color},
-		{uniform_locations["model"], glm::mat4(1)},
-		{uniform_locations["useTextureMap"], false},
-		{uniform_locations["useInstanceMatrix"], true}
+		{uniform_locations.at("color"), color},
+		{uniform_locations.at("model"), glm::mat4(1)},
+		{uniform_locations.at("useTextureMap"), false},
+		{uniform_locations.at("useInstanceMatrix"), true}
 	});
 
 	glBindVertexArray(vao);
@@ -381,10 +381,10 @@ void imdraw::rect(glm::vec2 rect_min, glm::vec2 rect_max, imdraw::Material mater
 	{
 		imdraw::reset_uniforms();
 		set_uniforms(program(), {
-			{uniform_locations["model"], glm::mat4(1)},
-			{uniform_locations["color"], material.color},
-			{uniform_locations["useTextureMap"], material.texture > 0},
-			{uniform_locations["opacity"], material.opacity}
+			{uniform_locations.at("model"), glm::mat4(1)},
+			{uniform_locations.at("color"), material.color},
+			{uniform_locations.at("useTextureMap"), material.texture > 0},
+			{uniform_locations.at("opacity"), material.opacity}
 		});
 		if (material.texture > 0) {
 			glBindTexture(GL_TEXTURE_2D, material.texture);
@@ -430,8 +430,8 @@ void imdraw::cross(glm::vec3 center, float size) {
 	push_program(program());
 	imdraw::reset_uniforms();
 	set_uniforms(program(), {
-		{uniform_locations["model"], glm::translate(glm::mat4(1), center) * glm::scale(glm::mat4(1), glm::vec3(size))},
-		{uniform_locations["useTextureMap"], false}
+		{uniform_locations.at("model"), glm::translate(glm::mat4(1), center) * glm::scale(glm::mat4(1), glm::vec3(size))},
+		{uniform_locations.at("useTextureMap"), false}
 	});
 	glBindVertexArray(vao);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
@@ -456,8 +456,8 @@ void imdraw::cylinder(glm::vec3 center, float size) {
 	push_program(program());
 	imdraw::reset_uniforms();
 	set_uniforms(program(), {
-		{uniform_locations["model"], glm::translate(glm::mat4(1), center)*glm::scale(glm::mat4(1), glm::vec3(size))},
-		{uniform_locations["useTextureMap"], false}
+		{uniform_locations.at("model"), glm::translate(glm::mat4(1), center)*glm::scale(glm::mat4(1), glm::vec3(size))},
+		{uniform_locations.at("useTextureMap"), false}
 	});
 	glBindVertexArray(vao);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
@@ -481,8 +481,8 @@ void imdraw::sphere(glm::vec3 center, float diameter) {
 	// draw
 	push_program(program());
 	set_uniforms(program(), {
-		{uniform_locations["model"], glm::translate(glm::mat4(1), center) * glm::scale(glm::mat4(1), glm::vec3(diameter/2))},
-		{uniform_locations["useTextureMap"], false}
+		{uniform_locations.at("model"), glm::translate(glm::mat4(1), center) * glm::scale(glm::mat4(1), glm::vec3(diameter/2))},
+		{uniform_locations.at("useTextureMap"), false}
 	});
 	glBindVertexArray(vao);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
@@ -507,9 +507,9 @@ void imdraw::cube(glm::vec3 center, float size, glm::vec3 color) {
 	push_program(program());
 	imdraw::reset_uniforms();
 	set_uniforms(program(), {
-		{uniform_locations["model"], glm::translate(glm::mat4(1), center) * glm::scale(glm::mat4(1), glm::vec3(size))},
-		{uniform_locations["useTextureMap"], false},
-		{uniform_locations["color"], color}
+		{uniform_locations.at("model"), glm::translate(glm::mat4(1), center) * glm::scale(glm::mat4(1), glm::vec3(size))},
+		{uniform_locations.at("useTextureMap"), false},
+		{uniform_locations.at("color"), color}
 	});
 	glBindVertexArray(vao);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
@@ -536,8 +536,8 @@ void imdraw::sharp_cube(glm::vec3 center, float size) {
 	push_program(program());
 	imdraw::reset_uniforms();
 	set_uniforms(program(), {
-		{uniform_locations["model"], glm::translate(glm::mat4(1), center) * glm::scale(glm::mat4(1), glm::vec3(size))},
-		{uniform_locations["useTextureMap"], false}
+		{uniform_locations.at("model"), glm::translate(glm::mat4(1), center) * glm::scale(glm::mat4(1), glm::vec3(size))},
+		{uniform_locations.at("useTextureMap"), false}
 		});
 	glBindVertexArray(vao);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);

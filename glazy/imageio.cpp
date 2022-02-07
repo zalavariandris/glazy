@@ -62,17 +62,17 @@ std::map<std::string, std::vector<int>> group_channels(const OIIO::ImageSpec& sp
 		if (channelname == "R" || channelname == "G" || channelname == "B" || channelname == "A") // rgba
 		{
 			if (!layers.contains("color")) {
-				layers["color"] = std::vector<int>();
+				layers.at("color") = std::vector<int>();
 			}
-			layers["color"].push_back(c);
+			layers.at("color").push_back(c);
 			continue;
 		}
 		if (channelname == "Z") // depth
 		{
 			if (!layers.contains("depth")) {
-				layers["depth"] = std::vector<int>();
+				layers.at("depth") = std::vector<int>();
 			}
-			layers["depth"].push_back(c);
+			layers.at("depth").push_back(c);
 			continue;
 		}
 
@@ -81,7 +81,7 @@ std::map<std::string, std::vector<int>> group_channels(const OIIO::ImageSpec& sp
 		{
 			auto layer = channel_segments[0];
 			if (!layers.contains(layer)) {
-				layers[layer].push_back(c);
+				layers.at(layer).push_back(c);
 			}
 		}
 		else if (channel_segments.size() > 1)

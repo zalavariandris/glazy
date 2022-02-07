@@ -4,52 +4,12 @@
 #include <cassert>
 #include <cstdio> // printf sprintf snprintf
 
-/*
-std::vector<std::filesystem::path> find_sequence(std::filesystem::path input_path, int * start_frame, int * end_frame) {
-    assert(std::filesystem::exists(input_path));
-
-    std::vector<std::filesystem::path> sequence;
-    std::vector<int> framenumbers;
-
-    // find sequence item in folder
-    auto [input_name, input_digits] = split_digits(input_path.stem().string());
-    auto folder = input_path.parent_path();
-
-    for (std::filesystem::path path : std::filesystem::directory_iterator{ folder, std::filesystem::directory_options::skip_permission_denied }) {
-        try {
-            // match filename and digits count
-            auto [name, digits] = split_digits(path.stem().string());
-            bool IsSequenceItem = (name == input_name) && (digits.size() == input_digits.size());
-            //std::cout << "check file " << IsSequenceItem << " " << path << std::endl;
-            //std::cout << name << " <> " << input_name << std::endl;
-            if (IsSequenceItem) {
-                sequence.push_back(path);
-                framenumbers.push_back( std::stoi(digits) );
-            }
-        }
-        catch (const std::system_error& ex) {
-            std::cout << "Exception: " << ex.what() << "\n-  probably std::filesystem does not support Unicode filenames" << std::endl;
-        }
-    }
-
-    std::sort(framenumbers.begin(), framenumbers.end());
-    if (start_frame) {
-        *start_frame = framenumbers[0];
-    }
-    if (end_frame) {
-        *end_frame = framenumbers.back();
-    }
-
-    return sequence;
-}
-*/
-
 std::string to_string(std::vector<std::filesystem::path> sequence) {
     // collect frame numbers
     std::cout << "Sequence items:" << std::endl;
     std::vector<int> frame_numbers;
-    for (auto seq_item : sequence) {
-        auto [name, digits] = split_digits(seq_item.stem().string());
+    for (const auto& seq_item : sequence) {
+        const auto& [name, digits] = split_digits(seq_item.stem().string());
         frame_numbers.push_back(std::stoi(digits));
     }
     sort(frame_numbers.begin(), frame_numbers.end());
@@ -58,7 +18,7 @@ std::string to_string(std::vector<std::filesystem::path> sequence) {
     int first_frame = frame_numbers[0];
     int last_frame = frame_numbers.back();
 
-    auto [input_name, input_digits] = split_digits(sequence[0].stem().string());
+    const auto& [input_name, input_digits] = split_digits(sequence[0].stem().string());
     std::string text = input_name;
     for (auto i = 0; i < input_digits.size(); i++) {
         text += "#";
@@ -68,30 +28,30 @@ std::string to_string(std::vector<std::filesystem::path> sequence) {
     return text;
 }
 
-std::tuple<std::filesystem::path, int, int, int> scan_for_sequence(const std::filesystem::path & input_path) {
+std::tuple<std::filesystem::path, int, int, int> scan_for_sequence(const std::filesystem::path& input_path) {
     assert(std::filesystem::exists(input_path));
 
     std::vector<std::filesystem::path> sequence;
     std::vector<int> framenumbers;
 
     // find sequence item in folder
-    auto [input_name, input_digits] = split_digits(input_path.stem().string());
+    const auto& [input_name, input_digits] = split_digits(input_path.stem().string());
     if (input_digits.empty()) {
         return {input_path, 0, 0, 0};
     }
     int selected_frame = std::stoi(input_digits);
-    auto input_folder = input_path.parent_path();
-    std::filesystem::path sequence_pattern = input_folder / (input_name +"%0" + std::to_string(input_digits.size()) + "d" + input_path.extension().string());
+    const auto& input_folder = input_path.parent_path();
+    const std::filesystem::path sequence_pattern = input_folder / (input_name +"%0" + std::to_string(input_digits.size()) + "d" + input_path.extension().string());
 
-    for (std::filesystem::path path : std::filesystem::directory_iterator{ input_folder, std::filesystem::directory_options::skip_permission_denied }) {
+    for (auto&& entry : std::filesystem::directory_iterator{ input_folder, std::filesystem::directory_options::skip_permission_denied }) {
         try {
             // match filename and digits count
-            auto [name, digits] = split_digits(path.stem().string());
+            const auto& [name, digits] = split_digits(entry.path().stem().string());
             bool IsSequenceItem = (name == input_name) && (digits.size() == input_digits.size());
             //std::cout << "check file " << IsSequenceItem << " " << path << std::endl;
             //std::cout << name << " <> " << input_name << std::endl;
             if (IsSequenceItem) {
-                sequence.push_back(path);
+                sequence.push_back(entry.path());
                 framenumbers.push_back(std::stoi(digits));
             }
         }
