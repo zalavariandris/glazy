@@ -81,8 +81,6 @@ auto get_layers(const ChannelsTable& channels_table)
         const auto& [subimage_idx, channel_idx] = idx;
         auto [subimage_name, subimage_view, layer, view, channel] = record;
 
-
-
         if (!visited.contains(layer)) {
             layers.push_back(layer);
             visited.insert(layer);
@@ -931,6 +929,11 @@ void ShowMiniViewer(bool *p_open) {
 
 int main()
 {
+    OIIO::attribute("threads", 1);
+    OIIO::attribute("exr_threads", 1);
+    OIIO::attribute("try_all_readers", 0);
+    OIIO::attribute("openexr:core", 1);
+
     static bool image_viewer_visible{ true };
     static bool info_visible{ false };
     static bool channels_table_visible{ false };
@@ -962,6 +965,7 @@ int main()
             // GUI
             glazy::new_frame();
             {
+
                 // Main menubar
                 if (ImGui::BeginMainMenuBar())
                 {
@@ -1064,11 +1068,10 @@ int main()
                     ImGui::End();
                 }
 
-                /*
+                
                 // ChannelsTable
                 if (channels_table_visible)
                 {
-                    PROFILE_SCOPE("Channels table window");
                     if (ImGui::Begin("Channels table", &channels_table_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
                         ShowChannelsTable();
                     }
@@ -1084,27 +1087,12 @@ int main()
                 //        ShowInfo();
                 //    }
                 //    ImGui::End();
-                //}
-
-
-
-                if (profiler_visible)
-                {
-                    PROFILE_SCOPE("Profiler window");
-
-                    ImGui::Begin("Profiler", &profiler_visible);
-                    ImGuiWidgetFlameGraph::PlotFlame("CPU graph", &ProfilerValueGetter, &session_data, session_data.size(), 0, "Main Thread", FLT_MAX, FLT_MAX, ImGui::GetContentRegionAvail());
-                    ImGui::End();
-                    session_data.clear();
-                }
-                */
+                //}                
             }
             
             glazy::end_frame();
         }
     }
     glazy::destroy();
-    
-    
 
 }

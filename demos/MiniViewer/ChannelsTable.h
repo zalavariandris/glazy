@@ -163,14 +163,14 @@ ChannelsTable get_channelstable(const std::filesystem::path& filename)
 
 
     auto image_cache = OIIO::ImageCache::create(true);
-    int nsubimages;
-    image_cache->get_image_info(OIIO::ustring(filename.string().c_str()), 0, 0, OIIO::ustring("subimages"), OIIO::TypeInt, &nsubimages);
+    //int nsubimages;
+    //image_cache->get_image_info(OIIO::ustring(filename.string().c_str()), 0, 0, OIIO::ustring("subimages"), OIIO::TypeInt, &nsubimages);
 
     OIIO::ImageSpec spec;
     image_cache->get_imagespec(OIIO::ustring(filename.string().c_str()), spec, 0, 0);
     std::vector<std::string> views = get_stringvector_attribute(spec, "multiView");
 
-    for (int i = 0; i < nsubimages; i++) {
+    for (int i = 0; i < 1; i++) {
         OIIO::ImageSpec spec;
         image_cache->get_imagespec(OIIO::ustring(filename.string().c_str()), spec, i, 0);
         std::string subimage_name = spec.get_string_attribute("name");

@@ -40,7 +40,7 @@ using namespace OIIO;
 
 
 
-std::filesystem::path test_folder{ "C:/Users/andris/Desktop/exr_test_images" };
+std::filesystem::path test_folder{ "C:/Users/andris/Desktop/testimages/exr_test_images" };
 
 namespace profile {
     std::chrono::time_point<std::chrono::steady_clock> start;
@@ -179,6 +179,7 @@ namespace With_OIIO_ImageBuffer {
         free(data);
     }
 }
+
 namespace With_OIIO_ImageCache{
     void read_RGB_from_multichannel(ImageCache* cache) {
         auto filename = (test_folder / "multichannel_sequence/52_06_EXAM_v06-vrayraw.0010.exr");
@@ -426,7 +427,7 @@ int main()
     std::cout << "---------------------" << "\n";
     
 
-    //OIIO::attribute("options", "threads=32,exr_threads=32,log_times=1");
+    OIIO::attribute("options", "threads=1,exr_threads=0,log_times=1");
 
     std::cout << "threads: " << OIIO::get_int_attribute("threads") << "\n";
     std::cout << "exr_threads: " << OIIO::get_int_attribute("exr_threads") << "\n";
