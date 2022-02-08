@@ -38,8 +38,8 @@ void ImageCacheWidget(const OIIO::ImageCache* image_cache) {
 	image_cache->getattribute("stat:bytes_read", OIIO::TypeInt64, &bytes_read);
 
 	ImGui::Text("cache memory used: %d", cache_memory_used);
-	ImGui::Text("open_files_peak: %d", open_files_peak);
-	ImGui::Text("image_size: %d", image_size);
-	ImGui::Text("file_size: %d", file_size);
-	ImGui::Text("bytes_read: %d", bytes_read);
+	ImGui::Text("open_files_peak: %d MV", open_files_peak/1024/1024);
+	ImGui::Text("image_size: %d MB", image_size / 1024 / 1024);
+	ImGui::Text("file_size: %d", file_size / 1024 / 1024);
+	ImGui::Text("bytes_read: %d", bytes_read / 1024 / 1024);
 }
