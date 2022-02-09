@@ -242,9 +242,9 @@ GLuint make_texture_from_file(const std::filesystem::path& filename, const std::
 
         
         bool use_sRGB_to_linear_conversion = spec.get_string_attribute("oiio:ColorSpace") != "Linear";
-        std::cout << "make_texture_from_file" << "\n";
-        std::cout << "  colorspace: " << spec.get_string_attribute("oiio:ColorSpace").c_str() << "\n";
-        std::cout << "  use_sRGB_to_linear_conversion: " << use_sRGB_to_linear_conversion << "\n";
+        //std::cout << "make_texture_from_file" << "\n";
+        //std::cout << "  colorspace: " << spec.get_string_attribute("oiio:ColorSpace").c_str() << "\n";
+        //std::cout << "  use_sRGB_to_linear_conversion: " << use_sRGB_to_linear_conversion << "\n";
 
         imdraw::push_program(prog);
         imdraw::set_uniforms(prog,

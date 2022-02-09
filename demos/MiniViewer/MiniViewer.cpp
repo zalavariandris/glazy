@@ -37,9 +37,8 @@
 
 // helpers
 #include "helpers.h"
-#pragma region HELPERS
 
-#pragma endregion HELPERS
+#include <../tracy/Tracy.hpp>
 
 // GUI State variables
 struct State {
@@ -516,8 +515,7 @@ void ShowMiniViewer(bool *p_open) {
     static bool flip_y{ false };
 
     static int selected_device = 1;
-    static int sep_width = 50;
-    ImGui::SliderInt("sep width", &sep_width, 0, 1000);
+
     if (ImGui::Begin("Viewer", p_open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoScrollbar)) {
 
         if (ImGui::BeginMenuBar()) // Toolbar
@@ -925,11 +923,54 @@ void ShowMiniViewer(bool *p_open) {
     }
     ImGui::End(); // End Viewer window
 }
+void ShowSettings(bool* p_open)
+{
+    static int threads = 0;
+    static int exr_threads = 1;
+    static bool try_all_readers = false;
+    static bool openexr_core = 1;
+    static int autotile = 64;
+    if (ImGui::Begin("Settings", p_open, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        if (ImGui::CollapsingHeader("OpenImageIO", ImGuiTreeNodeFlags_DefaultOpen)) {
+            OIIO::getattribute("threads", threads);
+            if (ImGui::DragInt("threads", &threads, 1.0f, 0, 32)) {
+                OIIO::attribute("threads", threads);
+            }
+
+            OIIO::getattribute("exr_threads", exr_threads);
+            if (ImGui::DragInt("exr_threads", &exr_threads, 1.0f, 0, 32)) {
+                OIIO::attribute("exr_threads", exr_threads);
+            }
+
+            int got_try_all_readers;
+            OIIO::getattribute("try_all_readers", got_try_all_readers);
+            try_all_readers = got_try_all_readers > 0 ? true : false;
+            if (ImGui::Checkbox("try all readers", &try_all_readers)) {
+                OIIO::attribute("try_all_readers", try_all_readers ? 1 : 0);
+            }
+
+            int got_openexr_core;
+            OIIO::getattribute("openexr:core", got_openexr_core);
+            openexr_core = got_openexr_core > 0 ? true : false;
+            if (ImGui::Checkbox("openexr:core", &openexr_core)) {
+                OIIO::attribute("openexr:core", openexr_core ? 1 : 0);
+            }
+
+            OIIO::getattribute("autotile", autotile);
+            if (ImGui::DragInt("autotile", &autotile, 1.0f, 16, 512)) {
+                OIIO::attribute("autotile", autotile);
+            }
+        }
+    }
+    ImGui::End();
+}
+
 #pragma endregion WINDOWS
 
 int main()
 {
-    OIIO::attribute("threads", 1);
+    OIIO::attribute("threads", 0);
     OIIO::attribute("exr_threads", 1);
     OIIO::attribute("try_all_readers", 0);
     OIIO::attribute("openexr:core", 1);
@@ -939,6 +980,7 @@ int main()
     static bool channels_table_visible{ false };
     static bool timeline_visible{ true };
     static bool profiler_visible{ false };
+    static bool settings_visible{ true };
 
     auto image_cache = OIIO::ImageCache::create(true);
     image_cache->attribute("max_memory_MB", 1024.0f*4);
@@ -949,9 +991,7 @@ int main()
     
     while (glazy::is_running())
     {
-       
         {
-
             // control playback
             if (state.is_playing)
             {
@@ -994,6 +1034,7 @@ int main()
                         ImGui::MenuItem("channels table", "", &channels_table_visible);
                         ImGui::MenuItem("timeline", "", &timeline_visible);
                         ImGui::MenuItem("iprofiler", "", &profiler_visible);
+                        ImGui::MenuItem("settings", "", &settings_visible);
                         ImGui::EndMenu();
                     }
                     ImGui::Spacing();
@@ -1015,6 +1056,12 @@ int main()
                 if (image_viewer_visible)
                 {
                     ShowMiniViewer(&image_viewer_visible);
+                }
+
+                // Image Viewer
+                if (settings_visible)
+                {
+                    ShowSettings(&settings_visible);
                 }
 
                 // Timeliune

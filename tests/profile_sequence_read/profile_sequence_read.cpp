@@ -27,8 +27,29 @@ using namespace OIIO;
 #include <OpenEXR/ImathBox.h>
 #include <OpenEXR/IlmThreadPool.h>
 #include <OpenEXR/ImfVersion.h>
-
 #include <OpenEXR/ImfStdIO.h>
+#include <OpenEXR/ImfMultiPartInputFile.h>
+
+
+
+class Timer {
+public:
+    Timer(std::string name) : name(name) {
+        start_time = std::chrono::steady_clock::now();
+    }
+
+    ~Timer() {
+        auto end_time = std::chrono::steady_clock::now();
+        auto dt = end_time - start_time;
+        std::cout << name << ": " << std::chrono::duration_cast<std::chrono::milliseconds>(dt) << "\n";
+    }
+private:
+    std::chrono::steady_clock::time_point start_time;
+    std::string name;
+};
+
+#define PROFILE_SCOPE(name)  Timer oTimer##__LINE__(name);
+#define PROFILE_FUNCTION()   PROFILE_SCOPE(__func__);
 
 void WithImageInput(std::filesystem::path pattern, int first_frame, int last_frame)
 {
@@ -60,17 +81,15 @@ void WithImageInput(std::filesystem::path pattern, int first_frame, int last_fra
 
 void WithImageCache(std::filesystem::path pattern, int first_frame, int last_frame)
 {
-    std::cout << "With ImageCache" << "\n";
-    std::cout << "---------------" << "\n";
-
     auto image_cache = OIIO::ImageCache::create(true);
     image_cache->attribute("max_memory_MB", 1024.0f * 4);
     image_cache->attribute("max_open_files", 100);
     auto thread_info = image_cache->get_perthread_info();
 
+    PROFILE_FUNCTION();
     for (int current_frame = first_frame; current_frame < last_frame; current_frame++)
     {
-        auto begin = std::chrono::steady_clock::now();
+        PROFILE_SCOPE(std::to_string(current_frame));
         auto current_filename = sequence_item(pattern, current_frame);
 
         assert(("File does not exist!", std::filesystem::exists(current_filename)));
@@ -85,13 +104,18 @@ void WithImageCache(std::filesystem::path pattern, int first_frame, int last_fra
 
             auto thread_info = image_cache->get_perthread_info();
 
-            image_cache->get_image_info(handle, thread_info, 0, 0, u_channels, OIIO::TypeInt, &nsubimages);
+            image_cache->get_image_info(handle, thread_info, 0, 0, u_subimages, OIIO::TypeInt, &nsubimages);
+
+            for (auto p = 0; p < nsubimages; p++) {
+                OIIO::ImageSpec spec;
+                image_cache->get_imagespec(OIIO::ustring(current_filename.string()), spec, p, 0);
+                for (auto c = 0; c < spec.nchannels; c++) {
+                    auto channel_name = spec.channel_name(c);
+                    std::cout << channel_name << ", ";
+                }
+                std::cout << "\n";
+            }
         }
-
-        auto end = std::chrono::steady_clock::now();
-        auto dt = end - begin;
-        std::cout << current_frame << " (" << std::chrono::duration_cast<std::chrono::milliseconds>(dt) << ")\n";
-
         current_frame++;
     }
 }
@@ -115,21 +139,33 @@ inline std::wstring s2ws(const std::string& s)
 
 void WithOpenEXR(std::filesystem::path pattern, int first_frame, int last_frame)
 {
+    PROFILE_FUNCTION();
     for (int current_frame = first_frame; current_frame < last_frame; current_frame++)
     {
+        PROFILE_SCOPE(std::to_string(current_frame));
         auto current_filename = sequence_item(pattern, current_frame);
 
         #if (defined(_WIN32) || defined(__WIN32__) || defined(WIN32)) && !defined(__MINGW32__)
         auto inputStr = new std::ifstream(s2ws(current_filename.string()), std::ios_base::binary);
         auto inputStdStream = new Imf::StdIFStream(*inputStr, current_filename.string().c_str());
-        auto file = new Imf::InputFile(*inputStdStream);
+        auto file = new Imf::MultiPartInputFile(*inputStdStream);
         #else
-        auto file = new Imf::InputFile(filename.c_str());
+        auto file = new Imf::MultiPartInputFile(filename.c_str());
         #endif
 
-        //file->header().
+        for (int p = 0; p < file->parts(); p++) {
+            Imf::Header header = file->header(p);
+            for (Imf::ChannelList::ConstIterator i = header.channels().begin();
+                i != header.channels().end();
+                ++i) {
+                std::cout << i.name() << ", ";
+            }
+            std::cout << "\n";
+        }
+        
     }
 }
+
 
 void WithGui(std::filesystem::path pattern, int first_frame, int last_frame)
 {
@@ -180,7 +216,7 @@ void WithGui(std::filesystem::path pattern, int first_frame, int last_frame)
 
 int main()
 {
-    OIIO::attribute("threads", 1);
+    OIIO::attribute("threads", 0);
     OIIO::attribute("exr_threads", 1);
     OIIO::attribute("try_all_readers", 0);
     OIIO::attribute("openexr:core", 1);
@@ -190,5 +226,6 @@ int main()
     //WithImageInput(file_pattern, first_frame, last_frame);
     WithImageCache(file_pattern, first_frame, last_frame);
     //WithGui(file_pattern, first_frame, last_frame);
+    WithOpenEXR(file_pattern, first_frame, last_frame);
     return EXIT_SUCCESS;
 }
