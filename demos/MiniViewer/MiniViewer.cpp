@@ -73,6 +73,7 @@ auto get_current_filename(const std::filesystem::path& file_pattern, int current
 
 auto get_layers(const ChannelsTable& channels_table)
 {
+    ZoneScopedN("get layers");
     std::vector<std::string> layers;
     std::unordered_set<std::string> visited;
     for (const auto& [idx, record] : channels_table)
@@ -88,7 +89,9 @@ auto get_layers(const ChannelsTable& channels_table)
     return layers;
 }
 
-auto get_views(const ChannelsTable& channels_table, const std::vector<std::string>& layers, int current_layer) {
+auto get_views(const ChannelsTable& channels_table, const std::vector<std::string>& layers, int current_layer)
+{
+    ZoneScopedN("get views");
     std::vector<std::string> views;
     std::unordered_set<std::string> visited;
     for (const auto& [idx, record] : channels_table) {
@@ -105,6 +108,7 @@ auto get_views(const ChannelsTable& channels_table, const std::vector<std::strin
 }
 
 ChannelsTable get_current_chanels_df(const ChannelsTable& channels_table, const std::vector<std::string>& layers, int current_layer, const std::vector<std::string>& views, int current_view) {
+    ZoneScopedN("get_current_chanels_df");
     ChannelsTable current_channels_df; // clear current channels table
     for (const auto& [idx, record] : channels_table) {
         const auto& [subimage_name, subimage_view, layer, view, channel] = record;
@@ -119,11 +123,13 @@ ChannelsTable get_current_chanels_df(const ChannelsTable& channels_table, const 
 
 std::vector<std::string> get_channels(const ChannelsTable& current_channels_df)
 {
+    ZoneScopedN("get channels");
     return get_channels_column(current_channels_df);
 }
 
 OIIO::ImageSpec get_spec(const std::filesystem::path& current_filename, const ChannelsTable& current_channels_df)
 {
+    ZoneScopedN("get spec");
     if (!std::filesystem::exists(current_filename)) return OIIO::ImageSpec();
     if (current_channels_df.empty()) return OIIO::ImageSpec();
 
@@ -137,6 +143,7 @@ OIIO::ImageSpec get_spec(const std::filesystem::path& current_filename, const Ch
 
 GLuint get_texture(const std::filesystem::path& current_filename, const ChannelsTable& current_channels_df)
 {
+    ZoneScopedN("get texture");
     auto indices = get_index_column(current_channels_df);
     if (indices.size() > 4) {
         indices.erase(indices.begin()+ 4, indices.end());
@@ -215,7 +222,8 @@ void on_layer_change()
     state.tex = get_texture(state._current_filename, state._current_channels_df);
 };
 
-void on_view_change() {
+void on_view_change()
+{
     state._current_channels_df = get_current_chanels_df(state._channels_table, state.layers, state.current_layer, state.views, state.current_view);
     state.spec = get_spec(state._current_filename, state._current_channels_df);
     state.channels = get_channels(state._current_channels_df);
@@ -227,6 +235,7 @@ void on_view_change() {
 #pragma region WINDOWS
 void ShowChannelsTable()
 {
+    ZoneScoped;
     if (ImGui::BeginTabBar("image header"))
     {
         
@@ -306,6 +315,7 @@ void ShowChannelsTable()
 
 void ShowInfo()
 {
+    ZoneScoped;
     if (ImGui::CollapsingHeader("sequence", ImGuiTreeNodeFlags_DefaultOpen))
     {
         ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, { ImGui::GetStyle().CellPadding.x,0 });
@@ -428,7 +438,9 @@ void ShowInfo()
     in->close();
 }
 
-void ShowTimeline() {
+void ShowTimeline()
+{
+    ZoneScoped;
     // Timeslider
     ImGui::BeginGroup();
     {
@@ -507,7 +519,9 @@ namespace ImGui {
     }
 }
 
-void ShowMiniViewer(bool *p_open) {
+void ShowMiniViewer(bool *p_open)
+{
+    ZoneScoped;
     static float gain = 0.0;
     static float gamma = 1.0;
     static bool display_checkerboard=true;
@@ -699,7 +713,9 @@ void ShowMiniViewer(bool *p_open) {
                 static glm::ivec2 correction_size;
 
                 if (!state.spec.undefined()) {
-                    if (correction_size.x != state.spec.full_width || correction_size.y != state.spec.full_height) {
+                    if (correction_size.x != state.spec.full_width || correction_size.y != state.spec.full_height)
+                    {
+                        ZoneScopedN("update correction fbo");
                         std::cout << "update correction fbo: " << state.spec.full_width << ", " << state.spec.full_height << "\n";
                         correction_size = { state.spec.full_width, state.spec.full_height };
                         if (glIsFramebuffer(correction_fbo))
@@ -721,7 +737,9 @@ void ShowMiniViewer(bool *p_open) {
                     )";
 
                 static GLuint correction_program;
-                if (glazy::is_file_modified("display_correction.frag")) {
+                if (glazy::is_file_modified("display_correction.frag"))
+                {
+                    ZoneScopedN("recompile display correction shader");
                     if (glIsProgram(correction_program)) glDeleteProgram(correction_program);
                     std::string correction_fragment_code = glazy::read_text("display_correction.frag");
                     correction_program = imdraw::make_program_from_source(PASS_THROUGH_VERTEX_CODE, correction_fragment_code.c_str());
@@ -730,6 +748,7 @@ void ShowMiniViewer(bool *p_open) {
                 // render to correction fbo
                 BeginRenderToTexture(correction_fbo, 0, 0, state.spec.full_width, state.spec.full_height);
                 {
+                    ZoneScopedN("render to correction fbo");
                     glClearColor(0, 0, 0, 0.0);
                     glClear(GL_COLOR_BUFFER_BIT);
 
@@ -758,6 +777,7 @@ void ShowMiniViewer(bool *p_open) {
                 // Render to Viewport FBO
                 BeginRenderToTexture(viewport_fbo, 0, 0, item_size.x, item_size.y);
                 {
+                    ZoneScopedN("render to viewport fbo");
                     glClearColor(0.0, 0.0, 0.0, 0.1);
                     glClear(GL_COLOR_BUFFER_BIT);
                     state.camera.aspect = item_size.x / item_size.y;
@@ -801,7 +821,7 @@ void ShowMiniViewer(bool *p_open) {
 
                     // draw image
                     if (!state._current_channels_df.empty()) {
-
+                        ZoneScopedN("draw image");
                         // read header
                         //auto image_cache = OIIO::ImageCache::create(true);
                         //OIIO::ImageSpec spec;
@@ -813,6 +833,7 @@ void ShowMiniViewer(bool *p_open) {
                         // draw checkerboard or black background
                         if (display_checkerboard)
                         { // draw checkerboard background
+                            ZoneScopedN("draw checkerboard background");
                             glDisable(GL_BLEND);
                             static auto toy = ShaderToy("./try_shadertoy.frag", imgeo::rect({ 0,0 }, {1,1}));
                             toy.autoreload();
@@ -832,6 +853,7 @@ void ShowMiniViewer(bool *p_open) {
                         }
                         else
                         { // draw black background
+                            ZoneScopedN("draw black background");
                             imdraw::rect(
                                 { state.spec.full_x, state.spec.full_y }, // min rect
                                 { state.spec.full_x + state.spec.full_width, state.spec.full_y + state.spec.full_height }, //max rect
@@ -923,16 +945,27 @@ void ShowMiniViewer(bool *p_open) {
     }
     ImGui::End(); // End Viewer window
 }
+
 void ShowSettings(bool* p_open)
 {
-    static int threads = 0;
-    static int exr_threads = 1;
-    static bool try_all_readers = false;
-    static bool openexr_core = 1;
-    static int autotile = 64;
+
     if (ImGui::Begin("Settings", p_open, ImGuiWindowFlags_AlwaysAutoResize))
     {
-        if (ImGui::CollapsingHeader("OpenImageIO", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::CollapsingHeader("GLFW", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            static bool vsync = true;
+            if(ImGui::Checkbox("vsync", &vsync)){
+                glfwSwapInterval(vsync ? 1 : 0);     // 0: vsync-off, 1: vsync-on
+            }
+        }
+
+        if (ImGui::CollapsingHeader("OpenImageIO", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            static int threads = 0;
+            static int exr_threads = 1;
+            static bool try_all_readers = false;
+            static bool openexr_core = 1;
+            static int autotile = 64;
             OIIO::getattribute("threads", threads);
             if (ImGui::DragInt("threads", &threads, 1.0f, 0, 32)) {
                 OIIO::attribute("threads", threads);
@@ -991,154 +1024,156 @@ int main()
     
     while (glazy::is_running())
     {
+        ZoneScopedN("frame");
+        // control playback
+        if (state.is_playing)
         {
-            // control playback
-            if (state.is_playing)
-            {
-                state.current_frame++;
-                if (state.current_frame > state.end_frame) {
-                    state.current_frame = state.start_frame;
-                }
-                on_frame_change();
+            state.current_frame++;
+            if (state.current_frame > state.end_frame) {
+                state.current_frame = state.start_frame;
             }
-
-            // GUI
-            glazy::new_frame();
-            {
-
-                // Main menubar
-                if (ImGui::BeginMainMenuBar())
-                {
-                    if (ImGui::BeginMenu("File"))
-                    {
-                        if (ImGui::MenuItem("Open"))
-                        {
-                            auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0JPEG images\0*.jpg");
-                            open(filepath);
-                            fit();
-                        }
-                        ImGui::EndMenu();
-                    }
-
-                    if (ImGui::BeginMenu("View")) {
-                        if (ImGui::MenuItem("Fit", "f")) {
-                            fit();
-                        }
-                        ImGui::EndMenu();
-                    }
-
-                    if (ImGui::BeginMenu("Windows"))
-                    {
-                        ImGui::MenuItem("image viewer", "", &image_viewer_visible);
-                        ImGui::MenuItem("image info", "", &info_visible);
-                        ImGui::MenuItem("channels table", "", &channels_table_visible);
-                        ImGui::MenuItem("timeline", "", &timeline_visible);
-                        ImGui::MenuItem("iprofiler", "", &profiler_visible);
-                        ImGui::MenuItem("settings", "", &settings_visible);
-                        ImGui::EndMenu();
-                    }
-                    ImGui::Spacing();
-
-                    if (!state.file_pattern.empty())
-                    {
-                        ImGui::Text(" - %s", state.file_pattern.filename().string().c_str());
-                        if (ImGui::IsItemHovered()) {
-                            ImGui::SetTooltip(state.file_pattern.string().c_str());
-                        }
-                    }
-
-                    ImGui::EndMainMenuBar();
-                }
-
-
-                
-                // Image Viewer
-                if (image_viewer_visible)
-                {
-                    ShowMiniViewer(&image_viewer_visible);
-                }
-
-                // Image Viewer
-                if (settings_visible)
-                {
-                    ShowSettings(&settings_visible);
-                }
-
-                // Timeliune
-                if (timeline_visible)
-                {
-                    if (ImGui::Begin("Timeline")) {
-                        ShowTimeline();
-                    }
-                    ImGui::End();
-                }
-
-                if (ImGui::Begin("ImageCache")) {
-                    int max_open_files;
-                    int autotile;
-                    int autoscanline;
-                    int automip;
-                    int forcefloat;
-
-                    image_cache->getattribute("max_open_files", max_open_files);
-                    image_cache->getattribute("autotile", autotile);
-                    image_cache->getattribute("autoscanline ", autoscanline);
-                    image_cache->getattribute("automip", automip);
-                    image_cache->getattribute("forcefloat", forcefloat);
-
-                    ImGui::Text("max open files: %d", max_open_files);
-                    ImGui::Text("autotile: %d", autotile);
-                    ImGui::Text("autoscanline: %d", autoscanline);
-                    ImGui::Text("automip: %d", automip);
-                    ImGui::Text("forcefloat: %d", forcefloat);
-
-                    int total_files;
-                    image_cache->getattribute("total_files", total_files);
-
-                    // stats
-                    int64_t cache_memory_used;
-                    int open_files_peak;
-                    int64_t image_size;
-                    int64_t file_size;
-                    int64_t bytes_read;
-                    image_cache->getattribute("stat:cache_memory_used", OIIO::TypeInt64, &cache_memory_used);
-                    image_cache->getattribute("stat:open_files_peak", open_files_peak);
-                    image_cache->getattribute("stat:image_size", OIIO::TypeInt64, &image_size);
-                    image_cache->getattribute("stat:file_size", OIIO::TypeInt64, &file_size);
-                    image_cache->getattribute("stat:bytes_read", OIIO::TypeInt64, &bytes_read);
-
-                    ImGui::Text("cache memory used: %d", cache_memory_used);
-                    ImGui::Text("open_files_peak: %d", open_files_peak);
-                    ImGui::Text("image_size: %d", image_size);
-                    ImGui::Text("file_size: %d", file_size);
-                    ImGui::Text("bytes_read: %d", bytes_read);
-                    ImGui::End();
-                }
-
-                
-                // ChannelsTable
-                if (channels_table_visible)
-                {
-                    if (ImGui::Begin("Channels table", &channels_table_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
-                        ShowChannelsTable();
-                    }
-                    ImGui::End();
-                }
-
-                //// Image info
-                //ImGui::SetNextWindowSizeConstraints(ImVec2(100, -1), ImVec2(200, -1));          // Width 400-500
-                //if (info_visible)
-                //{
-                //    PROFILE_SCOPE("Info window");
-                //    if (ImGui::Begin("Info", &info_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
-                //        ShowInfo();
-                //    }
-                //    ImGui::End();
-                //}                
-            }
-            
-            glazy::end_frame();
+            on_frame_change();
         }
+
+        // GUI
+        glazy::new_frame();
+        {
+                
+            // Main menubar
+            if (ImGui::BeginMainMenuBar())
+            {
+                if (ImGui::BeginMenu("File"))
+                {
+                    if (ImGui::MenuItem("Open"))
+                    {
+                        auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0JPEG images\0*.jpg");
+                        open(filepath);
+                        fit();
+                    }
+                    ImGui::EndMenu();
+                }
+
+                if (ImGui::BeginMenu("View")) {
+                    if (ImGui::MenuItem("Fit", "f")) {
+                        fit();
+                    }
+                    ImGui::EndMenu();
+                }
+
+                if (ImGui::BeginMenu("Windows"))
+                {
+                    ImGui::MenuItem("image viewer", "", &image_viewer_visible);
+                    ImGui::MenuItem("image info", "", &info_visible);
+                    ImGui::MenuItem("channels table", "", &channels_table_visible);
+                    ImGui::MenuItem("timeline", "", &timeline_visible);
+                    ImGui::MenuItem("iprofiler", "", &profiler_visible);
+                    ImGui::MenuItem("settings", "", &settings_visible);
+                    ImGui::EndMenu();
+                }
+                ImGui::Spacing();
+
+                if (!state.file_pattern.empty())
+                {
+                    ImGui::Text(" - %s", state.file_pattern.filename().string().c_str());
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip(state.file_pattern.string().c_str());
+                    }
+                }
+
+                ImGui::EndMainMenuBar();
+            }
+
+
+                
+            // Image Viewer
+            if (image_viewer_visible)
+            {
+                ShowMiniViewer(&image_viewer_visible);
+            }
+
+            // Image Viewer
+            if (settings_visible)
+            {
+                ShowSettings(&settings_visible);
+            }
+
+            // Timeliune
+            if (timeline_visible)
+            {
+                if (ImGui::Begin("Timeline")) {
+                    ShowTimeline();
+                }
+                ImGui::End();
+            }
+
+
+            if (ImGui::Begin("ImageCache"))
+            {
+                ZoneScoped("ShowImageCache");
+                int max_open_files;
+                int autotile;
+                int autoscanline;
+                int automip;
+                int forcefloat;
+
+                image_cache->getattribute("max_open_files", max_open_files);
+                image_cache->getattribute("autotile", autotile);
+                image_cache->getattribute("autoscanline ", autoscanline);
+                image_cache->getattribute("automip", automip);
+                image_cache->getattribute("forcefloat", forcefloat);
+
+                ImGui::Text("max open files: %d", max_open_files);
+                ImGui::Text("autotile: %d", autotile);
+                ImGui::Text("autoscanline: %d", autoscanline);
+                ImGui::Text("automip: %d", automip);
+                ImGui::Text("forcefloat: %d", forcefloat);
+
+                int total_files;
+                image_cache->getattribute("total_files", total_files);
+
+                // stats
+                int64_t cache_memory_used;
+                int open_files_peak;
+                int64_t image_size;
+                int64_t file_size;
+                int64_t bytes_read;
+                image_cache->getattribute("stat:cache_memory_used", OIIO::TypeInt64, &cache_memory_used);
+                image_cache->getattribute("stat:open_files_peak", open_files_peak);
+                image_cache->getattribute("stat:image_size", OIIO::TypeInt64, &image_size);
+                image_cache->getattribute("stat:file_size", OIIO::TypeInt64, &file_size);
+                image_cache->getattribute("stat:bytes_read", OIIO::TypeInt64, &bytes_read);
+
+                ImGui::Text("cache memory used: %d", cache_memory_used);
+                ImGui::Text("open_files_peak: %d", open_files_peak);
+                ImGui::Text("image_size: %d", image_size);
+                ImGui::Text("file_size: %d", file_size);
+                ImGui::Text("bytes_read: %d", bytes_read);
+                ImGui::End();
+            }
+
+                
+            // ChannelsTable
+            if (channels_table_visible)
+            {
+                if (ImGui::Begin("Channels table", &channels_table_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
+                    ShowChannelsTable();
+                }
+                ImGui::End();
+            }
+
+            //// Image info
+            //ImGui::SetNextWindowSizeConstraints(ImVec2(100, -1), ImVec2(200, -1));          // Width 400-500
+            //if (info_visible)
+            //{
+            //    PROFILE_SCOPE("Info window");
+            //    if (ImGui::Begin("Info", &info_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
+            //        ShowInfo();
+            //    }
+            //    ImGui::End();
+            //}                
+        }
+            
+        glazy::end_frame();
     }
     glazy::destroy();
 

@@ -867,7 +867,7 @@ namespace glazy {
 
 		/* SWAP BUFFERS */
 		glfwSwapBuffers(window);
-		
+
 	}
 
 	void destroy() {
