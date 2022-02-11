@@ -43,9 +43,11 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="polka.frag" />
     <None Include="README.md" />
-    <None Include="display_correction.frag" />
-    <None Include="try_shadertoy.frag" />
+  </ItemGroup>
+  <ItemGroup>
+    <CopyFileToFolders Include="try_shadertoy.frag" />
+    <CopyFileToFolders Include="polka.frag" />
+    <CopyFileToFolders Include="display_correction.frag" />
   </ItemGroup>
 </Project>

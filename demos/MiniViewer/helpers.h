@@ -1,5 +1,6 @@
 #pragma once
 
+#include <../tracy/Tracy.hpp>
 
 #pragma region RenderToTexture
 std::vector<GLuint> fbo_stack;
@@ -125,6 +126,7 @@ GLuint make_texture_from_file(const std::filesystem::path& filename, const std::
     assert(("cant create a texture from more than 4 channels", channel_keys.size() <= 4));
     
     /// Read header
+    ZoneNamedN(READ_HEADER, "Read header", true);
     auto image_cache = OIIO::ImageCache::create(true);
     OIIO::ImageSpec spec;
     image_cache->get_imagespec(OIIO::ustring(filename.string()), spec, std::get<0>(channel_keys[0]), 0);
@@ -136,11 +138,15 @@ GLuint make_texture_from_file(const std::filesystem::path& filename, const std::
     int chend = std::get<1>(channel_keys[channel_keys.size() - 1]) + 1; // channel range is exclusive [0-3)
     int nchannels = chend - chbegin;
 
+
     /// Allocate and read pixels
+    ZoneNamedN(ALLOC_PIXELS, "Allocate pixels", true);
     float* data = (float*)malloc(w * h * nchannels * sizeof(float));
+    ZoneNamedN(READ_PIXELS, "Read pixels", true);
     image_cache->get_pixels(OIIO::ustring(filename.string()), std::get<0>(channel_keys[0]), 0, x, x + w, y, y + h, 0, 1, chbegin, chend, OIIO::TypeFloat, data, OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, chbegin, chend);
 
     /// Create texture for ROI
+    ZoneNamedN(CREATE_ROI_TEX, "Create texture for ROI", true);
     GLuint tex_roi;
     glGenTextures(1, &tex_roi);
     glBindTexture(GL_TEXTURE_2D, tex_roi);
@@ -152,7 +158,6 @@ GLuint make_texture_from_file(const std::filesystem::path& filename, const std::
     GLint format;
     if (nchannels == 1)
     {
-        
         format = GL_R;
         internalformat = GL_RGBA32F;
         GLint const Swizzle[] = { GL_RED, GL_RED, GL_RED, GL_ONE };
@@ -183,6 +188,7 @@ GLuint make_texture_from_file(const std::filesystem::path& filename, const std::
     free(data);
 
     /// Render ROI texture to full display window
+    ZoneNamedN(CREATE_FULL_TEX, "Create full texture", true);
     GLuint tex_full = imdraw::make_texture_float(spec.full_width, spec.full_height, NULL, GL_RGBA32F);
     GLuint fbo_full = imdraw::make_fbo(tex_full);
     BeginRenderToTexture(fbo_full, spec.full_x, spec.full_y, spec.full_width, spec.full_height);
@@ -242,7 +248,6 @@ GLuint make_texture_from_file(const std::filesystem::path& filename, const std::
             {"aPos", {imdraw::make_vbo(geo.positions), 3}},
         });
 
-        
         bool use_sRGB_to_linear_conversion = spec.get_string_attribute("oiio:ColorSpace") != "Linear";
         //std::cout << "make_texture_from_file" << "\n";
         //std::cout << "  colorspace: " << spec.get_string_attribute("oiio:ColorSpace").c_str() << "\n";
@@ -256,7 +261,9 @@ GLuint make_texture_from_file(const std::filesystem::path& filename, const std::
             {"uFullSize", glm::ivec2(spec.full_width,spec.full_height) },
             {"use_sRGB_to_linear_conversion", use_sRGB_to_linear_conversion}
         });
+
         // draw
+        ZoneNamedN(DRAW_ROI_ON_FULL, "Draw ROI texture to full", true);
         glBindTexture(GL_TEXTURE_2D, tex_roi);
         imdraw::draw(geo.mode, vao, imdraw::make_ebo(geo.indices), geo.indices.size());
         glBindTexture(GL_TEXTURE_2D, 0);

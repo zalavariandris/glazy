@@ -67,6 +67,11 @@ State state = State();
 
 #pragma region GETTERS
 
+auto get_image_cache() {
+    auto image_cache = OIIO::ImageCache::create(true);
+    return image_cache;
+}
+
 auto get_current_filename(const std::filesystem::path& file_pattern, int current_frame)
 {
     ZoneScoped;
@@ -91,7 +96,7 @@ ChannelsTable get_channelstable(const std::filesystem::path& filename)
     ChannelsTable layers_dataframe;
     
     
-    auto image_cache = OIIO::ImageCache::create(true);
+    auto image_cache = get_image_cache();
     int nsubimages;
     image_cache->get_image_info(OIIO::ustring(filename.string().c_str()), 0, 0, OIIO::ustring("subimages"), OIIO::TypeInt, &nsubimages);
 
@@ -196,7 +201,7 @@ OIIO::ImageSpec get_spec(const std::filesystem::path& current_filename, const Ch
 
     OIIO::ImageSpec spec;
     auto channel_keys = get_index_column(current_channels_df);
-    auto image_cache = OIIO::ImageCache::create(true);
+    auto image_cache = get_image_cache();
     auto current_subimage = std::get<0>(channel_keys[0]);
     image_cache->get_imagespec(OIIO::ustring(current_filename.string()), spec, current_subimage, 0);
     return spec;
@@ -1033,7 +1038,7 @@ void ShowSettings(bool* p_open)
         if (ImGui::CollapsingHeader("OpenImageIO", ImGuiTreeNodeFlags_DefaultOpen))
         {
             static int threads = 0;
-            static int exr_threads = 1;
+            static int exr_threads = 0;
             static bool try_all_readers = false;
             static bool openexr_core = 1;
             static int autotile = 64;
@@ -1077,7 +1082,7 @@ void ShowStatsWindow(bool* p_open) {
     {
         ZoneScoped("StatsWindow");
 
-        auto image_cache = OIIO::ImageCache::create(true);
+        auto image_cache = get_image_cache();
 
         if (ImGui::CollapsingHeader("OIIO:ImageCache", ImGuiTreeNodeFlags_DefaultOpen)) {
 
@@ -1132,10 +1137,10 @@ void ShowStatsWindow(bool* p_open) {
 
 int main()
 {
-    OIIO::attribute("threads", 0);
-    OIIO::attribute("exr_threads", 1);
+    OIIO::attribute("threads", 8);
+    OIIO::attribute("exr_threads", 8);
     OIIO::attribute("try_all_readers", 0);
-    OIIO::attribute("openexr:core", 1);
+    OIIO::attribute("openexr:core", 0);
 
     static bool image_viewer_visible{ true };
     static bool info_visible{ false };
@@ -1145,10 +1150,11 @@ int main()
     static bool settings_visible{ true };
     static bool stats_window_visible{ true };
 
-    auto image_cache = OIIO::ImageCache::create(true);
-    image_cache->attribute("max_memory_MB", 1024.0f*4);
-    image_cache->attribute("autotile", 64);
-    image_cache->attribute("max_open_files", 1);
+    auto image_cache = get_image_cache();
+    image_cache->attribute("max_memory_MB", 1024.0f*16);
+    //image_cache->attribute("autotile", 64);
+    //image_cache->attribute("forcefloat", 1);
+    //image_cache->attribute("max_open_files", 1);
     
     glazy::init();
     

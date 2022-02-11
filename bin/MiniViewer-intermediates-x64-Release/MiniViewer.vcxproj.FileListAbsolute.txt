@@ -1,0 +1,1 @@
+C:\dev\source\repos\glazy\bin\MiniViewer-intermediates-x64-Release\MiniViewer.vcxproj.CopyComplete
