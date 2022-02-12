@@ -776,7 +776,8 @@ namespace glazy {
 				// Show fps in the right side
 				{
 					std::stringstream ss; // compose text to calculate size
-					ss << std::fixed << std::setprecision(2) << ImGui::GetIO().Framerate << "fps";
+					//ss << std::fixed << std::setprecision(0) << 1.0/ImGui::GetIO().DeltaTime << "fps";
+					ss << std::fixed << std::setprecision(0) << 1.0 / ImGui::GetIO().Framerate << "fps";
 					ImGui::Text(ss.str().c_str());
 				}
 

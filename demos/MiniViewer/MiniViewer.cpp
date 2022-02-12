@@ -38,7 +38,10 @@
 // helpers
 #include "helpers.h"
 
+
+#define TRACY_CALLSTACK 5
 #include <../tracy/Tracy.hpp>
+
 
 // GUI State variables
 struct State {
@@ -87,25 +90,31 @@ auto get_current_filename(const std::filesystem::path& file_pattern, int current
 ChannelsTable get_channelstable(const std::filesystem::path& filename)
 {
     ZoneScoped;
-    if (!std::filesystem::exists(filename)) {
-        return {};
-    }
+    if (!std::filesystem::exists(filename)) return {};
 
     // create a dataframe from all available channels
     // subimage <name,channelname> -> <layer,view,channel>
     ChannelsTable layers_dataframe;
     
-    
     auto image_cache = get_image_cache();
     int nsubimages;
-    image_cache->get_image_info(OIIO::ustring(filename.string().c_str()), 0, 0, OIIO::ustring("subimages"), OIIO::TypeInt, &nsubimages);
+    {
+        ZoneScopedN("get image info");
+        static auto u_subimages = OIIO::ustring("subimages");
+        image_cache->get_image_info(OIIO::ustring(filename.string().c_str()), 0, 0, u_subimages, OIIO::TypeInt, &nsubimages);
+    }
 
-    OIIO::ImageSpec spec;
-    image_cache->get_imagespec(OIIO::ustring(filename.string().c_str()), spec, 0, 0);
-    std::vector<std::string> views = get_stringvector_attribute(spec, "multiView");
+    std::vector<std::string> views;
+    {
+        ZoneScopedN("get views");
+        OIIO::ImageSpec spec;
+        image_cache->get_imagespec(OIIO::ustring(filename.string().c_str()), spec, 0, 0);
+        views = get_stringvector_attribute(spec, "multiView");
+    }
 
     for (int p = 0; p < nsubimages; p++)
     {
+        ZoneScopedN("get channels for single part");
         OIIO::ImageSpec spec;
         image_cache->get_imagespec(OIIO::ustring(filename.string().c_str()), spec, p, 0);
         std::string subimage_name = spec.get_string_attribute("name", "");
@@ -132,8 +141,6 @@ ChannelsTable get_channelstable(const std::filesystem::path& filename)
             }
         }
     }
-
-    OIIO::ImageCache::destroy(image_cache);
     return layers_dataframe;
 }
 
@@ -209,12 +216,12 @@ OIIO::ImageSpec get_spec(const std::filesystem::path& current_filename, const Ch
 
 GLuint get_texture(const std::filesystem::path& current_filename, const ChannelsTable& current_channels_df)
 {
-    ZoneScoped;
+    ZoneScopedS(6);
     auto indices = get_index_column(current_channels_df);
     if (indices.size() > 4) {
         indices.erase(indices.begin()+ 4, indices.end());
     }
-    return make_texture_from_file(current_filename, indices);
+    return make_texture_from_file(get_image_cache(), current_filename, indices);
 }
 
 #pragma endregion GETTERS
@@ -1142,13 +1149,12 @@ int main()
     OIIO::attribute("try_all_readers", 0);
     OIIO::attribute("openexr:core", 0);
 
-    static bool image_viewer_visible{ true };
-    static bool info_visible{ false };
+    static bool viewer_visible{ true };
+    static bool info_visible{ true };
     static bool channels_table_visible{ true };
     static bool timeline_visible{ true };
-    static bool profiler_visible{ false };
     static bool settings_visible{ true };
-    static bool stats_window_visible{ true };
+    static bool stats_visible{ true };
 
     auto image_cache = get_image_cache();
     image_cache->attribute("max_memory_MB", 1024.0f*16);
@@ -1198,13 +1204,12 @@ int main()
 
                 if (ImGui::BeginMenu("Windows"))
                 {
-                    ImGui::MenuItem("image viewer", "", &image_viewer_visible);
-                    ImGui::MenuItem("image info", "", &info_visible);
+                    ImGui::MenuItem("viewer", "", &viewer_visible);
+                    ImGui::MenuItem("info", "", &info_visible);
                     ImGui::MenuItem("channels table", "", &channels_table_visible);
                     ImGui::MenuItem("timeline", "", &timeline_visible);
-                    ImGui::MenuItem("iprofiler", "", &profiler_visible);
                     ImGui::MenuItem("settings", "", &settings_visible);
-                    ImGui::MenuItem("stats", "", &stats_window_visible);
+                    ImGui::MenuItem("stats", "", &stats_visible);
                     ImGui::EndMenu();
                 }
                 ImGui::Spacing();
@@ -1221,9 +1226,9 @@ int main()
             }
  
             // Image Viewer
-            if (image_viewer_visible)
+            if (viewer_visible)
             {
-                ShowMiniViewer(&image_viewer_visible);
+                ShowMiniViewer(&viewer_visible);
             }
 
             // Image Viewer
@@ -1235,15 +1240,15 @@ int main()
             // Timeline
             if (timeline_visible)
             {
-                if (ImGui::Begin("Timeline")) {
+                if (ImGui::Begin("Timeline", &timeline_visible)) {
                     ShowTimeline();
                 }
                 ImGui::End();
             }
 
             // Statistics
-            if (stats_window_visible) {
-                ShowStatsWindow(&stats_window_visible);
+            if (stats_visible) {
+                ShowStatsWindow(&stats_visible);
             }
                 
             // ChannelsTable
@@ -1255,16 +1260,15 @@ int main()
                 ImGui::End();
             }
 
-            //// Image info
-            //ImGui::SetNextWindowSizeConstraints(ImVec2(100, -1), ImVec2(200, -1));          // Width 400-500
-            //if (info_visible)
-            //{
-            //    PROFILE_SCOPE("Info window");
-            //    if (ImGui::Begin("Info", &info_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
-            //        ShowInfo();
-            //    }
-            //    ImGui::End();
-            //}                
+            // Image info
+            ImGui::SetNextWindowSizeConstraints(ImVec2(100, -1), ImVec2(200, -1));          // Width 400-500
+            if (info_visible)
+            {
+                if (ImGui::Begin("Info", &info_visible, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
+                    ShowInfo();
+                }
+                ImGui::End();
+            }                
         }
             
         glazy::end_frame();
