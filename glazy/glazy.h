@@ -54,6 +54,8 @@
 // Icon Fonts
 #include "IconsFontAwesome5.h"
 
+#include "../tracy/Tracy.hpp"
+
 namespace ImGui
 {
 	static auto vector_getter = [](void* vec, int idx, const char** out_text)
@@ -120,11 +122,19 @@ void control_camera(Camera& camera, int scree_width, int screen_height) {
 		}
 	}
 }
+#include <chrono>
+
 
 namespace glazy {
 	GLFWwindow* window;
 	Camera camera;
 	GLuint checkerboard_tex;
+
+	std::chrono::steady_clock::time_point g_Time;
+	float DeltaTime; // in seconds
+	float Framerate; // frames per sec
+
+
 	// GLuint default_program;
 
 	inline void glfw_error_callback(int error, const char* description) {
@@ -421,9 +431,9 @@ namespace glazy {
 		colors[ImGuiCol_Button] = ImVec4(0.05f, 0.05f, 0.05f, 0.54f);
 		colors[ImGuiCol_ButtonHovered] = ImVec4(0.19f, 0.19f, 0.19f, 0.54f);
 		colors[ImGuiCol_ButtonActive] = ImVec4(0.20f, 0.22f, 0.23f, 1.00f);
-		colors[ImGuiCol_Header] = ImVec4(0.00f, 0.00f, 0.00f, 0.52f);
-		colors[ImGuiCol_HeaderHovered] = ImVec4(0.00f, 0.00f, 0.00f, 0.36f);
-		colors[ImGuiCol_HeaderActive] = ImVec4(0.20f, 0.22f, 0.23f, 0.33f);
+		colors[ImGuiCol_Header] = ImVec4(0.34f, 0.34f, 0.34f, 0.54f);
+		colors[ImGuiCol_HeaderHovered] = ImVec4(0.40f, 0.40f, 0.40f, 0.54f);
+		colors[ImGuiCol_HeaderActive] = ImVec4(0.56f, 0.56f, 0.56f, 0.54f);
 		colors[ImGuiCol_Separator] = ImVec4(0.28f, 0.28f, 0.28f, 0.29f);
 		colors[ImGuiCol_SeparatorHovered] = ImVec4(0.44f, 0.44f, 0.44f, 0.29f);
 		colors[ImGuiCol_SeparatorActive] = ImVec4(0.40f, 0.44f, 0.47f, 1.00f);
@@ -683,7 +693,9 @@ namespace glazy {
 		glfwSetWindowShouldClose(window, 1);
 	}
 
-	void new_frame(bool wait_events = false) {
+	void new_frame(bool wait_events = false)
+	{
+		ZoneScoped;
 		// poll events
 		if (wait_events) {
 			glfwWaitEvents();
@@ -698,6 +710,15 @@ namespace glazy {
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 
+
+		// calc framerate
+		auto current_time = std::chrono::steady_clock::now();
+		auto dt = current_time - g_Time;
+		DeltaTime = std::chrono::duration_cast<std::chrono::milliseconds>(dt).count() / 1000.0;
+		Framerate = 1.0 / DeltaTime;
+		g_Time = current_time;
+
+		//
 		ImGui::NewFrame();
 		
 
@@ -729,7 +750,7 @@ namespace glazy {
 
 	void end_frame()
 	{
-		
+		ZoneScoped;
 		// glazy windows
 		{
 			static bool themes;
@@ -777,7 +798,7 @@ namespace glazy {
 				{
 					std::stringstream ss; // compose text to calculate size
 					//ss << std::fixed << std::setprecision(0) << 1.0/ImGui::GetIO().DeltaTime << "fps";
-					ss << std::fixed << std::setprecision(0) << 1.0 / ImGui::GetIO().Framerate << "fps";
+					ss << std::fixed << std::setprecision(0) << Framerate << "fps";
 					ImGui::Text(ss.str().c_str());
 				}
 

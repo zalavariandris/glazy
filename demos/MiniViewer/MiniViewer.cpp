@@ -42,7 +42,6 @@
 #define TRACY_CALLSTACK 5
 #include <../tracy/Tracy.hpp>
 
-
 // GUI State variables
 struct State {
     std::filesystem::path file_pattern{ "" };
@@ -593,7 +592,7 @@ namespace ImGui {
     }
 }
 
-void ShowMiniViewer(bool *p_open)
+void ShowViewer(bool *p_open)
 {
     ZoneScoped;
     static float gain = 0.0;
@@ -1029,9 +1028,8 @@ void ShowMiniViewer(bool *p_open)
     ImGui::End(); // End Viewer window
 }
 
-void ShowSettings(bool* p_open)
+void ShowSettings(bool* p_open=NULL)
 {
-
     if (ImGui::Begin("Settings", p_open, ImGuiWindowFlags_AlwaysAutoResize))
     {
         if (ImGui::CollapsingHeader("GLFW", ImGuiTreeNodeFlags_DefaultOpen))
@@ -1142,25 +1140,14 @@ void ShowStatsWindow(bool* p_open) {
     }
 }
 
-int main()
+void ShowMiniViewer()
 {
-    OIIO::attribute("threads", 8);
-    OIIO::attribute("exr_threads", 8);
-    OIIO::attribute("try_all_readers", 0);
-    OIIO::attribute("openexr:core", 0);
-
     static bool viewer_visible{ true };
     static bool info_visible{ true };
     static bool channels_table_visible{ true };
     static bool timeline_visible{ true };
     static bool settings_visible{ true };
     static bool stats_visible{ true };
-
-    auto image_cache = get_image_cache();
-    image_cache->attribute("max_memory_MB", 1024.0f*16);
-    //image_cache->attribute("autotile", 64);
-    //image_cache->attribute("forcefloat", 1);
-    //image_cache->attribute("max_open_files", 1);
     
     glazy::init();
     
@@ -1228,7 +1215,7 @@ int main()
             // Image Viewer
             if (viewer_visible)
             {
-                ShowMiniViewer(&viewer_visible);
+                ShowViewer(&viewer_visible);
             }
 
             // Image Viewer
@@ -1277,4 +1264,20 @@ int main()
     }
     glazy::destroy();
 
+}
+
+int main()
+{
+    OIIO::attribute("threads", 1);
+    OIIO::attribute("exr_threads", 8);
+    OIIO::attribute("try_all_readers", 0);
+    OIIO::attribute("openexr:core", 0);
+
+    auto image_cache = get_image_cache();
+    image_cache->attribute("max_memory_MB", 1024.0f * 6);
+    //image_cache->attribute("autotile", 64);
+    image_cache->attribute("forcefloat", 0);
+    //image_cache->attribute("max_open_files", 1);
+
+    ShowMiniViewer();
 }

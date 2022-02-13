@@ -118,9 +118,16 @@ namespace ImGui {
     }
 }
 
-void typespec_to_opengl(const OIIO::ImageSpec& spec, int nchannels, GLenum& gltype,
-    GLenum& glformat, GLenum& glinternalformat)
+/// <summary>
+/// 
+/// </summary>
+/// <returns>internalformat, format, type</returns>
+std::tuple<GLint, GLenum, GLenum> typespec_to_opengl(const OIIO::ImageSpec& spec, int nchannels)
 {
+    GLint glinternalformat; 
+    GLenum glformat;
+    GLenum gltype;
+
     switch (spec.format.basetype) {
     case OIIO::TypeDesc::FLOAT: gltype = GL_FLOAT; break;
     case OIIO::TypeDesc::HALF: gltype = GL_HALF_FLOAT; break;
@@ -205,11 +212,13 @@ void typespec_to_opengl(const OIIO::ImageSpec& spec, int nchannels, GLenum& glty
         glformat = GL_INVALID_ENUM;
         glinternalformat = GL_INVALID_ENUM;
     }
+
+    return { glinternalformat, glformat, gltype };
 }
 
 GLuint make_texture_from_file(OIIO::ImageCache* image_cache, const std::filesystem::path& filename, const std::vector<ChannelKey>& channel_keys = {})
 {
-    ZoneScopedS(5);
+    ZoneScoped;
     /// Validate parameters
     if (!std::filesystem::exists(filename)) return 0;
     if (channel_keys.empty()) return 0;
@@ -218,7 +227,7 @@ GLuint make_texture_from_file(OIIO::ImageCache* image_cache, const std::filesyst
     /// Read header
     OIIO::ImageSpec spec;
     {
-        ZoneScopedN("read header");
+        ZoneScopedN("get spec");
         image_cache->get_imagespec(OIIO::ustring(filename.string()), spec, std::get<0>(channel_keys[0]), 0);
     }
     auto x = spec.x;
@@ -230,24 +239,22 @@ GLuint make_texture_from_file(OIIO::ImageCache* image_cache, const std::filesyst
     int nchannels = chend - chbegin;
 
     /// Allocate and read pixels
-    static bool CONVERT_TO_FLOAT = false;
-    //ImGui::Checkbox("Convert to float", &CONVERT_TO_FLOAT);
     void* data;
     {
         ZoneScopedN("Allocate");
-        auto type_size = CONVERT_TO_FLOAT ? sizeof(float) : spec.format.size();
+        auto type_size = spec.format.size();
         data = malloc(w * h * nchannels * type_size);
     }
 
     {
         ZoneScopedN("Read pixels");
-        image_cache->get_pixels(OIIO::ustring(filename.string()), std::get<0>(channel_keys[0]), 0, x, x + w, y, y + h, 0, 1, chbegin, chend, CONVERT_TO_FLOAT ? OIIO::TypeFloat : spec.format, data, OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, chbegin, chend);
+        image_cache->get_pixels(OIIO::ustring(filename.string()), std::get<0>(channel_keys[0]), 0, x, x + w, y, y + h, 0, 1, chbegin, chend, spec.format, data, OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, chbegin, chend);
     }
 
     /// Create texture for ROI
     GLuint tex_roi;
     {
-        ZoneScopedN("Create texture roi")
+        ZoneScopedN("Upload image to GPU")
         glGenTextures(1, &tex_roi);
         glBindTexture(GL_TEXTURE_2D, tex_roi);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
@@ -255,36 +262,7 @@ GLuint make_texture_from_file(OIIO::ImageCache* image_cache, const std::filesyst
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-        GLenum type;
-        GLenum internalformat;
-        GLenum format;
-        typespec_to_opengl(spec, nchannels, type, format, internalformat);
-
-        //if (nchannels == 1)
-        //{
-        //    format = GL_R;
-        //    internalformat = GL_RGBA32F;
-        //    GLint const Swizzle[] = { GL_RED, GL_RED, GL_RED, GL_ONE };
-        //    glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, Swizzle);
-        //}
-        //if (nchannels == 2) {
-        //    format = GL_RG;
-        //    internalformat = GL_RGBA32F;
-        //    GLint const Swizzle[] = { GL_RED, GL_GREEN, GL_ZERO, GL_ONE };
-        //    glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, Swizzle);
-        //}
-        //if (nchannels == 3) {
-        //    format = GL_RGB;
-        //    internalformat = GL_RGBA32F;
-        //    GLint const Swizzle[] = { GL_RED, GL_GREEN, GL_BLUE, GL_ONE };
-        //    glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, Swizzle);
-        //}
-        //if (nchannels == 4) {
-        //    format = GL_RGBA;
-        //    internalformat = GL_RGBA32F;
-        //}
-        //GLint type = GL_HALF_FLOAT;
-
+        auto [internalformat, format, type] = typespec_to_opengl(spec, nchannels);
         glTexImage2D(GL_TEXTURE_2D, 0, internalformat, spec.width, spec.height, 0, format, type, data);
         glBindTexture(GL_TEXTURE_2D, 0);
     }

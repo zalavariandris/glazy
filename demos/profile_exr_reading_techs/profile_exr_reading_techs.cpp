@@ -220,10 +220,7 @@ namespace With_OIIO_ImageInput {
         if (!in)
             return;
         const ImageSpec& spec = in->spec();
-        int xres = spec.width;
-        int yres = spec.height;
-        int channels = spec.nchannels;
-        std::vector<float> pixels(xres * yres * 3);
+        std::vector<float> pixels(spec.width * spec.height * 3);
         in->read_image(0, 2, TypeDesc::FLOAT, &pixels[0]);
         in->close();
     }
@@ -387,35 +384,30 @@ namespace With_OpenEXR {
 
         Imf::FrameBuffer frameBuffer;
 
-        frameBuffer.insert("R",                                    // name
-            Imf::Slice(Imf::FLOAT,                            // type
-                (char*)&pixels[-dy][-dx].r,      // base
-                sizeof(pixels[0][0]) * 1,     // xStride
+        frameBuffer.insert("R",              // name
+            Imf::Slice(Imf::FLOAT,           // type
+                (char*)&pixels[-dy][-dx].r,  // base
+                sizeof(pixels[0][0]) * 1,    // xStride
                 sizeof(pixels[0][0]) * width // yStride
             ));
-        frameBuffer.insert("G",                                    // name
-            Imf::Slice(Imf::FLOAT,                            // type
-                (char*)&pixels[-dy][-dx].g,      // base
-                sizeof(pixels[0][0]) * 1,     // xStride
+        frameBuffer.insert("G",              // name
+            Imf::Slice(Imf::FLOAT,           // type
+                (char*)&pixels[-dy][-dx].g,  // base
+                sizeof(pixels[0][0]) * 1,    // xStride
                 sizeof(pixels[0][0]) * width // yStride
             ));
-        frameBuffer.insert("B",                                    // name
-            Imf::Slice(Imf::FLOAT,                            // type
-                (char*)&pixels[-dy][-dx].b,      // base
-                sizeof(pixels[0][0]) * 1,     // xStride
+        frameBuffer.insert("B",              // name
+            Imf::Slice(Imf::FLOAT,           // type
+                (char*)&pixels[-dy][-dx].b,  // base
+                sizeof(pixels[0][0]) * 1,    // xStride
                 sizeof(pixels[0][0]) * width // yStride
             ));
-
-
 
         // read pixels
         file->setFrameBuffer(frameBuffer);
         file->readPixels(dw.min.y, dw.max.y);
     }
 }
-
-
-
 
 int main()
 {

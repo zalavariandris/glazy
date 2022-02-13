@@ -68,7 +68,6 @@ void WithImageInput(std::filesystem::path pattern, int first_frame, int last_fra
                 nsubimages++;
             }
             inp->seek_subimage(0, 0);
-            std::cout << "nsubimages: " << nsubimages << "\n";
         }
 
         auto end = std::chrono::steady_clock::now();
@@ -153,15 +152,15 @@ void WithOpenEXR(std::filesystem::path pattern, int first_frame, int last_frame)
         auto file = new Imf::MultiPartInputFile(filename.c_str());
         #endif
 
-        for (int p = 0; p < file->parts(); p++) {
-            Imf::Header header = file->header(p);
-            for (Imf::ChannelList::ConstIterator i = header.channels().begin();
-                i != header.channels().end();
-                ++i) {
-                std::cout << i.name() << ", ";
-            }
-            std::cout << "\n";
-        }
+        //for (int p = 0; p < file->parts(); p++) {
+        //    Imf::Header header = file->header(p);
+        //    for (Imf::ChannelList::ConstIterator i = header.channels().begin();
+        //        i != header.channels().end();
+        //        ++i) {
+        //        std::cout << i.name() << ", ";
+        //    }
+        //    std::cout << "\n";
+        //}
         
     }
 }
