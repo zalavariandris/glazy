@@ -19,6 +19,8 @@
 #include <OpenEXR/ImfArray.h> //Imf::Array2D
 #include <OpenEXR/half.h> // <half> type
 
+#include <imgui_internal.h>
+
 /// Get opengl format for OIIO spec
 /// internalformat, format, type</returns>
 std::tuple<GLint, GLenum, GLenum> typespec_to_opengl(const OIIO::ImageSpec& spec, int nchannels)
@@ -276,7 +278,7 @@ namespace WitOpenEXR
         auto [pattern, first_frame, last_frame, current_Frame] = scan_for_sequence("C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr");
         int F = first_frame;
         int mode = 1;
-        std::vector<std::string> modes{ "direct upload", "subimage2D"};
+        std::vector<std::string> modes{ "direct upload", "inmutable storage"};
         bool swap_textures{false};
 
         Imf::setGlobalThreadCount(4);
@@ -288,19 +290,26 @@ namespace WitOpenEXR
         GLuint texA;
         glGenTextures(1, &texA);
         glBindTexture(GL_TEXTURE_2D, texA);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+        //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+        //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
         glBindTexture(GL_TEXTURE_2D, 0);
         GLuint texB;
         glGenTextures(1, &texB);
         glBindTexture(GL_TEXTURE_2D, texB);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+        //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+        //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
         glBindTexture(GL_TEXTURE_2D, 0);
+
+        int texwidthA, texheightA;
+        int texwidthB, texheightB;
 
         GLuint pboA, pboB;
         glGenBuffers(1, &pboA);
@@ -326,6 +335,16 @@ namespace WitOpenEXR
                 ImGui::Checkbox("swap textures", &swap_textures);
                 ImGui::Text("sequence: %d / %d-%d", F, first_frame, last_frame);
                 ImGui::TextColored(std::filesystem::exists(filename) ? ImColor(1.0f, 1.0f, 1.0f) : ImColor(1.0f, 0.0f, 0.0f), "filename: %s", filename.string().c_str());
+
+
+                float* fpss = ImGui::GetCurrentContext()->FramerateSecPerFrame;
+
+                if (ImPlot::BeginPlot("My Plot")) {
+                    ImPlot::PlotBars("My Bar Plot", fpss, 120);
+                    //ImPlot::PlotLine("My Line Plot", x_data, y_data, 1000);
+                    ImPlot::EndPlot();
+                }
+                
             }
             // open file
             Imf::InputFile* file;
@@ -392,8 +411,11 @@ namespace WitOpenEXR
 
                 // Upload to gpu
                 if (mode == 0) {
-                    ZoneScopedN("Upload image to GPU");
+                    ZoneScopedN("Upload image to GPU mode0");
                     glBindTexture(GL_TEXTURE_2D, texA);
+                    //GLint glinternalformat = GL_RGB16;
+                    //GLenum glformat = GL_RGB;
+                    //GLenum gltype = GL_HALF_FLOAT;
                     GLint glinternalformat = GL_RGB16;
                     GLenum glformat = GL_RGB;
                     GLenum gltype = GL_HALF_FLOAT;
@@ -403,23 +425,30 @@ namespace WitOpenEXR
                     if (swap_textures) std::swap(texA, texB);
                 }
                 else if (mode == 1) {
-                    ZoneScopedN("Upload image to GPU");
+                    ZoneScopedN("Upload image to GPU mode1");
+
                     glBindTexture(GL_TEXTURE_2D, texA);
+
                     GLint glinternalformat = GL_RGB16;
                     GLenum glformat = GL_RGB;
                     GLenum gltype = GL_HALF_FLOAT;
 
-                    static int texwidth, texheight;
-                    if (texwidth != width || texheight != height)
+                    if (texwidthA != width || texheightA != height)
                     {
                         std::cout << "resize texture storage" << "\n";
-                        glTexStorage2D(GL_TEXTURE_2D, 0, glinternalformat, width, height);
-                        texwidth = width;
-                        texheight = height;
+                        glBindTexture(GL_TEXTURE_2D, texA);
+                        glTexStorage2D(GL_TEXTURE_2D, 1, glinternalformat, width, height);
+                        texwidthA = width;
+                        texheightA = height;
                     }
                     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, glformat, gltype, &pixels[0][0].r);
                     glBindTexture(GL_TEXTURE_2D, 0);
-                    if (swap_textures) std::swap(texA, texB);
+
+                    if (swap_textures) {
+                        std::swap(texA, texB);
+                        std::swap(texwidthA, texwidthB);
+                        std::swap(texheightA, texheightB);
+                    }
                 }
                 /*
                 else if (mode == 1)
@@ -524,6 +553,7 @@ namespace WitOpenEXR
             F++;
             if (F > last_frame) F = first_frame;
             glazy::end_frame();
+
         }
         glazy::destroy();
     }

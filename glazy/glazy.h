@@ -712,6 +712,8 @@ namespace glazy {
 
 
 		// calc framerate
+		
+
 		auto current_time = std::chrono::steady_clock::now();
 		auto dt = current_time - g_Time;
 		DeltaTime = std::chrono::duration_cast<std::chrono::milliseconds>(dt).count() / 1000.0;
