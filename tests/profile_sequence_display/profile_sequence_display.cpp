@@ -249,12 +249,56 @@ namespace WithImageInput {
 }
 
 
+std::string to_string(Imf::PixelType t) {
+    switch (t)
+    {
+    case Imf::UINT:
+        return "Imf::UINT";
+    case Imf::HALF:
+        return "Imf::HALF";
+    case Imf::FLOAT:
+        return "Imf::FLOAT";
+    default:
+        return "[UNKNOWN]";
+        break;
+    }
+}
+
+std::string to_string(GLenum t)
+{
+    switch (t)
+    {
+        case GL_UNSIGNED_INT:
+            return "GL_UNSIGNED_INT";
+        case GL_FLOAT:
+            return "GL_FLOAT";
+        case GL_HALF_FLOAT:
+            return "GL_HALF_FLOAT";
+        default:
+            return "[UNKNOWN GLenum]";
+            break;
+    }
+}
+
+
 namespace WitOpenEXR
 {
     struct RGB {
         half r;
         half g;
         half b;
+    };
+
+    struct Tex {
+        GLuint id;
+        int width;
+        int height;
+    };
+
+    struct Pix {
+        GLuint id;
+        int width;
+        int height;
     };
 
     #if defined(_WIN32) || defined(__WIN32__) || defined(WIN32)
@@ -275,45 +319,66 @@ namespace WitOpenEXR
 
     void ProfileSequenceDisplay() {
         ZoneScoped;
-        auto [pattern, first_frame, last_frame, current_Frame] = scan_for_sequence("C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr");
-        int F = first_frame;
-        int mode = 1;
-        std::vector<std::string> modes{ "direct upload", "inmutable storage"};
-        bool swap_textures{false};
 
-        Imf::setGlobalThreadCount(4);
+        std::filesystem::path path{ "C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr" };
+        //std::filesystem::path path{ "R:/PlasticSky/Render/52_EXAM_v51/52_01_EXAM_v51.0001.exr" };
+        //std::filesystem::path path{ "C:/Users/andris/Desktop/52_06_EXAM_v51-raw/52_06_EXAM_v51.0001.exr" };
+        auto [pattern, first_frame, last_frame, current_Frame] = scan_for_sequence(path);
+
+        int F = first_frame;
+        int mode = 0;
+        std::vector<std::string> modes{ "direct upload", "inmutable storage", "pbo" };
+        bool swap_textures{ false };
+
+        Imf::setGlobalThreadCount(8);
         std::cout << "global thread count:" << Imf::globalThreadCount() << "\n";
 
         glazy::init();
         glfwSwapInterval(0);
 
-        GLuint texA;
-        glGenTextures(1, &texA);
-        glBindTexture(GL_TEXTURE_2D, texA);
-        //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-        //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-        glBindTexture(GL_TEXTURE_2D, 0);
-        GLuint texB;
-        glGenTextures(1, &texB);
-        glBindTexture(GL_TEXTURE_2D, texB);
-        //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-        //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-        glBindTexture(GL_TEXTURE_2D, 0);
+        static int selected_internal_format_idx{ 1 };
+        std::vector<GLint> internalformats{GL_RGB8, GL_RGB16F, GL_RGB32F, GL_RGBA8, GL_RGBA16F, GL_RGBA32F};
+        static std::vector<std::string> internalformat_names{"GL_RGB8", "GL_RGB16F", "GL_RGB32F", "GL_RGBA8", "GL_RGBA16F", "GL_RGBA32F"};
+        GLint glinternalformat = internalformats[selected_internal_format_idx];
 
-        int texwidthA, texheightA;
-        int texwidthB, texheightB;
+        static int selected_format_idx{ 0 };
+        std::vector<GLenum> glformats{ GL_RGB, GL_BGR, GL_RGBA, GL_BGRA};
+        std::vector<std::string> formatnames{ "GL_RGB","GL_BGR", "GL_RGBA", "GL_BGRA"};
+        GLenum glformat = glformats[selected_format_idx];
 
-        GLuint pboA, pboB;
-        glGenBuffers(1, &pboA);
-        glGenBuffers(1, &pboB);
+        static int selected_type_idx{ 1 };
+        std::vector<GLenum> gltypes{ GL_UNSIGNED_INT, GL_HALF_FLOAT, GL_FLOAT };
+        std::vector<Imf::PixelType> pixeltypes{ Imf::UINT, Imf::HALF, Imf::FLOAT };
+        std::vector<std::string> type_names{ "UINT", "HALF", "FLOAT"};
+        GLenum gltype = gltypes[selected_type_idx];
+        Imf::PixelType pixeltype = pixeltypes[selected_type_idx];
+
+        // texture buffers
+        Tex texIds[2];
+        static int texCurrentIndex;
+        int texNextIndex;
+        for (auto i = 0; i < 2; i++)
+        {
+            glGenTextures(1, &texIds[i].id);
+            glBindTexture(GL_TEXTURE_2D, texIds[i].id);
+            //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+            //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+            glBindTexture(GL_TEXTURE_2D, 0);
+        }
+
+        // pixel buffers
+        Pix pbos[2];
+        static int pixCurrentIndex{0};
+        int pixNextIndex{0};
+        for (auto i = 0; i < 2; i++)
+        {
+            glGenBuffers(1, &pbos[i].id);
+        }
+
         while (glazy::is_running())
         {
             glazy::new_frame();
@@ -329,22 +394,82 @@ namespace WitOpenEXR
             
             if (ImGui::Begin("settings"))
             {
-                if (ImGui::ListBox("mode", &mode, modes)) {
-                    
+                if (ImGui::ListBox("mode", &mode, modes))
+                {
+                    for (auto i = 0; i < 2; i++)
+                    {
+                        glDeleteTextures(1, &texIds[i].id);
+                        glGenTextures(1, &texIds[i].id);
+                        glBindTexture(GL_TEXTURE_2D, texIds[i].id);
+                        //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+                        //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+                        glBindTexture(GL_TEXTURE_2D, 0);
+                    }
                 }
                 ImGui::Checkbox("swap textures", &swap_textures);
                 ImGui::Text("sequence: %d / %d-%d", F, first_frame, last_frame);
                 ImGui::TextColored(std::filesystem::exists(filename) ? ImColor(1.0f, 1.0f, 1.0f) : ImColor(1.0f, 0.0f, 0.0f), "filename: %s", filename.string().c_str());
+                if (ImGui::BeginCombo("internalformat", internalformat_names[selected_internal_format_idx].c_str()))
+                {
 
+                    for (auto i = 0; i < internalformat_names.size(); i++) {
+                        const bool is_selected = i == selected_internal_format_idx;
+                        if (ImGui::Selectable(internalformat_names[i].c_str(), is_selected)) {
+                            selected_internal_format_idx = i;
+                            glinternalformat = internalformats[selected_internal_format_idx];
+                        }
 
-                float* fpss = ImGui::GetCurrentContext()->FramerateSecPerFrame;
-
-                if (ImPlot::BeginPlot("My Plot")) {
-                    ImPlot::PlotBars("My Bar Plot", fpss, 120);
-                    //ImPlot::PlotLine("My Line Plot", x_data, y_data, 1000);
-                    ImPlot::EndPlot();
+                        if (is_selected) ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
                 }
-                
+
+                if (ImGui::BeginCombo("data format", formatnames[selected_format_idx].c_str()))
+                {
+
+                    for (auto i = 0; i < formatnames.size(); i++) {
+                        const bool is_selected = i == selected_format_idx;
+                        if (ImGui::Selectable(internalformat_names[i].c_str(), is_selected)) {
+                            selected_format_idx = i;
+                            glformat = glformats[i];
+                        }
+
+                        if (is_selected) ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
+
+                if (ImGui::BeginCombo("data type", type_names[selected_type_idx].c_str()))
+                {
+
+                    for (auto i = 0; i < type_names.size(); i++) {
+                        const bool is_selected = i == selected_type_idx;
+                        if (ImGui::Selectable(type_names[i].c_str(), is_selected)) {
+                            selected_type_idx = i;
+                            gltype = gltypes[i];
+                            pixeltype = pixeltypes[i];
+                        }
+
+                        if (is_selected) ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
+                ImGui::Text("pixeltype: %s", to_string(pixeltypes[selected_type_idx]));
+                ImGui::Text("gltype: %s", to_string(gltypes[selected_type_idx]));
+
+                std::cout << "selected_type_idx: " << selected_type_idx << "\n";
+
+                auto ctx = ImGui::GetCurrentContext();
+                float* dts = ctx->FramerateSecPerFrame;
+                auto offset = ctx->FramerateSecPerFrameIdx;
+
+                float fpss[120];
+                for (auto i = 0; i < 120; i++) fpss[i] = 1.0 / dts[i];
+                ImGui::PlotHistogram("fps", fpss, 120, offset, "", 0, 120, { 0,70 }, 4);           
             }
             // open file
             Imf::InputFile* file;
@@ -362,7 +487,7 @@ namespace WitOpenEXR
 
                 if (ImGui::Begin("settings"))
                 {
-                    ImGui::TextColored(file->isComplete() ? ImColor(1, 0, 0) : ImColor(1,1,1), "%s", (file->isComplete() ? "true" : "false"));
+                    ImGui::TextColored(file->isComplete() ? ImColor(1.f, 0.f, 0.f) : ImColor(1.f,1.f,1.f), "is complete: %s", (file->isComplete() ? "true" : "false"));
                 }
                 ImGui::End();
 
@@ -373,105 +498,211 @@ namespace WitOpenEXR
                 int dx = dw.min.x;
                 int dy = dw.min.y;
 
-                // read pixels
+                if (mode == 0)
                 {
-                    ZoneScopedN("read pixels")
+                    ZoneScopedN("direct upload");
+                    {// read pixels
+                        ZoneScopedN("read pixels")
+                        pixels.resizeErase(height, width);
+                        Imf::FrameBuffer frameBuffer;
 
-                    // define memory layout
-                    pixels.resizeErase(height, width);
+                        auto xstride = sizeof(pixels[0][0]) * 1;
+                        auto ystride = sizeof(pixels[0][0]) * width;
+                        frameBuffer.insert("R",              // name
+                            Imf::Slice(pixeltype,           // type
+                                (char*)&pixels[-dy][-dx].r,  // base
+                                xstride,    // xStride
+                                ystride // yStride
+                            ));
+                        frameBuffer.insert("G",              // name
+                            Imf::Slice(pixeltype,           // type
+                                (char*)&pixels[-dy][-dx].g,  // base
+                                xstride,    // xStride
+                                ystride // yStride
+                            ));
+                        frameBuffer.insert("B",              // name
+                            Imf::Slice(pixeltype,           // type
+                                (char*)&pixels[-dy][-dx].b,  // base
+                                xstride,    // xStride
+                                ystride // yStride
+                            ));
 
-                    // define framebuffer
-                    Imf::FrameBuffer frameBuffer;
-                    frameBuffer.insert("R",              // name
-                        Imf::Slice(Imf::HALF,           // type
-                            (char*)&pixels[-dy][-dx].r,  // base
-                            sizeof(pixels[0][0]) * 1,    // xStride
-                            sizeof(pixels[0][0]) * width // yStride
-                        ));
-                    frameBuffer.insert("G",              // name
-                        Imf::Slice(Imf::HALF,           // type
-                            (char*)&pixels[-dy][-dx].g,  // base
-                            sizeof(pixels[0][0]) * 1,    // xStride
-                            sizeof(pixels[0][0]) * width // yStride
-                        ));
-                    frameBuffer.insert("B",              // name
-                        Imf::Slice(Imf::HALF,           // type
-                            (char*)&pixels[-dy][-dx].b,  // base
-                            sizeof(pixels[0][0]) * 1,    // xStride
-                            sizeof(pixels[0][0]) * width // yStride
-                        ));
+                        //frameBuffer.insert("A", Imf::Slice(Imf::HALF));
 
-                    //frameBuffer.insert("A", Imf::Slice(Imf::HALF));
-
-                    // read pixels
-                    file->setFrameBuffer(frameBuffer);
-                    file->readPixels(dw.min.y, dw.max.y);
-                    //std::cout << "first red: " << pixels[0][0].r << "\n";
-                }
-
-                // Upload to gpu
-                if (mode == 0) {
-                    ZoneScopedN("Upload image to GPU mode0");
-                    glBindTexture(GL_TEXTURE_2D, texA);
-                    //GLint glinternalformat = GL_RGB16;
-                    //GLenum glformat = GL_RGB;
-                    //GLenum gltype = GL_HALF_FLOAT;
-                    GLint glinternalformat = GL_RGB16;
-                    GLenum glformat = GL_RGB;
-                    GLenum gltype = GL_HALF_FLOAT;
-                    glTexImage2D(GL_TEXTURE_2D, 0, glinternalformat, width, height, 0, glformat, gltype, &pixels[0][0].r);
-                    glBindTexture(GL_TEXTURE_2D, 0);
-
-                    if (swap_textures) std::swap(texA, texB);
-                }
-                else if (mode == 1) {
-                    ZoneScopedN("Upload image to GPU mode1");
-
-                    glBindTexture(GL_TEXTURE_2D, texA);
-
-                    GLint glinternalformat = GL_RGB16;
-                    GLenum glformat = GL_RGB;
-                    GLenum gltype = GL_HALF_FLOAT;
-
-                    if (texwidthA != width || texheightA != height)
-                    {
-                        std::cout << "resize texture storage" << "\n";
-                        glBindTexture(GL_TEXTURE_2D, texA);
-                        glTexStorage2D(GL_TEXTURE_2D, 1, glinternalformat, width, height);
-                        texwidthA = width;
-                        texheightA = height;
+                        // read pixels
+                        file->setFrameBuffer(frameBuffer);
+                        file->readPixels(dw.min.y, dw.max.y);
+                        //std::cout << "first red: " << pixels[0][0].r << "\n";
                     }
-                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, glformat, gltype, &pixels[0][0].r);
-                    glBindTexture(GL_TEXTURE_2D, 0);
+                    {// Upload to gpu
+                        ZoneScopedN("Upload image to GPU mode0");
+                        std::cout << "upload to: " << texIds[texCurrentIndex].id << "\n";
+                        glBindTexture(GL_TEXTURE_2D, texIds[texCurrentIndex].id);
+                        
+                        //GLenum glformat = GL_RGB;
+                        //GLenum gltype = GL_HALF_FLOAT;
+                        glTexImage2D(GL_TEXTURE_2D, 0, glinternalformat, width, height, 0, glformat, gltype, &pixels[0][0].r);
+                        glBindTexture(GL_TEXTURE_2D, 0);
 
-                    if (swap_textures) {
-                        std::swap(texA, texB);
-                        std::swap(texwidthA, texwidthB);
-                        std::swap(texheightA, texheightB);
+                        if (swap_textures) {
+                            texCurrentIndex = (texCurrentIndex + 1) % 2;
+                            texNextIndex = (texCurrentIndex + 1) % 2;
+                        }
+                    }
+                }
+                else if (mode == 1)
+                {
+                    ZoneScopedN("inmutable storage");
+                    {// read pixels
+                        ZoneScopedN("read pixels")
+                        pixels.resizeErase(height, width);
+                        Imf::FrameBuffer frameBuffer;
+                        frameBuffer.insert("R",              // name
+                            Imf::Slice(pixeltype,           // type
+                                (char*)&pixels[-dy][-dx].r,  // base
+                                sizeof(pixels[0][0]) * 1,    // xStride
+                                sizeof(pixels[0][0]) * width // yStride
+                            ));
+                        frameBuffer.insert("G",              // name
+                            Imf::Slice(pixeltype,           // type
+                                (char*)&pixels[-dy][-dx].g,  // base
+                                sizeof(pixels[0][0]) * 1,    // xStride
+                                sizeof(pixels[0][0]) * width // yStride
+                            ));
+                        frameBuffer.insert("B",              // name
+                            Imf::Slice(pixeltype,           // type
+                                (char*)&pixels[-dy][-dx].b,  // base
+                                sizeof(pixels[0][0]) * 1,    // xStride
+                                sizeof(pixels[0][0]) * width // yStride
+                            ));
+
+                        //frameBuffer.insert("A", Imf::Slice(Imf::HALF));
+
+                        // read pixels
+                        file->setFrameBuffer(frameBuffer);
+                        file->readPixels(dw.min.y, dw.max.y);
+                    }
+                    {// Upload to gpu
+                        ZoneScopedN("Upload image to GPU mode: ");
+
+                        std::cout << "upload to: " << texIds[texCurrentIndex].id << "\n";
+                        glBindTexture(GL_TEXTURE_2D, texIds[texCurrentIndex].id);
+
+                        //GLenum glformat = GL_RGB;
+                        //GLenum gltype = GL_HALF_FLOAT;
+
+                        if (texIds[texCurrentIndex].width != width || texIds[texCurrentIndex].height != height)
+                        {
+                            std::cout << "resize texture storage" << "\n";
+                            glBindTexture(GL_TEXTURE_2D, texIds[texCurrentIndex].id);
+                            glTexStorage2D(GL_TEXTURE_2D, 1, glinternalformat, width, height);
+                            texIds[texCurrentIndex].width = width;
+                            texIds[texCurrentIndex].height = height;
+                        }
+                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, glformat, gltype, &pixels[0][0].r);
+                        glBindTexture(GL_TEXTURE_2D, 0);
+
+                        if (swap_textures) {
+                            texCurrentIndex = (texCurrentIndex + 1) % 2;
+                            texNextIndex = (texCurrentIndex + 1) % 2;
+                        }
+                    }
+                }
+                else if (mode == 2)
+                {
+                    ZoneScopedN("single pbo");
+                    {// read pixels
+                        ZoneScopedN("read pixels")
+                            pixels.resizeErase(height, width);
+                        Imf::FrameBuffer frameBuffer;
+                        frameBuffer.insert("R",              // name
+                            Imf::Slice(pixeltype,           // type
+                                (char*)&pixels[-dy][-dx].r,  // base
+                                sizeof(pixels[0][0]) * 1,    // xStride
+                                sizeof(pixels[0][0])* width // yStride
+                            ));
+                        frameBuffer.insert("G",              // name
+                            Imf::Slice(pixeltype,           // type
+                                (char*)&pixels[-dy][-dx].g,  // base
+                                sizeof(pixels[0][0]) * 1,    // xStride
+                                sizeof(pixels[0][0])* width // yStride
+                            ));
+                        frameBuffer.insert("B",              // name
+                            Imf::Slice(pixeltype,           // type
+                                (char*)&pixels[-dy][-dx].b,  // base
+                                sizeof(pixels[0][0]) * 1,    // xStride
+                                sizeof(pixels[0][0])* width // yStride
+                            ));
+
+                        //frameBuffer.insert("A", Imf::Slice(Imf::HALF));
+
+                        // read pixels
+                        file->setFrameBuffer(frameBuffer);
+                        file->readPixels(dw.min.y, dw.max.y);
+                        //std::cout << "first red: " << pixels[0][0].r << "\n";
+                    }
+                    {// Upload to gpu
+                        ZoneScopedN("Upload image to GPU mode1");
+
+                        std::cout << "uploading to PBO: " << pbos[pixCurrentIndex].id << "\n";
+                        //bind current pbo for app->pbo transfer
+                        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[pixCurrentIndex].id);
+                        glBufferData(GL_PIXEL_UNPACK_BUFFER, width* height * 3, &pixels[0][0].r, GL_STREAM_DRAW);
+                        GLfloat* mappedBuffer =(GLfloat*)glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
+                        if (mappedBuffer != NULL)
+                        {
+                            static int color = 0;
+
+                            int* ptr = (int*)mappedBuffer;
+
+                            // copy 4 bytes at once
+                            for (int i = 0; i < 50; ++i)
+                            {
+                                std::cout << i << "\n";
+                                for (int j = 0; j < 50; ++j)
+                                {
+                                   
+                                    *ptr = color;
+                                    ++ptr;
+                                }
+                                color += 0.01;
+                            }
+                            ++color;            // scroll down
+                            memcpy(mappedBuffer, &pixels[0][0].r, width* height * 3);
+                            glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+                        }
+                        else
+                        {
+                                std::cout << "null ptr" << "\n";
+                        }
+
+                        //glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+                        // copy pixels from bpo to texture object
+                        std::cout << "upload to texture: " << texIds[texCurrentIndex].id << "\n";
+                        glBindTexture(GL_TEXTURE_2D, texIds[texCurrentIndex].id);
+                        //glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[pixCurrentIndex].id); //bind pbo
+                        //GLenum glformat = GL_RGB;
+                        //GLenum gltype = GL_HALF_FLOAT;
+                        //if (texIds[texCurrentIndex].width != width || texIds[texCurrentIndex].height != height)
+                        //{
+                        //    std::cout << "resize texture storage" << "\n";
+                        //    glTexStorage2D(GL_TEXTURE_2D, 1, glinternalformat, width, height);
+                        //    texIds[texCurrentIndex].width = width;
+                        //    texIds[texCurrentIndex].height = height;
+                        //}
+                        glTexImage2D(GL_TEXTURE_2D, 0, glinternalformat, width, height, 0, glformat, gltype, 0);
+                        //glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, glformat, gltype, 0);
+                        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+                        glBindTexture(GL_TEXTURE_2D, 0);
+
+                        if (swap_textures) {
+                            texCurrentIndex = (texCurrentIndex + 1) % 2;
+                            texNextIndex = (texCurrentIndex + 1) % 2;
+                        }
                     }
                 }
                 /*
-                else if (mode == 1)
-                {
-                    ZoneScopedN("Upload image to GPU");
-                    glBindTexture(GL_TEXTURE_2D, texA);
-                    GLint internalformat = GL_RGB16;
-                    GLenum format = GL_RGB;
-                    GLenum type = GL_FLOAT;
-
-                    static int texwidth, texheight;
-                    if (texwidth != width || texheight != height)
-                    {
-                        std::cout << "resize texture storage" << "\n";
-                        glTexStorage2D(GL_TEXTURE_2D, 0, internalformat, width, height);
-                        texwidth = width;
-                        texheight = height;
-                    }
-
-                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, format, type, &pixels[0][0]);
-                    glBindTexture(GL_TEXTURE_2D, 0);
-                    std::swap(texA, texB);
-                }
                 else if (mode == 2) 
                 {
                     ZoneScopedN("Upload image to GPU");
@@ -544,7 +775,8 @@ namespace WitOpenEXR
                 glClearColor(1, 0, 1, 1);
                 glClear(GL_COLOR_BUFFER_BIT);
                 imdraw::quad(glazy::checkerboard_tex);
-                imdraw::quad(texA, {-0.9, -0.9}, {0.9, 0.9});
+                std::cout << "draw from: " << texIds[texCurrentIndex].id << "\n";
+                imdraw::quad(texIds[texCurrentIndex].id, {-0.9, -0.9}, {0.9, 0.9});
                 
             }
 
@@ -552,6 +784,7 @@ namespace WitOpenEXR
             FrameMark;
             F++;
             if (F > last_frame) F = first_frame;
+            std::cout << "-----\n";
             glazy::end_frame();
 
         }
