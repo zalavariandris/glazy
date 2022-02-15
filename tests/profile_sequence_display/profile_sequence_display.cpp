@@ -284,9 +284,9 @@ std::string to_string(GLenum t)
 namespace WitOpenEXR
 {
     struct RGB {
-        half r;
-        half g;
-        half b;
+        float r;
+        float g;
+        float b;
     };
 
     struct Tex {
@@ -320,9 +320,10 @@ namespace WitOpenEXR
     void ProfileSequenceDisplay() {
         ZoneScoped;
 
-        std::filesystem::path path{ "C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr" };
+        //std::filesystem::path path{ "C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr" };
         //std::filesystem::path path{ "R:/PlasticSky/Render/52_EXAM_v51/52_01_EXAM_v51.0001.exr" };
         //std::filesystem::path path{ "C:/Users/andris/Desktop/52_06_EXAM_v51-raw/52_06_EXAM_v51.0001.exr" };
+        std::filesystem::path path{ "C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/multipart.0001.exr" };
         auto [pattern, first_frame, last_frame, current_Frame] = scan_for_sequence(path);
 
         int F = first_frame;
@@ -346,7 +347,7 @@ namespace WitOpenEXR
         std::vector<std::string> formatnames{ "GL_RGB","GL_BGR", "GL_RGBA", "GL_BGRA"};
         GLenum glformat = glformats[selected_format_idx];
 
-        static int selected_type_idx{ 1 };
+        static int selected_type_idx{ 2 };
         std::vector<GLenum> gltypes{ GL_UNSIGNED_INT, GL_HALF_FLOAT, GL_FLOAT };
         std::vector<Imf::PixelType> pixeltypes{ Imf::UINT, Imf::HALF, Imf::FLOAT };
         std::vector<std::string> type_names{ "UINT", "HALF", "FLOAT"};
@@ -500,6 +501,7 @@ namespace WitOpenEXR
 
                 if (mode == 0)
                 {
+                    std::cout << "char: " << sizeof(char) << " half: " << sizeof(half) << " float: " << sizeof(float) << "\n";
                     ZoneScopedN("direct upload");
                     {// read pixels
                         ZoneScopedN("read pixels")
