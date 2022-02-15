@@ -19,7 +19,12 @@
 #include <OpenEXR/ImfArray.h> //Imf::Array2D
 #include <OpenEXR/half.h> // <half> type
 
+
+#include <OpenEXR/ImfChannelList.h>
+
 #include <imgui_internal.h>
+
+
 
 /// Get opengl format for OIIO spec
 /// internalformat, format, type</returns>
@@ -115,6 +120,39 @@ std::tuple<GLint, GLenum, GLenum> typespec_to_opengl(const OIIO::ImageSpec& spec
     }
 
     return { glinternalformat, glformat, gltype };
+}
+
+//
+// Return the size of a single value of the indicated type,
+// in the machine's native format.
+//
+int pixelTypeSize(Imf::PixelType type)
+{
+    int size;
+
+    switch (type)
+    {
+    case OPENEXR_IMF_INTERNAL_NAMESPACE::UINT:
+
+        size = sizeof(unsigned int);
+        break;
+
+    case OPENEXR_IMF_INTERNAL_NAMESPACE::HALF:
+
+        size = sizeof(half);
+        break;
+
+    case OPENEXR_IMF_INTERNAL_NAMESPACE::FLOAT:
+
+        size =sizeof(float);
+        break;
+
+    default:
+        
+        throw IEX_NAMESPACE::ArgExc("Unknown pixel type.");
+    }
+
+    return size;
 }
 
 namespace WithImageInput {
@@ -264,6 +302,26 @@ std::string to_string(Imf::PixelType t) {
     }
 }
 
+std::string to_string(GLint t) {
+    switch (t) {
+    case GL_RGB8:
+        return "GL_RGB8";
+    case GL_RGB16F:
+        return "GL_RGB16F";
+    case GL_RGB32F:
+        return "GL_RGB32F";
+    case GL_RGBA8:
+        return "GL_RGBA8";
+    case GL_RGBA16F:
+        return "GL_RGBA16F";
+    case GL_RGBA32F:
+        return "GL_RGBA32F";
+    default:
+        return "[UNKNOWN GLint]";
+        break;
+    }
+}
+
 std::string to_string(GLenum t)
 {
     switch (t)
@@ -274,6 +332,15 @@ std::string to_string(GLenum t)
             return "GL_FLOAT";
         case GL_HALF_FLOAT:
             return "GL_HALF_FLOAT";
+
+        case GL_RGB:
+            return "GL_RGB";
+        case GL_BGR:
+            return "GL_BGR";
+        case GL_RGBA:
+            return "GL_RGBA";
+        case GL_BGRA:
+            return "GL_BGRA";
         default:
             return "[UNKNOWN GLenum]";
             break;
@@ -320,7 +387,8 @@ namespace WitOpenEXR
     void ProfileSequenceDisplay() {
         ZoneScoped;
 
-        std::filesystem::path path{ "C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr" };
+        std::filesystem::path path{ "C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/multipart.0001.exr" };
+        //std::filesystem::path path{ "C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr" };
         //std::filesystem::path path{ "R:/PlasticSky/Render/52_EXAM_v51/52_01_EXAM_v51.0001.exr" };
         //std::filesystem::path path{ "C:/Users/andris/Desktop/52_06_EXAM_v51-raw/52_06_EXAM_v51.0001.exr" };
         auto [pattern, first_frame, last_frame, current_Frame] = scan_for_sequence(path);
@@ -506,25 +574,25 @@ namespace WitOpenEXR
                         pixels.resizeErase(height, width);
                         Imf::FrameBuffer frameBuffer;
 
-                        auto xstride = sizeof(pixels[0][0]) * 1;
-                        auto ystride = sizeof(pixels[0][0]) * width;
+                        auto xstride = sizeof(half) * 1;
+                        auto ystride = sizeof(half) * width;
                         frameBuffer.insert("R",              // name
                             Imf::Slice(pixeltype,           // type
                                 (char*)&pixels[-dy][-dx].r,  // base
-                                xstride,    // xStride
-                                ystride // yStride
+                                sizeof(pixels[0][0]) * 1,    // xStride
+                                sizeof(pixels[0][0])* width // yStride
                             ));
                         frameBuffer.insert("G",              // name
                             Imf::Slice(pixeltype,           // type
                                 (char*)&pixels[-dy][-dx].g,  // base
-                                xstride,    // xStride
-                                ystride // yStride
+                                sizeof(pixels[0][0]) * 1,    // xStride
+                                sizeof(pixels[0][0])* width // yStride
                             ));
                         frameBuffer.insert("B",              // name
                             Imf::Slice(pixeltype,           // type
                                 (char*)&pixels[-dy][-dx].b,  // base
-                                xstride,    // xStride
-                                ystride // yStride
+                                sizeof(pixels[0][0]) * 1,    // xStride
+                                sizeof(pixels[0][0])* width // yStride
                             ));
 
                         //frameBuffer.insert("A", Imf::Slice(Imf::HALF));
@@ -532,22 +600,35 @@ namespace WitOpenEXR
                         // read pixels
                         file->setFrameBuffer(frameBuffer);
                         file->readPixels(dw.min.y, dw.max.y);
-                        //std::cout << "first red: " << pixels[0][0].r << "\n";
+                        std::cout << "read pixels: " << "[" << width << "," << height << "]" << " pixeltype: " << to_string(pixeltype) << "\n";
+                        std::cout << "  color: " << pixels[400][400].r << ","<< pixels[400][400].g<<","<< pixels[400][400].b << "\n";
                     }
                     {// Upload to gpu
                         ZoneScopedN("Upload image to GPU mode0");
-                        std::cout << "upload to: " << texIds[texCurrentIndex].id << "\n";
+                        std::cout << "upload to texture: " << texIds[texCurrentIndex].id << "\n";
+                        if ( glIsTexture(texIds[texCurrentIndex].id) ) {
+                            glDeleteTextures(1,&texIds[texCurrentIndex].id );
+                        };
+                        glGenTextures(1, &texIds[texCurrentIndex].id);
                         glBindTexture(GL_TEXTURE_2D, texIds[texCurrentIndex].id);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+                        
                         
                         //GLenum glformat = GL_RGB;
                         //GLenum gltype = GL_HALF_FLOAT;
+                        std::cout << "  glinternalformat: " << to_string(glinternalformat) << "\n"
+                            << "  glformat: " << to_string(glformat) << "\n"
+                            << "  gltype: " << to_string(gltype) << "\n";
                         glTexImage2D(GL_TEXTURE_2D, 0, glinternalformat, width, height, 0, glformat, gltype, &pixels[0][0].r);
                         glBindTexture(GL_TEXTURE_2D, 0);
 
-                        if (swap_textures) {
-                            texCurrentIndex = (texCurrentIndex + 1) % 2;
-                            texNextIndex = (texCurrentIndex + 1) % 2;
-                        }
+                        //if (swap_textures) {
+                        //    texCurrentIndex = (texCurrentIndex + 1) % 2;
+                        //    texNextIndex = (texCurrentIndex + 1) % 2;
+                        //}
                     }
                 }
                 else if (mode == 1)
@@ -702,56 +783,7 @@ namespace WitOpenEXR
                         }
                     }
                 }
-                /*
-                else if (mode == 2) 
-                {
-                    ZoneScopedN("Upload image to GPU");
-
-                    //glBindTexture(GL_TEXTURE_2D, texA);
-                    //// resize PBO
-                    //static int pbowidth = 0;
-                    //static int pboheight = 0;;
-                    //if(pbowidth!=width || pboheight!=height) {
-                    //    ZoneScopedN("allocate PBO");
-                    //    std::cout << "allocate pbos" << "\n";
-                    //    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pboA);
-                    //    glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * 3, NULL, GL_STREAM_DRAW);
-                    //    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-                    //    pbowidth = width;
-                    //    pboheight = height;
-                    //}
-
-                    //GLint internalformat = GL_RGB16;
-                    //GLenum format = GL_RGB;
-                    //GLenum type = GL_HALF_FLOAT;
-
-                    //// resize texture
-                    //static int texwidth, texheight;
-                    //if(texwidth!=width || texheight!=height) {
-                    //    glTexImage2D(GL_TEXTURE_2D, 0, internalformat, width, height, 0, format, type, 0);
-                    //    texwidth = width;
-                    //    texheight = height;
-                    //}
-
-                    //glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pboA);
-                    //void* mappedBuffer = glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
-                    //memcpy(mappedBuffer, &pixels[0][0].r, width* height * 3);
-                    //glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
-                
-
-                    //////glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, width * height * 3, &pixels[0][0].r);
-                    //glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pboA);
-                    //glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, format, type, NULL);
-                    //
-                    //glBindTexture(GL_TEXTURE_2D, 0);
-                    //glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-                }
-                else if (mode == 3)
-                {
-                    // see RoundRobin in Asynchronous Buffer Transfers https://www.seas.upenn.edu/~pcozzi/OpenGLInsights/OpenGLInsights-AsynchronousBufferTransfers.pdf
-                    std::swap(pboA, pboB);
-                }
-                */
+               
                 // Close file
                 {
                     ZoneScopedN("delete InputFile");
