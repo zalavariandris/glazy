@@ -126,23 +126,23 @@ std::tuple<GLint, GLenum, GLenum> typespec_to_opengl(const OIIO::ImageSpec& spec
 // Return the size of a single value of the indicated type,
 // in the machine's native format.
 //
-int pixelTypeSize(Imf::PixelType type)
+int pixelTypeSize(Imf::PixelType t)
 {
     int size;
 
-    switch (type)
+    switch (t)
     {
-    case OPENEXR_IMF_INTERNAL_NAMESPACE::UINT:
+    case Imf::UINT:
 
         size = sizeof(unsigned int);
         break;
 
-    case OPENEXR_IMF_INTERNAL_NAMESPACE::HALF:
+    case Imf::HALF:
 
         size = sizeof(half);
         break;
 
-    case OPENEXR_IMF_INTERNAL_NAMESPACE::FLOAT:
+    case Imf::FLOAT:
 
         size =sizeof(float);
         break;
@@ -350,12 +350,6 @@ std::string to_string(GLenum t)
 
 namespace WitOpenEXR
 {
-    struct RGB {
-        float r;
-        float g;
-        float b;
-    };
-
     struct Tex {
         GLuint id;
         int width;
@@ -414,7 +408,7 @@ namespace WitOpenEXR
         std::vector<std::string> formatnames{ "GL_RGB","GL_BGR", "GL_RGBA", "GL_BGRA"};
         GLenum glformat = glformats[selected_format_idx];
 
-        static int selected_type_idx{ 2 };
+        static int selected_type_idx{ 1 };
         std::vector<GLenum> gltypes{ GL_UNSIGNED_INT, GL_HALF_FLOAT, GL_FLOAT };
         std::vector<Imf::PixelType> pixeltypes{ Imf::UINT, Imf::HALF, Imf::FLOAT };
         std::vector<std::string> type_names{ "UINT", "HALF", "FLOAT"};
@@ -543,7 +537,7 @@ namespace WitOpenEXR
             Imf::InputFile* file;
             int width=0;
             int height=0;
-            Imf::Array2D<RGB> pixels;
+            char* pixels;
             try{
                 #if (defined(_WIN32) || defined(__WIN32__) || defined(WIN32)) && !defined(__MINGW32__)
                 auto inputStr = new std::ifstream(s2ws(filename.string()), std::ios_base::binary);
@@ -560,6 +554,7 @@ namespace WitOpenEXR
                 ImGui::End();
 
                 // open header
+                auto header = file->header();
                 auto dw = file->header().dataWindow();
                 width = dw.max.x - dw.min.x + 1;
                 height = dw.max.y - dw.min.y + 1;
@@ -568,33 +563,35 @@ namespace WitOpenEXR
 
                 if (mode == 0)
                 {
-                    std::cout << "char: " << sizeof(char) << " half: " << sizeof(half) << " float: " << sizeof(float) << "\n";
                     ZoneScopedN("direct upload");
                     {// read pixels
-                        ZoneScopedN("read pixels")
-                        pixels.resizeErase(height, width);
+                        ZoneScopedN("read pixels");
+                        pixels = (char*)malloc(width * height * 3 * sizeof(float)); //resize
+                        //pixels.resizeErase(height, width);
                         Imf::FrameBuffer frameBuffer;
 
-                        auto xstride = sizeof(half) * 1;
-                        auto ystride = sizeof(half) * width;
-                        frameBuffer.insert("R",              // name
-                            Imf::Slice(pixeltype,           // type
-                                (char*)&pixels[-dy][-dx].r,  // base
-                                sizeof(pixels[0][0]) * 1,    // xStride
-                                sizeof(pixels[0][0])* width // yStride
-                            ));
-                        frameBuffer.insert("G",              // name
-                            Imf::Slice(pixeltype,           // type
-                                (char*)&pixels[-dy][-dx].g,  // base
-                                sizeof(pixels[0][0]) * 1,    // xStride
-                                sizeof(pixels[0][0])* width // yStride
-                            ));
-                        frameBuffer.insert("B",              // name
-                            Imf::Slice(pixeltype,           // type
-                                (char*)&pixels[-dy][-dx].b,  // base
-                                sizeof(pixels[0][0]) * 1,    // xStride
-                                sizeof(pixels[0][0])* width // yStride
-                            ));
+                        std::vector < std::tuple<int, std::string>> channels{ {0, "R"}, {1, "G"}, {2, "B"} };
+                        std::vector<unsigned long long> base_sizes(channels.size());
+                        for (auto [i, name] : channels) {
+                            auto channellist = header.channels();
+                            auto channel = channellist[name];
+                            base_sizes[i] = pixelTypeSize(channel.type);
+                        }
+
+                        auto xstride = sizeof(half) * 3;
+                        auto ystride = width * xstride;
+                        auto c_offset = 0;
+                        for (auto [i, name] : channels)
+                        {
+                            char* base = pixels - (dy * width + dx) * xstride;
+                            auto type_bytes = pixelTypeSize(header.channels()[name].type);
+                            std::cout << "!!!!!!!!!! " << to_string(header.channels()[name].type) << " " << type_bytes << "\n";
+                            frameBuffer.insert(name,   // name
+                                Imf::Slice(Imf::HALF, // type
+                                    base + sizeof(half) * i,             // base
+                                    xstride, ystride
+                                ));
+                        }
 
                         //frameBuffer.insert("A", Imf::Slice(Imf::HALF));
 
@@ -602,7 +599,7 @@ namespace WitOpenEXR
                         file->setFrameBuffer(frameBuffer);
                         file->readPixels(dw.min.y, dw.max.y);
                         std::cout << "read pixels: " << "[" << width << "," << height << "]" << " pixeltype: " << to_string(pixeltype) << "\n";
-                        std::cout << "  color: " << pixels[400][400].r << ","<< pixels[400][400].g<<","<< pixels[400][400].b << "\n";
+                        //std::cout << "  color: " << pixels[400][400].r << ","<< pixels[400][400].g<<","<< pixels[400][400].b << "\n";
                     }
                     {// Upload to gpu
                         ZoneScopedN("Upload image to GPU mode0");
@@ -623,7 +620,8 @@ namespace WitOpenEXR
                         std::cout << "  glinternalformat: " << to_string(glinternalformat) << "\n"
                             << "  glformat: " << to_string(glformat) << "\n"
                             << "  gltype: " << to_string(gltype) << "\n";
-                        glTexImage2D(GL_TEXTURE_2D, 0, glinternalformat, width, height, 0, glformat, gltype, &pixels[0][0].r);
+                        
+                        glTexImage2D(GL_TEXTURE_2D, 0, glinternalformat, width, height, 0, glformat, gltype, pixels);
                         glBindTexture(GL_TEXTURE_2D, 0);
 
                         //if (swap_textures) {
@@ -631,7 +629,11 @@ namespace WitOpenEXR
                         //    texNextIndex = (texCurrentIndex + 1) % 2;
                         //}
                     }
+                    {// Free pixels
+                        free(pixels);
+                    }
                 }
+                /*
                 else if (mode == 1)
                 {
                     ZoneScopedN("inmutable storage");
@@ -783,7 +785,9 @@ namespace WitOpenEXR
                             texNextIndex = (texCurrentIndex + 1) % 2;
                         }
                     }
+                    
                 }
+                */
                
                 // Close file
                 {
