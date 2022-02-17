@@ -1,3 +1,9 @@
 [submodule "tracy"]
 	path = tracy
 	url = https://github.com/wolfpld/tracy.git
+[submodule "oiio"]
+	path = oiio
+	url = https://github.com/OpenImageIO/oiio.git
+[submodule "openexr"]
+	path = openexr
+	url = https://github.com/AcademySoftwareFoundation/openexr.git
