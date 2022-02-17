@@ -10,8 +10,8 @@
 #include "stringutils.h"
 
 // OpenImageIO
-#include "OpenImageIO/imageio.h""
-#include "OpenImageIO/imagecache.h"
+#include <OpenImageIO/imageio.h>
+#include <OpenImageIO/imagecache.h>
 
 // OpenEXR
 #include <OpenEXR/ImfInputFile.h>
@@ -19,12 +19,9 @@
 #include <OpenEXR/ImfArray.h> //Imf::Array2D
 #include <OpenEXR/half.h> // <half> type
 
-
 #include <OpenEXR/ImfChannelList.h>
 
 #include <imgui_internal.h>
-
-
 
 /// Get opengl format for OIIO spec
 /// internalformat, format, type</returns>
@@ -347,6 +344,22 @@ std::string to_string(GLenum t)
     }
 }
 
+
+#if defined(_WIN32) || defined(__WIN32__) || defined(WIN32)
+inline std::wstring s2ws(const std::string& s)
+{
+    int len;
+    int slength = (int)s.length() + 1;
+
+    len = MultiByteToWideChar(CP_ACP, 0, s.c_str(), slength, 0, 0);
+    wchar_t* buf = new wchar_t[len];
+    MultiByteToWideChar(CP_ACP, 0, s.c_str(), slength, buf, len);
+    std::wstring r(buf);
+    delete[] buf;
+
+    return r;
+}
+#endif
 namespace WitOpenEXR
 {
     struct Tex {
@@ -360,22 +373,6 @@ namespace WitOpenEXR
         int width;
         int height;
     };
-
-    #if defined(_WIN32) || defined(__WIN32__) || defined(WIN32)
-    inline std::wstring s2ws(const std::string& s)
-    {
-        int len;
-        int slength = (int)s.length() + 1;
-
-        len = MultiByteToWideChar(CP_ACP, 0, s.c_str(), slength, 0, 0);
-        wchar_t* buf = new wchar_t[len];
-        MultiByteToWideChar(CP_ACP, 0, s.c_str(), slength, buf, len);
-        std::wstring r(buf);
-        delete[] buf;
-
-        return r;
-    }
-    #endif
 
     void ProfileSequenceDisplay() {
         ZoneScoped;
@@ -842,7 +839,8 @@ public:
 class DisplayWithOpenExr
 {
     GLuint tex;
-    void* pixels;
+    void* pixels=NULL;
+    Imf::Header header;
 
 public:
     void gui() {
@@ -851,18 +849,64 @@ public:
 
     DisplayWithOpenExr()
     {
+        Imf::setGlobalThreadCount(8);
 
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+        glBindTexture(GL_TEXTURE_2D, 0);
     }
 
-
-    void read(std::filesystem::path path)
+    void alloc()
     {
+        ZoneScoped;
+        //std::cout << "alloc" << "\n";
+        Imath::Box2i dataWindow = header.dataWindow();
+        auto width = dataWindow.max.x - dataWindow.min.x + 1;
+        auto height = dataWindow.max.y - dataWindow.min.y + 1;
+        pixels = malloc((size_t)width * height * sizeof(half) * 3);
+        if(pixels==NULL) {
+            std::cerr << "NULL allocation" << "\n";
+        }
+    }
+
+    void dealloc()
+    {
+        ZoneScoped;
+        free(pixels);
+    }
+
+    void draw(std::filesystem::path filename)
+    {
+        // open file
+        Imf::InputFile* file;
+
+        #if (defined(_WIN32) || defined(__WIN32__) || defined(WIN32)) && !defined(__MINGW32__)
+        auto inputStr = new std::ifstream(s2ws(filename.string()), std::ios_base::binary);
+        auto inputStdStream = new Imf::StdIFStream(*inputStr, filename.string().c_str());
+        file = new Imf::InputFile(*inputStdStream);
+        #else
+        file = new Imf::InputFile(filename.c_str());
+        #endif
+
         /// read header
-        
+        header = file->header();
+
+
+        alloc();
+
+
         /// read pixels
+        Imath::Box2i dataWindow = header.dataWindow();
+        auto width = dataWindow.max.x - dataWindow.min.x + 1;
+        auto height = dataWindow.max.y - dataWindow.min.y + 1;
+        int dx = dataWindow.min.x;
+        int dy = dataWindow.min.y;
         ZoneScopedN("read pixels");
-        pixels = (char*)malloc(width * height * sizeof(half) * 3); //resize
-        //pixels.resizeErase(height, width);
+
         std::vector < std::tuple<int, std::string>> channels{ {0, "B"}, {1, "G"}, {2, "R"} };
         Imf::FrameBuffer frameBuffer;
         size_t chanoffset = 0;
@@ -870,31 +914,147 @@ public:
         for (auto [i, name] : channels)
         {
             size_t chanbytes = sizeof(float);
-            frameBuffer.insert(name,   // name
-                Imf::Slice(pixeltypes[selected_type_idx], // type
+            frameBuffer.insert(name.c_str(),   // name
+                Imf::Slice(Imf::PixelType::HALF, // type
                     buf + i * sizeof(half),           // base
                     sizeof(half) * 3,
                     (size_t)width * sizeof(half) * 3
-                ));
+                )
+            );
             chanoffset += chanbytes;
         }
 
         // read pixels
         file->setFrameBuffer(frameBuffer);
-        file->readPixels(dw.min.y, dw.max.y);
-        //std::cout << "read pixels: " << "[" << width << "," << height << "]" << "("<<width*height<<")" << " pixeltype: " << to_string(pixeltype) << "\n";
-        //std::cout << "  color: " << pixels[400][400].r << ","<< pixels[400][400].g<<","<< pixels[400][400].b << "\n";
-    }
+        file->readPixels(dataWindow.min.y, dataWindow.max.y);
 
-    void draw()
-    {
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGB, GL_HALF_FLOAT, (void*)pixels);
+        glBindTexture(GL_TEXTURE_2D, 0);
 
+        dealloc();
+
+        /// Draw scene
+        {
+            ZoneScopedN("Draw Scene");
+            glClearColor(1, 0, 1, 1);
+            glClear(GL_COLOR_BUFFER_BIT);
+            imdraw::quad(glazy::checkerboard_tex);
+            //std::cout << "draw from: " << texIds[texCurrentIndex].id << "\n";
+            imdraw::quad(tex, { -0.9, -0.9 }, { 0.9, 0.9 });
+
+        }
     }
 
     ~DisplayWithOpenExr() {
-
+        glDeleteTextures(1, &tex);
     }
 };
+
+class DisplayWithImageCache
+{
+    GLuint tex;
+    void* pixels = NULL;
+    OIIO::ImageSpec spec;
+    OIIO::ImageCache* imagecache;
+
+public:
+    void gui() {
+
+    }
+
+    DisplayWithImageCache()
+    {
+
+        OIIO::attribute("threads", 16);
+        OIIO::attribute("exr_threads", 16);
+        OIIO::attribute("try_all_readers", 0);
+        OIIO::attribute("openexr:core", 1);
+        if (OIIO::get_int_attribute("openexr:core")==0) {
+            std::cerr << "cant use OpenEXRCore" << "\n";
+        }
+        else {
+            std::cout << "using OpenEXRCore: " << OIIO::get_int_attribute("openexr:core");
+        }
+
+        imagecache = OIIO::ImageCache::create(true);
+        imagecache->attribute("max_memory_MB", 500.0f);
+        imagecache->attribute("autotile", 64);
+        imagecache->attribute("autoscanline", 1);
+        imagecache->attribute("trust_file_extensions ", 1);
+        imagecache->attribute("max_memory_MB", 10.0f);
+
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+    void alloc()
+    {
+        ZoneScoped;
+        pixels = malloc((size_t)spec.width * spec.height * sizeof(half) * 3);
+        if (pixels == NULL) {
+            std::cerr << "NULL allocation" << "\n";
+        }
+    }
+
+    void dealloc()
+    {
+        ZoneScoped;
+        free(pixels);
+    }
+
+    void draw(std::filesystem::path filename)
+    {
+        //std::cout << "using OpenEXRCore: " << OIIO::get_int_attribute("openexr:core");
+        /// read header
+        imagecache->get_imagespec(OIIO::ustring(filename.string()), spec, 0, 0);
+
+        alloc();
+
+        /// read pixels
+        ZoneScopedN("read pixels");
+
+        auto x = spec.x;
+        auto y = spec.y;
+        auto w = spec.width;
+        auto h = spec.height;
+        int chbegin = 0;
+        int chend = 3;
+        imagecache->get_pixels(OIIO::ustring(filename.string()), 0, 0, 
+            x, x + w, y, y + h, 0, 1, 
+            chbegin, chend, 
+            spec.format, pixels, 
+            OIIO::AutoStride, OIIO::AutoStride, OIIO::AutoStride, 
+            chbegin, chend);
+
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, w, h, 0, GL_RGB, GL_HALF_FLOAT, (void*)pixels);
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        dealloc();
+
+        /// Draw scene
+        {
+            ZoneScopedN("Draw Scene");
+            glClearColor(1, 0, 1, 1);
+            glClear(GL_COLOR_BUFFER_BIT);
+            imdraw::quad(glazy::checkerboard_tex);
+            //std::cout << "draw from: " << texIds[texCurrentIndex].id << "\n";
+            imdraw::quad(tex, { -0.9, -0.9 }, { 0.9, 0.9 });
+
+        }
+    }
+
+    ~DisplayWithImageCache() {
+        glDeleteTextures(1, &tex);
+    }
+};
+
 
 int main()
 {
@@ -902,18 +1062,24 @@ int main()
     //WitOpenEXR::ProfileSequenceDisplay();
 
     glazy::init();
-    std::filesystem::path path{ "C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr" };
+    glfwSwapInterval(0);
+    //std::filesystem::path path{ "C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr" };
     //std::filesystem::path path{ "R:/PlasticSky/Render/52_EXAM_v51/52_01_EXAM_v51.0001.exr" };
     //std::filesystem::path path{ "C:/Users/andris/Desktop/52_06_EXAM_v51-raw/52_06_EXAM_v51.0001.exr" };
-    //std::filesystem::path path{ "C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr" };
+    std::filesystem::path path{ "C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr" };
     Sequence sequence(path);
     int F = sequence.first_frame;
-    DisplayWithOpenExr disp;
-    while (glazy::is_running()) {
-        glazy::new_frame();
-        disp.read(sequence.item(F));
-        disp.draw();
-        glazy::end_frame();
+    {
+        DisplayWithOpenExr disp1;
+        DisplayWithImageCache disp2;
+        while (glazy::is_running()) {
+            glazy::new_frame();
+            disp2.draw(sequence.item(F));
+            glazy::end_frame();
+
+            F++;
+            if (F > sequence.last_frame) F = sequence.first_frame;
+        }
     }
     glazy::destroy();
 }
