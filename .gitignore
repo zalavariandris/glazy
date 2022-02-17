@@ -37,6 +37,7 @@ x64/
 Release/
 Debug/
 bin/
+packages/
 
 *.pdb
 *.log

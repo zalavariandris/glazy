@@ -347,7 +347,6 @@ std::string to_string(GLenum t)
     }
 }
 
-
 namespace WitOpenEXR
 {
     struct Tex {
@@ -381,10 +380,10 @@ namespace WitOpenEXR
     void ProfileSequenceDisplay() {
         ZoneScoped;
 
-        //std::filesystem::path path{ "C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr" };
+        std::filesystem::path path{ "C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr" };
         //std::filesystem::path path{ "R:/PlasticSky/Render/52_EXAM_v51/52_01_EXAM_v51.0001.exr" };
         //std::filesystem::path path{ "C:/Users/andris/Desktop/52_06_EXAM_v51-raw/52_06_EXAM_v51.0001.exr" };
-        std::filesystem::path path{ "C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/multipart.0001.exr" };
+        //std::filesystem::path path{ "C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr" };
         auto [pattern, first_frame, last_frame, current_Frame] = scan_for_sequence(path);
 
         int F = first_frame;
@@ -398,15 +397,15 @@ namespace WitOpenEXR
         glazy::init();
         glfwSwapInterval(0);
 
+        static int selected_format_idx{ 1 };
+        std::vector<GLenum> glformats{ GL_RGB, GL_BGR, GL_RGBA, GL_BGRA };
+        std::vector<std::string> formatnames{ "GL_RGB","GL_BGR", "GL_RGBA", "GL_BGRA" };
+        GLenum glformat = glformats[selected_format_idx];
+
         static int selected_internal_format_idx{ 1 };
         std::vector<GLint> internalformats{GL_RGB8, GL_RGB16F, GL_RGB32F, GL_RGBA8, GL_RGBA16F, GL_RGBA32F};
         static std::vector<std::string> internalformat_names{"GL_RGB8", "GL_RGB16F", "GL_RGB32F", "GL_RGBA8", "GL_RGBA16F", "GL_RGBA32F"};
         GLint glinternalformat = internalformats[selected_internal_format_idx];
-
-        static int selected_format_idx{ 0 };
-        std::vector<GLenum> glformats{ GL_RGB, GL_BGR, GL_RGBA, GL_BGRA};
-        std::vector<std::string> formatnames{ "GL_RGB","GL_BGR", "GL_RGBA", "GL_BGRA"};
-        GLenum glformat = glformats[selected_format_idx];
 
         static int selected_type_idx{ 1 };
         std::vector<GLenum> gltypes{ GL_UNSIGNED_INT, GL_HALF_FLOAT, GL_FLOAT };
@@ -415,6 +414,7 @@ namespace WitOpenEXR
         GLenum gltype = gltypes[selected_type_idx];
         Imf::PixelType pixeltype = pixeltypes[selected_type_idx];
 
+        
         // texture buffers
         Tex texIds[2];
         static int texCurrentIndex;
@@ -495,7 +495,7 @@ namespace WitOpenEXR
 
                     for (auto i = 0; i < formatnames.size(); i++) {
                         const bool is_selected = i == selected_format_idx;
-                        if (ImGui::Selectable(internalformat_names[i].c_str(), is_selected)) {
+                        if (ImGui::Selectable(formatnames[i].c_str(), is_selected)) {
                             selected_format_idx = i;
                             glformat = glformats[i];
                         }
@@ -523,7 +523,7 @@ namespace WitOpenEXR
                 ImGui::Text("pixeltype: %s", to_string(pixeltypes[selected_type_idx]));
                 ImGui::Text("gltype: %s", to_string(gltypes[selected_type_idx]));
 
-                std::cout << "selected_type_idx: " << selected_type_idx << "\n";
+                //std::cout << "selected_type_idx: " << selected_type_idx << "\n";
 
                 auto ctx = ImGui::GetCurrentContext();
                 float* dts = ctx->FramerateSecPerFrame;
@@ -538,24 +538,30 @@ namespace WitOpenEXR
             int width=0;
             int height=0;
             char* pixels;
-            try{
-                #if (defined(_WIN32) || defined(__WIN32__) || defined(WIN32)) && !defined(__MINGW32__)
-                auto inputStr = new std::ifstream(s2ws(filename.string()), std::ios_base::binary);
-                auto inputStdStream = new Imf::StdIFStream(*inputStr, filename.string().c_str());
-                file = new Imf::InputFile(*inputStdStream);
-                #else
-                file = new Imf::InputFile(filename.c_str());
-                #endif
 
-                if (ImGui::Begin("settings"))
-                {
-                    ImGui::TextColored(file->isComplete() ? ImColor(1.f, 0.f, 0.f) : ImColor(1.f,1.f,1.f), "is complete: %s", (file->isComplete() ? "true" : "false"));
-                }
-                ImGui::End();
+            #if (defined(_WIN32) || defined(__WIN32__) || defined(WIN32)) && !defined(__MINGW32__)
+            auto inputStr = new std::ifstream(s2ws(filename.string()), std::ios_base::binary);
+            auto inputStdStream = new Imf::StdIFStream(*inputStr, filename.string().c_str());
+            file = new Imf::InputFile(*inputStdStream);
+            #else
+            file = new Imf::InputFile(filename.c_str());
+            #endif
+            try {
+            }
+            catch (Iex::BaseExc& e)
+            {
+                std::cerr << e.what() << "\n";
+            }
+
+            if (ImGui::Begin("settings"))
+            {
+                ImGui::TextColored(file->isComplete() ? ImColor(1.f, 0.f, 0.f) : ImColor(1.f,1.f,1.f), "is complete: %s", (file->isComplete() ? "true" : "false"));
+            }
+            ImGui::End();
 
                 // open header
                 auto header = file->header();
-                auto dw = file->header().dataWindow();
+                auto dw = header.dataWindow();
                 width = dw.max.x - dw.min.x + 1;
                 height = dw.max.y - dw.min.y + 1;
                 int dx = dw.min.x;
@@ -566,44 +572,33 @@ namespace WitOpenEXR
                     ZoneScopedN("direct upload");
                     {// read pixels
                         ZoneScopedN("read pixels");
-                        pixels = (char*)malloc(width * height * 3 * sizeof(float)); //resize
+                        pixels = (char*)malloc(width * height * sizeof(half)*3); //resize
                         //pixels.resizeErase(height, width);
+                        std::vector < std::tuple<int, std::string>> channels{ {0, "B"}, {1, "G"}, {2, "R"} };
                         Imf::FrameBuffer frameBuffer;
-
-                        std::vector < std::tuple<int, std::string>> channels{ {0, "R"}, {1, "G"}, {2, "B"} };
-                        std::vector<unsigned long long> base_sizes(channels.size());
-                        for (auto [i, name] : channels) {
-                            auto channellist = header.channels();
-                            auto channel = channellist[name];
-                            base_sizes[i] = pixelTypeSize(channel.type);
-                        }
-
-                        auto xstride = sizeof(half) * 3;
-                        auto ystride = width * xstride;
-                        auto c_offset = 0;
+                        size_t chanoffset = 0;
+                        char* buf = (char*)pixels - dx * sizeof(half) * 3 - dy * (size_t)width * sizeof(half)*3;
                         for (auto [i, name] : channels)
                         {
-                            char* base = pixels - (dy * width + dx) * xstride;
-                            auto type_bytes = pixelTypeSize(header.channels()[name].type);
-                            std::cout << "!!!!!!!!!! " << to_string(header.channels()[name].type) << " " << type_bytes << "\n";
+                            size_t chanbytes = sizeof(float);
                             frameBuffer.insert(name,   // name
-                                Imf::Slice(Imf::HALF, // type
-                                    base + sizeof(half) * i,             // base
-                                    xstride, ystride
+                                Imf::Slice(pixeltypes[selected_type_idx], // type
+                                    buf+i*sizeof(half),           // base
+                                    sizeof(half) * 3,
+                                    (size_t)width*sizeof(half) * 3
                                 ));
+                            chanoffset += chanbytes;
                         }
-
-                        //frameBuffer.insert("A", Imf::Slice(Imf::HALF));
 
                         // read pixels
                         file->setFrameBuffer(frameBuffer);
                         file->readPixels(dw.min.y, dw.max.y);
-                        std::cout << "read pixels: " << "[" << width << "," << height << "]" << " pixeltype: " << to_string(pixeltype) << "\n";
+                        //std::cout << "read pixels: " << "[" << width << "," << height << "]" << "("<<width*height<<")" << " pixeltype: " << to_string(pixeltype) << "\n";
                         //std::cout << "  color: " << pixels[400][400].r << ","<< pixels[400][400].g<<","<< pixels[400][400].b << "\n";
                     }
                     {// Upload to gpu
                         ZoneScopedN("Upload image to GPU mode0");
-                        std::cout << "upload to texture: " << texIds[texCurrentIndex].id << "\n";
+                        //std::cout << "upload to texture: " << texIds[texCurrentIndex].id << "\n";
                         if ( glIsTexture(texIds[texCurrentIndex].id) ) {
                             glDeleteTextures(1,&texIds[texCurrentIndex].id );
                         };
@@ -614,14 +609,13 @@ namespace WitOpenEXR
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
                         
-                        
                         //GLenum glformat = GL_RGB;
                         //GLenum gltype = GL_HALF_FLOAT;
-                        std::cout << "  glinternalformat: " << to_string(glinternalformat) << "\n"
-                            << "  glformat: " << to_string(glformat) << "\n"
-                            << "  gltype: " << to_string(gltype) << "\n";
+                        //std::cout << "  glinternalformat: " << to_string(glinternalformat) << "\n"
+                        //    << "  glformat: " << to_string(glformat) << "\n"
+                        //    << "  gltype: " << to_string(gltype) << "\n";
                         
-                        glTexImage2D(GL_TEXTURE_2D, 0, glinternalformat, width, height, 0, glformat, gltype, pixels);
+                        glTexImage2D(GL_TEXTURE_2D, 0, glinternalformat, width, height, 0, glformat, gltype, (void*)pixels);
                         glBindTexture(GL_TEXTURE_2D, 0);
 
                         //if (swap_textures) {
@@ -800,11 +794,7 @@ namespace WitOpenEXR
                     delete file;
                     #endif
                 }
-            }
-            catch (Iex::BaseExc& e)
-            {
-                std::cerr << e.what() << "\n";
-            }
+
 
             /// Draw scene
             {
@@ -812,24 +802,118 @@ namespace WitOpenEXR
                 glClearColor(1, 0, 1, 1);
                 glClear(GL_COLOR_BUFFER_BIT);
                 imdraw::quad(glazy::checkerboard_tex);
-                std::cout << "draw from: " << texIds[texCurrentIndex].id << "\n";
+                //std::cout << "draw from: " << texIds[texCurrentIndex].id << "\n";
                 imdraw::quad(texIds[texCurrentIndex].id, {-0.9, -0.9}, {0.9, 0.9});
                 
             }
-
+            
             // End frame
             FrameMark;
             F++;
             if (F > last_frame) F = first_frame;
-            std::cout << "-----\n";
+            //std::cout << "-----\n";
             glazy::end_frame();
 
         }
         glazy::destroy();
     }
 }
+
+class Sequence
+{
+public:
+    Sequence(std::filesystem::path filepath) {
+        auto [p, b, e, c] = scan_for_sequence(filepath);
+        pattern = p;
+        first_frame = b;
+        last_frame = e;
+        int F = first_frame;
+    }
+
+    std::filesystem::path item(int F) {
+        return sequence_item(pattern, F);
+    }
+
+    std::filesystem::path pattern;
+    int first_frame;
+    int last_frame;
+};
+
+class DisplayWithOpenExr
+{
+    GLuint tex;
+    void* pixels;
+
+public:
+    void gui() {
+
+    }
+
+    DisplayWithOpenExr()
+    {
+
+    }
+
+
+    void read(std::filesystem::path path)
+    {
+        /// read header
+        
+        /// read pixels
+        ZoneScopedN("read pixels");
+        pixels = (char*)malloc(width * height * sizeof(half) * 3); //resize
+        //pixels.resizeErase(height, width);
+        std::vector < std::tuple<int, std::string>> channels{ {0, "B"}, {1, "G"}, {2, "R"} };
+        Imf::FrameBuffer frameBuffer;
+        size_t chanoffset = 0;
+        char* buf = (char*)pixels - dx * sizeof(half) * 3 - dy * (size_t)width * sizeof(half) * 3;
+        for (auto [i, name] : channels)
+        {
+            size_t chanbytes = sizeof(float);
+            frameBuffer.insert(name,   // name
+                Imf::Slice(pixeltypes[selected_type_idx], // type
+                    buf + i * sizeof(half),           // base
+                    sizeof(half) * 3,
+                    (size_t)width * sizeof(half) * 3
+                ));
+            chanoffset += chanbytes;
+        }
+
+        // read pixels
+        file->setFrameBuffer(frameBuffer);
+        file->readPixels(dw.min.y, dw.max.y);
+        //std::cout << "read pixels: " << "[" << width << "," << height << "]" << "("<<width*height<<")" << " pixeltype: " << to_string(pixeltype) << "\n";
+        //std::cout << "  color: " << pixels[400][400].r << ","<< pixels[400][400].g<<","<< pixels[400][400].b << "\n";
+    }
+
+    void draw()
+    {
+
+    }
+
+    ~DisplayWithOpenExr() {
+
+    }
+};
+
 int main()
 {
     //WithImageInput::ProfileSequenceDisplay();
-    WitOpenEXR::ProfileSequenceDisplay();
+    //WitOpenEXR::ProfileSequenceDisplay();
+
+    glazy::init();
+    std::filesystem::path path{ "C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr" };
+    //std::filesystem::path path{ "R:/PlasticSky/Render/52_EXAM_v51/52_01_EXAM_v51.0001.exr" };
+    //std::filesystem::path path{ "C:/Users/andris/Desktop/52_06_EXAM_v51-raw/52_06_EXAM_v51.0001.exr" };
+    //std::filesystem::path path{ "C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr" };
+    Sequence sequence(path);
+    int F = sequence.first_frame;
+    DisplayWithOpenExr disp;
+    while (glazy::is_running()) {
+        glazy::new_frame();
+        disp.read(sequence.item(F));
+        disp.draw();
+        glazy::end_frame();
+    }
+    glazy::destroy();
 }
