@@ -201,6 +201,7 @@
     <ClCompile Include="glazy\OOGL\Shader.cpp" />
     <ClCompile Include="glazy\OOGL\VertexArray.cpp" />
     <ClCompile Include="glazy\OOGL\Texture.cpp" />
+    <ClCompile Include="glazy\themes.cpp" />
     <ClCompile Include="glazy\widgets\Viewport.cpp" />
     <ClCompile Include="glazy\ImGuiColorTextEdit.cpp" />
   </ItemGroup>

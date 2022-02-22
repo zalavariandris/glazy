@@ -15,7 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="profile_image_read.cpp">
+    <ClCompile Include="EXRViewer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
