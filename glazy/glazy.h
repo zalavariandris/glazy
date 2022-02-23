@@ -57,6 +57,26 @@
 
 #include "../tracy/Tracy.hpp"
 
+void glPrintErrors()
+{
+	GLenum err(glGetError());
+
+	while (err != GL_NO_ERROR) {
+		std::string error;
+
+		switch (err) {
+		case GL_INVALID_OPERATION:      error = "INVALID_OPERATION";      break;
+		case GL_INVALID_ENUM:           error = "INVALID_ENUM";           break;
+		case GL_INVALID_VALUE:          error = "INVALID_VALUE";          break;
+		case GL_OUT_OF_MEMORY:          error = "OUT_OF_MEMORY";          break;
+		case GL_INVALID_FRAMEBUFFER_OPERATION:  error = "INVALID_FRAMEBUFFER_OPERATION";  break;
+		}
+
+		std::cerr << "GL_" << error.c_str() << "\n";
+		err = glGetError();
+	}
+}
+
 namespace ImGui
 {
 	static auto vector_getter = [](void* vec, int idx, const char** out_text)
@@ -174,6 +194,8 @@ namespace glazy {
 		//glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 		glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_FALSE);
 
+		
+
 		glfwSetErrorCallback(glfw_error_callback);
 
 		// create main window
@@ -207,6 +229,10 @@ namespace glazy {
 		if (!gladLoadGL()) {
 			std::cout << "GL init failed" << std::endl;
 		};
+
+		std::cout << "using opengl " << glGetString(GL_VERSION) << "\n";
+
+
 
 		/********
 		  STYLUS
@@ -301,6 +327,9 @@ namespace glazy {
 
 		ApplyEmbraceTheDarknessTheme();
 
+		std::cout << "<glazy init errors> " << "\n";
+		glPrintErrors();
+		std::cout << "</end of glazy errors>" << "\n";
 		return EXIT_SUCCESS;
 	}
 
@@ -387,8 +416,6 @@ namespace glazy {
 
 
 		// calc framerate
-		
-
 		auto current_time = std::chrono::steady_clock::now();
 		auto dt = current_time - g_Time;
 		DeltaTime = std::chrono::duration_cast<std::chrono::milliseconds>(dt).count() / 1000.0;
@@ -479,7 +506,8 @@ namespace glazy {
 
 					float fpss[120];
 					for (auto i = 0; i < 120; i++) fpss[i] = 1.0 / dts[i];
-					ImGui::PlotHistogram("fps", fpss, 120, offset, "", 0, 120, { 60,0 });
+					auto avg_fps = ImGui::GetIO().Framerate;
+					ImGui::PlotHistogram("fps", fpss, 120, offset,std::to_string(std::roundf(avg_fps)).c_str(), 0, 120, {60,0});
 
 					std::stringstream ss; // compose text to calculate size
 					//ss << std::fixed << std::setprecision(0) << 1.0/ImGui::GetIO().DeltaTime << "fps";

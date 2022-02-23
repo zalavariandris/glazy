@@ -1,7 +1,10 @@
 // EXRViewer.cpp : This file contains the 'main' function. Program execution begins and ends there.
 //
 
+
+#include <charconv> // std::to_chars
 #include <iostream>
+#include "../../tracy/Tracy.hpp"
 
 // from glazy
 #include "glazy.h"
@@ -139,13 +142,25 @@ public:
     Sequence sequence;
     Imf::Header header;
     void* pixels = NULL;
-    GLuint pbos[2];
+    std::vector<GLuint> pbos;
     GLuint tex{ 0 };
+
+    int width, height, nchannels;
 
 public:
 
     SequenceRenderer()
     {
+
+    }
+
+    void onGUI()
+    {
+        static int npbos = pbos.size();
+        if (ImGui::InputInt("pbos", &npbos))
+        {
+            init_pbos(npbos);
+        }
     }
 
     void setup(Sequence seq)
@@ -160,46 +175,80 @@ public:
         auto filename = sequence.item(sequence.first_frame);
         Imf::InputFile* file;
 
-#if (defined(_WIN32) || defined(__WIN32__) || defined(WIN32)) && !defined(__MINGW32__)
+        #if (defined(_WIN32) || defined(__WIN32__) || defined(WIN32)) && !defined(__MINGW32__)
         auto inputStr = new std::ifstream(s2ws(filename.string()), std::ios_base::binary);
         auto inputStdStream = new Imf::StdIFStream(*inputStr, filename.string().c_str());
         file = new Imf::InputFile(*inputStdStream);
-#else
+        #else
         file = new Imf::InputFile(filename.c_str());
-#endif
+        #endif
 
         /// read header
         header = file->header();
 
         /// alloc 
         Imath::Box2i displayWindow = header.displayWindow();
-        auto width = displayWindow.max.x - displayWindow.min.x + 1;
-        auto height = displayWindow.max.y - displayWindow.min.y + 1;
+        width = displayWindow.max.x - displayWindow.min.x + 1;
+        height = displayWindow.max.y - displayWindow.min.y + 1;
         pixels = malloc((size_t)width * height * sizeof(half) * 3);
         if (pixels == NULL) {
             std::cerr << "NULL allocation" << "\n";
         }
 
         // init texture object
+        init_tex();
+
+        // init pixel buffers
+        init_pbos(1);
+    }
+
+    void init_tex() {
+        // init texture object
+        glPrintErrors();
         glGenTextures(1, &tex);
         glBindTexture(GL_TEXTURE_2D, tex);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGB, GL_HALF_FLOAT, pixels);
+        std::cout << width << "x" << height << "\n";
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGB16F, width, height);
         glBindTexture(GL_TEXTURE_2D, 0);
 
-        // init pixel buffers
-        glGenBuffers(2, pbos);
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[0]);
-        glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * 3, 0, GL_STREAM_DRAW);
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[1]);
-        glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * 3, 0, GL_STREAM_DRAW);
+        std::cout << "setup errors:" << "\n";
+        glPrintErrors();
+    }
+
+    void init_pbos(int n)
+    {
+        ZoneScoped;
+        TracyMessage(("set pbo count to: "+std::to_string(n)).c_str(), 9);
+        if (!pbos.empty())
+        {
+            for (auto i = 0; i < pbos.size(); i++) {
+                glDeleteBuffers(1, &pbos[i]);
+            }
+            
+        }
+
+        pbos.resize(n);
+        //glGenBuffers(pbos.size(), pbos.data());
+        for (auto i=0; i<n;i++)
+        {
+            GLuint pbo;
+            glGenBuffers(1, &pbo);
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
+            glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * nchannels * sizeof(half), 0, GL_STREAM_DRAW);
+            pbos[i] = pbo;
+        }
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
     }
 
-    void destroy() {
+    void destroy()
+    {
+        for (auto i = 0; i < pbos.size(); i++) {
+            glDeleteBuffers(1, &pbos[i]);
+        }
         glDeleteTextures(1, &tex);
     }
 
@@ -240,36 +289,71 @@ public:
         
         /// read pixels
         Imath::Box2i dataWindow = header.dataWindow();
-        auto width = dataWindow.max.x - dataWindow.min.x + 1;
-        auto height = dataWindow.max.y - dataWindow.min.y + 1;
+        width = dataWindow.max.x - dataWindow.min.x + 1;
+        height = dataWindow.max.y - dataWindow.min.y + 1;
+        nchannels = 3;
         int dx = dataWindow.min.x;
         int dy = dataWindow.min.y;
 
         std::vector < std::tuple<int, std::string>> channels{ {0, "B"}, {1, "G"}, {2, "R"} };
         Imf::FrameBuffer frameBuffer;
         size_t chanoffset = 0;
-        char* buf = (char*)pixels - dx * sizeof(half) * 3 - dy * (size_t)width * sizeof(half) * 3;
+        char* buf = (char*)pixels - dx * sizeof(half) * nchannels - dy * (size_t)width * sizeof(half) * nchannels;
         for (auto [i, name] : channels)
         {
             size_t chanbytes = sizeof(float);
             frameBuffer.insert(name.c_str(),   // name
                 Imf::Slice(Imf::PixelType::HALF, // type
                     buf + i * sizeof(half),           // base
-                    sizeof(half) * 3,
-                    (size_t)width * sizeof(half) * 3
+                    sizeof(half) * nchannels,
+                    (size_t)width * sizeof(half) * nchannels
                 )
             );
             chanoffset += chanbytes;
         }
 
         // read pixels
-        
         file->setFrameBuffer(frameBuffer);
         file->readPixels(dataWindow.min.y, dataWindow.max.y);
         
-        glBindTexture(GL_TEXTURE_2D, tex);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGB, GL_HALF_FLOAT, (void*)pixels);
-        glBindTexture(GL_TEXTURE_2D, 0);
+        // naive PBO
+        if (pbos.empty())
+        {
+            // pixels to texture
+
+            glBindTexture(GL_TEXTURE_2D, tex);
+            //glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGB, GL_HALF_FLOAT, (void*)pixels);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGB, GL_HALF_FLOAT, (void*)pixels);
+            glBindTexture(GL_TEXTURE_2D, 0);
+
+        }
+        else
+        {
+            static int index{ 0 };
+            static int nextIndex;
+
+            index = (index + 1) % pbos.size();
+            nextIndex = (index + 1) % pbos.size();
+
+            // pbo to texture
+            glBindTexture(GL_TEXTURE_2D, tex);
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[index]);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGB, GL_HALF_FLOAT, 0/*NULL offset*/);
+
+            //// pixels to other PBO
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[nextIndex]);
+            glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * nchannels * sizeof(half), 0, GL_STREAM_DRAW);
+            // map the buffer object into client's memory
+            GLubyte* ptr = (GLubyte*)glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
+            if (ptr)
+            {
+                // update data directly on the mapped buffer
+                memcpy(ptr, pixels, width * height * nchannels * sizeof(half));
+                glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
+            }
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+            glBindTexture(GL_TEXTURE_2D, 0);
+        }
     }
 
     void draw()
@@ -277,7 +361,7 @@ public:
         ZoneScoped;
         glClearColor(1, 0, 1, 1);
         glClear(GL_COLOR_BUFFER_BIT);
-        imdraw::quad(glazy::checkerboard_tex);
+        //imdraw::quad(glazy::checkerboard_tex);
         //std::cout << "draw from: " << texIds[texCurrentIndex].id << "\n";
         imdraw::quad(tex, { -0.9, -0.9 }, { 0.9, 0.9 });
     }
@@ -288,6 +372,7 @@ int main()
     bool is_playing = false;
     int F, first_frame, last_frame;
     Sequence sequence{ "C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr" };
+    //Sequence sequence{ "C:/Users/andris/Desktop/52_EXAM_v51-raw/52_01_EXAM_v51.0001.exr" };
     first_frame = sequence.first_frame;
     last_frame = sequence.last_frame;
     F = sequence.first_frame;
@@ -297,7 +382,7 @@ int main()
     SequenceRenderer seq_renderer;
     seq_renderer.setup(sequence);
 
-    glazy::set_vsync(true);
+    glazy::set_vsync(false);
     while (glazy::is_running())
     {
         if (is_playing) {
@@ -309,9 +394,9 @@ int main()
 
         seq_renderer.update(F);
 
-        if (ImGui::Begin("Info"))
+        if (ImGui::Begin("Inspector"))
         {
-
+            seq_renderer.onGUI();
         }
         ImGui::End();
 
@@ -326,6 +411,7 @@ int main()
         imdraw::quad(seq_renderer.tex);
 
         glazy::end_frame();
+        FrameMark;
     }
     glazy::destroy();
 }
