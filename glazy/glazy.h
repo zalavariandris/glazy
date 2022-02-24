@@ -507,7 +507,7 @@ namespace glazy {
 					float fpss[120];
 					for (auto i = 0; i < 120; i++) fpss[i] = 1.0 / dts[i];
 					auto avg_fps = ImGui::GetIO().Framerate;
-					ImGui::PlotHistogram("fps", fpss, 120, offset,std::to_string(std::roundf(avg_fps)).c_str(), 0, 120, {60,0});
+					ImGui::PlotHistogram("fps", fpss, 120, offset,std::to_string((int)avg_fps).c_str(), 0, 120, {60,0});
 
 					std::stringstream ss; // compose text to calculate size
 					//ss << std::fixed << std::setprecision(0) << 1.0/ImGui::GetIO().DeltaTime << "fps";
