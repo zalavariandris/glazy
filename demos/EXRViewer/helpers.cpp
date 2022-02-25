@@ -3,12 +3,6 @@
 // Copyright (c) Contributors to the OpenEXR Project.
 //
 
-//-----------------------------------------------------------------------------
-//
-//	Utility program to print an image file's header
-//
-//-----------------------------------------------------------------------------
-
 #include <OpenExr/ImfBoxAttribute.h>
 #include <OpenExr/ImfChannelListAttribute.h>
 #include <OpenExr/ImfChromaticitiesAttribute.h>

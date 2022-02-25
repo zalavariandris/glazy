@@ -28,17 +28,20 @@ std::map<std::string, std::vector<int>> group_channels(const OIIO::ImageSpec& sp
     std::map<std::string, std::vector<int>> channel_groups;
 
     // main channels
-    channel_groups.at("RGB_color") = { 0,1,2 };
-    channel_groups.at("Alpha") = { 3 };
-    channel_groups.at("ZDepth") = { 4 };
+    channel_groups["RGB_color"] = { 0,1,2 };
+    channel_groups["Alpha"] = {3};
+    channel_groups["ZDepth"] = { 4 };
 
     // AOVs
     for (auto i = 5; i < spec.nchannels; i++) {
         auto channel_name = spec.channelnames[i];
 
-        auto channel_array = split_string(channel_name, ".");
-
-        auto layer_name = channel_array.front();
+        auto channel_parts = split_string(channel_name, ".");
+        
+        std::string layer_name{ "" };
+        for (auto i = 0; i < channel_parts.size() - 1; i++) {
+            layer_name += channel_parts[i];
+        }
         if (!channel_groups.contains(layer_name)) {
             channel_groups[layer_name] = std::vector<int>();
         }
@@ -212,11 +215,15 @@ std::vector<std::filesystem::path> collect_input_files(const std::vector<std::fi
     // push sequence items
     for (auto path : results) {
         // find sequence
-        auto seq = find_sequence(path);
+        auto [pattern, first_frame, last_frame, selected_frame] = scan_for_sequence(path);
 
         // insert each item to paths
-        for (auto item : seq) {
-            if (item != path) results.push_back(item);
+        for (auto F=first_frame; F<=last_frame; F++)
+        {
+            auto item = sequence_item(pattern, F);
+            if (item != path) {
+                results.push_back(item);
+            }
         }
     }
 
@@ -239,12 +246,11 @@ void test_collect_files() {
 }
 
 void test_processing_files() {
-
+    process_file("C:/Users/andris/Desktop/52_EXAM_v51-raw/52_01_EXAM_v51.0001.exr", false);
 }
 
 int main(int argc, char* argv[])
 {
-
     std::cout << "splitexr" << " v" << VERSION << "\n";
     if (argc < 2) {
         std::cout << "drop something!" << std::endl;
@@ -253,7 +259,6 @@ int main(int argc, char* argv[])
     }
 
     std::vector<fs::path> input_paths;
-    
     for (auto i = 1; i < argc; i++) {
         input_paths.push_back(argv[i]);
     }

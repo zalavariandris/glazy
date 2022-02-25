@@ -10,6 +10,7 @@
 #include "glazy.h"
 #include "pathutils.h"
 #include "stringutils.h"
+#include "glhelpers.h"
 
 // OpenEXR
 #include <OpenEXR/ImfMultiPartInputFile.h>
@@ -25,17 +26,17 @@
 
 #include "helpers.h"
 
-class Sequence
+class FileSequence
 {
 public:
-    Sequence()
+    FileSequence()
     {
         pattern = "";
         first_frame = 0;
         last_frame = 0;
     }
 
-    Sequence(std::filesystem::path filepath) {
+    FileSequence(std::filesystem::path filepath) {
         auto [p, b, e, c] = scan_for_sequence(filepath);
         pattern = p;
         first_frame = b;
@@ -75,24 +76,24 @@ namespace ImGui
             }
             ImGui::SameLine();
             ImGui::SetNextItemWidth(ImGui::GetTextLineHeight());
-            if (ImGui::Button(*is_playing ? ICON_FA_PAUSE : ICON_FA_PLAY "##play"))
-            {
-                *is_playing = !*is_playing;
-                std::cout << "oress play" << *is_playing << "\n";
-            }
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(ImGui::GetTextLineHeight());
-            if (ImGui::Button(ICON_FA_STEP_FORWARD "##step forward")) {
-                *v += 1;
-                if (*v > v_max) *v = v_min;
-                changed = true;
-            }
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(ImGui::GetTextLineHeight());
-            if (ImGui::Button(ICON_FA_FAST_FORWARD "##last frame")) {
-                *v = v_max;
-                changed = true;
-            }
+if (ImGui::Button(*is_playing ? ICON_FA_PAUSE : ICON_FA_PLAY "##play"))
+{
+    *is_playing = !*is_playing;
+    std::cout << "oress play" << *is_playing << "\n";
+}
+ImGui::SameLine();
+ImGui::SetNextItemWidth(ImGui::GetTextLineHeight());
+if (ImGui::Button(ICON_FA_STEP_FORWARD "##step forward")) {
+    *v += 1;
+    if (*v > v_max) *v = v_min;
+    changed = true;
+}
+ImGui::SameLine();
+ImGui::SetNextItemWidth(ImGui::GetTextLineHeight());
+if (ImGui::Button(ICON_FA_FAST_FORWARD "##last frame")) {
+    *v = v_max;
+    changed = true;
+}
         }
         ImGui::EndGroup();
 
@@ -122,7 +123,7 @@ namespace ImGui
 
         return changed;
     }
-    
+
 }
 
 
@@ -146,22 +147,25 @@ inline std::wstring s2ws(const std::string& s)
 class SequenceRenderer
 {
 public:
-    Sequence sequence;
+    FileSequence sequence;
     Imf::Header header;
     void* pixels = NULL;
     std::vector<GLuint> pbos;
     GLuint tex{ 0 };
 
-    int width, height, nchannels;
+    //int width, height, nchannels;
     std::string infostring;
     Imf::MultiPartInputFile* firstfile;
     std::unique_ptr<Imf::MultiPartInputFile> current_file;
+
+    std::vector<std::string> selected_channels{ "B", "G", "R", "A" };
+
+    GLenum glinternalformat = GL_RGBA16F;
 
 
 public:
 
     SequenceRenderer()
-        :width(0), height(0), nchannels(0)
     {
 
     }
@@ -173,9 +177,24 @@ public:
         {
             init_pbos(npbos);
         }
+
+        if(ImGui::BeginListBox("texture internal format"))
+        {
+            std::vector<GLenum> glinternalformats{ GL_RGB16F, GL_RGBA16F, GL_RGB32F, GL_RGBA32F };
+            for (auto i = 0; i < glinternalformats.size(); ++i)
+            {
+                const bool is_selected = glinternalformat==glinternalformats[i];
+                if (ImGui::Selectable(to_string(glinternalformats[i]).c_str(), is_selected))
+                {
+                    glinternalformat = glinternalformats[i];
+                    init_tex();
+                }
+            }
+            ImGui::EndListBox();
+        }
     }
 
-    void setup(Sequence seq)
+    void setup(FileSequence seq)
     {
         ZoneScoped;
 
@@ -208,10 +227,10 @@ public:
 
         /// alloc 
         Imath::Box2i displayWindow = header.displayWindow();
-        width = displayWindow.max.x - displayWindow.min.x + 1;
-        height = displayWindow.max.y - displayWindow.min.y + 1;
-        nchannels = 4;
-        pixels = malloc((size_t)width * height * sizeof(half) * nchannels);
+        auto display_width = displayWindow.max.x - displayWindow.min.x + 1;
+        auto display_height = displayWindow.max.y - displayWindow.min.y + 1;
+        auto pbo_nchannels = 4;
+        pixels = malloc((size_t)display_width * display_height * sizeof(half) * pbo_nchannels);
         if (pixels == NULL) {
             std::cerr << "NULL allocation" << "\n";
         }
@@ -225,6 +244,9 @@ public:
 
     void init_tex() {
         // init texture object
+        Imath::Box2i dataWindow = header.dataWindow();
+        auto data_width = dataWindow.max.x - dataWindow.min.x + 1;
+        auto data_height = dataWindow.max.y - dataWindow.min.y + 1;
         glPrintErrors();
         glGenTextures(1, &tex);
         glBindTexture(GL_TEXTURE_2D, tex);
@@ -232,9 +254,8 @@ public:
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-        std::cout << width << "x" << height << "\n";
-        
-        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA16F, width, height);
+        std::cout << data_width << "x" << data_height << "\n";
+        glTexStorage2D(GL_TEXTURE_2D, 1, glinternalformat, data_width, data_height);
         glBindTexture(GL_TEXTURE_2D, 0);
 
         std::cout << "setup errors:" << "\n";
@@ -274,40 +295,6 @@ public:
         glDeleteTextures(1, &tex);
     }
 
-    void read_pixels(int part, std::vector <std::string> channels={"B", "G", "R", "A"}) {
-        /// read header
-        header = current_file->header(part);
-
-        /// read pixels
-        Imath::Box2i dataWindow = header.dataWindow();
-        width = dataWindow.max.x - dataWindow.min.x + 1;
-        height = dataWindow.max.y - dataWindow.min.y + 1;
-        nchannels = 4;
-        int dx = dataWindow.min.x;
-        int dy = dataWindow.min.y;
-  
-        Imf::FrameBuffer frameBuffer;
-        size_t chanoffset = 0;
-        char* buf = (char*)pixels - dx * sizeof(half) * nchannels - dy * (size_t)width * sizeof(half) * nchannels;
-        for(auto i=0;i<channels.size();i++){
-            auto name = channels[i];
-            size_t chanbytes = sizeof(float);
-            frameBuffer.insert(name,   // name
-                Imf::Slice(Imf::PixelType::HALF, // type
-                    buf + i * sizeof(half),           // base
-                    sizeof(half) * nchannels,
-                    (size_t)width * sizeof(half) * nchannels
-                )
-            );
-            chanoffset += chanbytes;
-        }
-
-        // read pixels
-        auto part0 = Imf::InputPart(*current_file, part);
-        part0.setFrameBuffer(frameBuffer);
-        part0.readPixels(dataWindow.min.y, dataWindow.max.y);
-    }
-
     void update(int F, int part=0)
     {
         ZoneScoped;
@@ -319,7 +306,6 @@ public:
         }
         
         // open file
-        
         #if (defined(_WIN32) || defined(__WIN32__) || defined(WIN32)) && !defined(__MINGW32__)
         std::unique_ptr<std::ifstream> inputStr;
         std::unique_ptr<Imf::StdIFStream> inputStdStream;
@@ -340,7 +326,37 @@ public:
             return;
         }
        
-        read_pixels(part);
+        /// read header
+        header = current_file->header(part);
+
+        /// read pixels
+        Imath::Box2i dataWindow = header.dataWindow();
+        width = dataWindow.max.x - dataWindow.min.x + 1;
+        height = dataWindow.max.y - dataWindow.min.y + 1;
+        nchannels = 4;
+        int dx = dataWindow.min.x;
+        int dy = dataWindow.min.y;
+
+        Imf::FrameBuffer frameBuffer;
+        size_t chanoffset = 0;
+        char* buf = (char*)pixels - dx * sizeof(half) * nchannels - dy * (size_t)width * sizeof(half) * nchannels;
+        for (auto i = 0; i < selected_channels.size(); i++) {
+            auto name = selected_channels[i];
+            size_t chanbytes = sizeof(float);
+            frameBuffer.insert(name,   // name
+                Imf::Slice(Imf::PixelType::HALF, // type
+                    buf + i * sizeof(half),           // base
+                    sizeof(half) * nchannels,
+                    (size_t)width * sizeof(half) * nchannels
+                )
+            );
+            chanoffset += chanbytes;
+        }
+
+        // read pixels
+        auto part0 = Imf::InputPart(*current_file, part);
+        part0.setFrameBuffer(frameBuffer);
+        part0.readPixels(dataWindow.min.y, dataWindow.max.y);
 
         if (pbos.empty())
         {
@@ -403,7 +419,7 @@ std::vector<std::string> GetChannelsInLayer()
 
 namespace Widgets {
 
-    void ChannelSelector(Imf::MultiPartInputFile* file, int& selected_part, std::vector<std::string>& selected_channels)
+    void EXRChannelSelector(Imf::MultiPartInputFile* file, int* selected_part, std::vector<std::string>& selected_channels)
     {
         std::vector<std::string> part_names;
         auto parts = file->parts();
@@ -413,12 +429,12 @@ namespace Widgets {
             part_names.push_back(in.header().hasName() ? in.header().name() : "");
         }
 
-        if (ImGui::BeginCombo("parts", part_names[selected_part].c_str(), ImGuiComboFlags_NoArrowButton))
+        if (ImGui::BeginCombo("parts", part_names[*selected_part].c_str(), ImGuiComboFlags_NoArrowButton))
         {
             for (auto i = 0; i < part_names.size(); i++) {
-                const bool is_selected = i == selected_part;
+                const bool is_selected = i == *selected_part;
                 if (ImGui::Selectable(part_names[i].c_str(), is_selected)) {
-                    selected_part = i;
+                    *selected_part = i;
                 }
 
                 if (is_selected) ImGui::SetItemDefaultFocus();
@@ -429,7 +445,7 @@ namespace Widgets {
 
         // available channels
         std::vector<std::string> available_channels;
-        Imf::InputPart in(*file, selected_part);
+        Imf::InputPart in(*file, *selected_part);
         auto cl = in.header().channels();
         for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
         {
@@ -466,9 +482,9 @@ int main()
     int F, first_frame, last_frame;
     int selected_part{ 0 };
     std::vector<std::string> selected_channels{ "B", "G", "R" };
-    Sequence sequence{ "C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr" };
-    //Sequence sequence{ "C:/Users/andris/Desktop/52_EXAM_v51-raw/52_01_EXAM_v51.0001.exr" };
-    //Sequence sequence{ "C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr" };
+    FileSequence sequence{ "C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr" };
+    //FileSequence sequence{ "C:/Users/andris/Desktop/52_EXAM_v51-raw/52_01_EXAM_v51.0001.exr" };
+    //FileSequence sequence{ "C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr" };
     first_frame = sequence.first_frame;
     last_frame = sequence.last_frame;
     F = sequence.first_frame;
@@ -489,7 +505,7 @@ int main()
 
         glazy::new_frame();
 
-        seq_renderer.update(F, selected_part);
+        seq_renderer.update(F, 0);
 
         if (ImGui::Begin("Info"))
         {
@@ -545,7 +561,7 @@ int main()
 
         if (ImGui::Begin("Inspector"))
         {
-            Widgets::ChannelSelector(seq_renderer.firstfile, selected_part, selected_channels);
+            Widgets::EXRChannelSelector(seq_renderer.firstfile, &selected_part, selected_channels);
 
             ImGui::Separator();
 

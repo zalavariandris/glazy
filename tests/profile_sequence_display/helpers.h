@@ -19,49 +19,37 @@ std::string to_string(Imf::PixelType t) {
     }
 }
 
-std::string to_string(GLint t) {
-    switch (t) {
-    case GL_RGB8:
-        return "GL_RGB8";
-    case GL_RGB16F:
-        return "GL_RGB16F";
-    case GL_RGB32F:
-        return "GL_RGB32F";
-    case GL_RGBA8:
-        return "GL_RGBA8";
-    case GL_RGBA16F:
-        return "GL_RGBA16F";
-    case GL_RGBA32F:
-        return "GL_RGBA32F";
-    default:
-        return "[UNKNOWN GLint]";
-        break;
-    }
-}
-
-std::string to_string(GLenum t)
+//
+// Return the size of a single value of the indicated type,
+// in the machine's native format.
+//
+int pixelTypeSize(Imf::PixelType t)
 {
+    int size;
+
     switch (t)
     {
-    case GL_UNSIGNED_INT:
-        return "GL_UNSIGNED_INT";
-    case GL_FLOAT:
-        return "GL_FLOAT";
-    case GL_HALF_FLOAT:
-        return "GL_HALF_FLOAT";
+    case Imf::UINT:
 
-    case GL_RGB:
-        return "GL_RGB";
-    case GL_BGR:
-        return "GL_BGR";
-    case GL_RGBA:
-        return "GL_RGBA";
-    case GL_BGRA:
-        return "GL_BGRA";
-    default:
-        return "[UNKNOWN GLenum]";
+        size = sizeof(unsigned int);
         break;
+
+    case Imf::HALF:
+
+        size = sizeof(half);
+        break;
+
+    case Imf::FLOAT:
+
+        size = sizeof(float);
+        break;
+
+    default:
+
+        throw IEX_NAMESPACE::ArgExc("Unknown pixel type.");
     }
+
+    return size;
 }
 
 /// Get opengl format for OIIO spec
@@ -158,37 +146,4 @@ std::tuple<GLint, GLenum, GLenum> typespec_to_opengl(const OIIO::ImageSpec& spec
     }
 
     return { glinternalformat, glformat, gltype };
-}
-
-//
-// Return the size of a single value of the indicated type,
-// in the machine's native format.
-//
-int pixelTypeSize(Imf::PixelType t)
-{
-    int size;
-
-    switch (t)
-    {
-    case Imf::UINT:
-
-        size = sizeof(unsigned int);
-        break;
-
-    case Imf::HALF:
-
-        size = sizeof(half);
-        break;
-
-    case Imf::FLOAT:
-
-        size = sizeof(float);
-        break;
-
-    default:
-
-        throw IEX_NAMESPACE::ArgExc("Unknown pixel type.");
-    }
-
-    return size;
 }

@@ -158,6 +158,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="glazy\glhelpers.h" />
     <ClInclude Include="glazy\IconsFontAwesome5.h" />
     <ClInclude Include="glazy\imdraw\imdraw_geo.h" />
     <ClInclude Include="glazy\OOGL\Framebuffer.h" />

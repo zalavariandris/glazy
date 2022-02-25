@@ -18,6 +18,7 @@
 #include "glazy.h"
 #include "pathutils.h"
 #include "stringutils.h"
+#include "glhelpers.h"
 
 // OpenImageIO
 #include "OpenImageIO/imageio.h""
