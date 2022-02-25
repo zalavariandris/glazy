@@ -220,7 +220,7 @@ public:
         init_tex();
 
         // init pixel buffers
-        init_pbos(1);
+        init_pbos(2);
     }
 
     void init_tex() {
@@ -401,6 +401,65 @@ std::vector<std::string> GetChannelsInLayer()
 
 }
 
+namespace Widgets {
+
+    void ChannelSelector(Imf::MultiPartInputFile* file, int& selected_part, std::vector<std::string>& selected_channels)
+    {
+        std::vector<std::string> part_names;
+        auto parts = file->parts();
+        for (auto p = 0; p < parts; p++)
+        {
+            Imf::InputPart in(*file, p);
+            part_names.push_back(in.header().hasName() ? in.header().name() : "");
+        }
+
+        if (ImGui::BeginCombo("parts", part_names[selected_part].c_str(), ImGuiComboFlags_NoArrowButton))
+        {
+            for (auto i = 0; i < part_names.size(); i++) {
+                const bool is_selected = i == selected_part;
+                if (ImGui::Selectable(part_names[i].c_str(), is_selected)) {
+                    selected_part = i;
+                }
+
+                if (is_selected) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("parts");
+
+        // available channels
+        std::vector<std::string> available_channels;
+        Imf::InputPart in(*file, selected_part);
+        auto cl = in.header().channels();
+        for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
+        {
+            available_channels.push_back(i.name());
+        }
+
+        if (ImGui::BeginListBox("select channels"))
+        {
+
+            for (auto i = 0; i < available_channels.size(); ++i)
+            {
+                auto name = available_channels[i];
+                auto it = std::find(selected_channels.begin(), selected_channels.end(), name);
+                const bool is_selected = it != selected_channels.end();
+                if (ImGui::Selectable(available_channels[i].c_str(), is_selected))
+                {
+                    if (is_selected)
+                    {
+                        selected_channels.erase(it);
+                    }
+                    else {
+                        selected_channels.push_back(available_channels[i]);
+                    }
+                }
+            }
+            ImGui::EndListBox();
+        }
+    }
+}
+
 int main()
 {
     bool is_playing = false;
@@ -437,7 +496,6 @@ int main()
             if (ImGui::BeginTabBar("info")) {
                 if (ImGui::BeginTabItem("channels"))
                 {
-
                     auto parts = seq_renderer.firstfile->parts();
                     for (auto p = 0; p < parts; p++)
                     {
@@ -487,59 +545,10 @@ int main()
 
         if (ImGui::Begin("Inspector"))
         {
-            std::vector<std::string> part_names;
-            auto parts = seq_renderer.firstfile->parts();
-            for (auto p = 0; p < parts; p++)
-            {
-                auto in = Imf::InputPart(*seq_renderer.firstfile, p);
-                part_names.push_back(in.header().hasName() ? in.header().name() : "");
-            }
+            Widgets::ChannelSelector(seq_renderer.firstfile, selected_part, selected_channels);
 
-            if (ImGui::BeginCombo("parts", part_names[selected_part].c_str(), ImGuiComboFlags_NoArrowButton))
-            {
-                for (auto i = 0; i < part_names.size(); i++) {
-                    const bool is_selected = i == selected_part;
-                    if (ImGui::Selectable(part_names[i].c_str(), is_selected)) {
-                        selected_part = i;
-                    }
-
-                    if (is_selected) ImGui::SetItemDefaultFocus();
-                }
-                ImGui::EndCombo();
-            }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("parts");
-
-            // available channels
-            std::vector<std::string> available_channels;
-            auto in = Imf::InputPart(*seq_renderer.firstfile, selected_part);
-            auto cl = in.header().channels();
-            for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
-            {
-                available_channels.push_back(i.name());
-            }
-
-            if (ImGui::BeginListBox("select channels"))
-            {
-
-                for (auto i = 0; i < available_channels.size(); ++i)
-                {
-                    auto name = available_channels[i];
-                    auto it = std::find(selected_channels.begin(), selected_channels.end(), name);
-                    const bool is_selected = it != selected_channels.end();
-                    if (ImGui::Selectable(available_channels[i].c_str(), is_selected))
-                    {
-                        if (is_selected)
-                        {
-                            selected_channels.erase(it);
-                        }
-                        else {
-                            selected_channels.push_back(available_channels[i]);
-                        }
-                    }
-                }
-                ImGui::EndListBox();
-            }
             ImGui::Separator();
+
             seq_renderer.onGUI();
         }
         ImGui::End();
