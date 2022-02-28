@@ -27,6 +27,17 @@ std::string join_string(const std::vector<std::string>& segments, const std::str
 std::tuple<std::string, std::string> split_digits(const std::string& stem);
 
 
+/// Test if text starts with a specific string
+/// return true if so
+inline bool starts_with(const std::string& text, const std::string& begining) {
+    if (text.length() >= begining.length()) {
+        return (0 == text.compare(0, begining.length(), begining));
+    }
+    else {
+        return false;
+    }
+}
+
 /// Test if text ends with a specific string
 /// return true if so
 inline bool ends_with(const std::string& text, const std::string& ending) {
@@ -37,6 +48,7 @@ inline bool ends_with(const std::string& text, const std::string& ending) {
         return false;
     }
 }
+
 inline std::string trim(std::string& str, const char* ws = " \t\n\r\f\v")
 {
     str.erase(str.find_last_not_of(ws) + 1);         //suffixing spaces
