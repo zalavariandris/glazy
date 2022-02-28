@@ -4,6 +4,7 @@
 #include <vector>
 #include <array>
 
+#include <numeric>
 #include <charconv> // std::to_chars
 #include <iostream>
 #include "../../tracy/Tracy.hpp"
@@ -517,10 +518,20 @@ public:
                     layer_channels.push_back(i.name());
                 }
             }
-
         }
 
-        ImGui::Text("layer channels: %s", join_string(layer_channels, ", ").c_str());
+        ImGui::Text("layer channels:\n  %s", join_string(layer_channels, ", ").c_str());
+
+        /// exr layer potentially contains arbitary channels alongside, common ones.
+        /// since EXR sort channels by name, for display its rpeferable to bring common channels like color position etc to front.
+        /// bring color, position, and common channels to front
+        /// rgb, a, z
+        /// red, green, blue, alpha, depth
+        /// x,y,z
+        /// u,v,w
+        /// 
+
+        ImGui::Text("layer channels display order:\n  %s", join_string(layer_channels, ", ").c_str());
 
         //
         selected_channels = std::vector<std::string>(available_channels.begin(), available_channels.begin() + std::min(available_channels.size(), (size_t)4));
