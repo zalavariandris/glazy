@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <array>
+#include <map>
 
 #include <numeric>
 #include <charconv> // std::to_chars
@@ -205,6 +206,24 @@ namespace Widgets
             ImGui::EndListBox();
         }
     }
+}
+
+template<typename Key, typename Value>
+std::vector<Key> extract_keys(std::map<Key, Value> const& input_map) {
+    std::vector<Key> retval;
+    for (auto const& element : input_map) {
+        retval.push_back(element.first);
+    }
+    return retval;
+}
+
+template<typename Key, typename Value>
+std::vector<Key> extract_values(std::map<Key, Value> const& input_map) {
+    std::vector<Value> retval;
+    for (auto const& element : input_map) {
+        retval.push_back(element.second);
+    }
+    return retval;
 }
 
 
@@ -467,7 +486,7 @@ public:
         ImGui::Text("Available channels\n  %s", join_string(available_channels, ", ").c_str());
 
         /// Group available channels to layers
-        std::vector<std::string> available_layers;
+        std::map<std::string, std::vector<std::string>> available_layers;
         //auto cl = in.header().channels();
         for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
         {
@@ -475,27 +494,24 @@ public:
             if (name_parts.size() == 1)
             {
                 auto channel_part = name_parts.end() - 1;
-                if (std::find(available_layers.begin(), available_layers.end(), "") == available_layers.end()) {
-                    available_layers.push_back("");
-                }
+                available_layers[""].push_back(i.name());
             }
             
             if (name_parts.size() > 1)
             {
                 auto channel_part = name_parts.end() - 1;
                 auto layerview_part = join_string(std::vector<std::string>(name_parts.begin(), name_parts.end() - 1), ".");
-                if (std::find(available_layers.begin(), available_layers.end(), layerview_part) == available_layers.end()) {
-                    available_layers.push_back(layerview_part);
-                }
+                available_layers[layerview_part].push_back(i.name());
             }
         }
 
-        ImGui::Text("Available layers\n  %s", join_string(available_layers, ", ").c_str());
+        ImGui::Text("Available layers\n  %s", join_string(extract_keys(available_layers), ", ").c_str());
 
+        // GUI Select Layers
         static std::string selected_layer_name = "";
         if (ImGui::BeginCombo("layers", selected_layer_name.c_str()))
         {
-            for (auto layer_name : available_layers)
+            for (auto [layer_name, channel_names] : available_layers)
             {
                 bool is_selected = layer_name == selected_layer_name;
                 if (ImGui::Selectable(layer_name.c_str(), is_selected)) {
@@ -506,21 +522,7 @@ public:
             ImGui::EndCombo();
         }
 
-        std::vector<std::string> layer_channels;
-        for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
-        {
-            if (selected_layer_name.empty()) {
-                if (std::strstr(i.name(), ".") == NULL) {
-                    layer_channels.push_back(i.name());
-                }
-            }
-            else {
-                if (starts_with(i.name(), selected_layer_name)) {
-                    layer_channels.push_back(i.name());
-                }
-            }
-        }
-
+        auto layer_channels = available_layers[selected_layer_name];
         ImGui::Text("layer channels:\n  %s", join_string(layer_channels, ", ").c_str());
 
         // EXR sort layer names in alphabetically order, therefore the alpha channel comes before RGB
@@ -545,11 +547,8 @@ public:
         ImGui::Text("layer channels display order:\n  %s", join_string(layer_channels, ", ").c_str());
 
         //
-        selected_channels = std::vector<std::string>(available_channels.begin(), available_channels.begin() + std::min(available_channels.size(), (size_t)4));
-        if (selected_channels == std::vector<std::string>({ "A", "B", "G", "R" }))
-        {
-            selected_channels = { "B", "G", "R", "A" };
-        }
+        selected_channels = std::vector<std::string>(layer_channels.begin(), layer_channels.begin() + std::min(layer_channels.size(), (size_t)4));
+
         ImGui::Text("Selected channels\n  %s", join_string(selected_channels, ", ").c_str());
 
         /// read pixels to pixels PBO
