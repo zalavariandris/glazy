@@ -207,6 +207,7 @@ namespace Widgets
     }
 }
 
+
 class SequenceRenderer
 {
 public:
@@ -522,14 +523,24 @@ public:
 
         ImGui::Text("layer channels:\n  %s", join_string(layer_channels, ", ").c_str());
 
-        /// exr layer potentially contains arbitary channels alongside, common ones.
-        /// since EXR sort channels by name, for display its rpeferable to bring common channels like color position etc to front.
-        /// bring color, position, and common channels to front
-        /// rgb, a, z
-        /// red, green, blue, alpha, depth
-        /// x,y,z
-        /// u,v,w
-        /// 
+        // EXR sort layer names in alphabetically order, therefore the alpha channel comes before RGB
+        // if exr contains alpha move this channel to the 4th position or the last position.
+        int HasAlpha{ -1 };
+        std::string alpha_chanel_name{};
+        for (auto i = 0; i < layer_channels.size();i++)
+        {
+            auto channel_name = layer_channels[i];
+            if (ends_with(channel_name, "A") || ends_with(channel_name, "a") || ends_with(channel_name, "alpha")) {
+                HasAlpha = i;
+                alpha_chanel_name = channel_name;
+            }
+        }
+
+        ImGui::Text("HasAlpha: %s", HasAlpha >= 0 ? "yey" : "no");
+        if (HasAlpha >= 0) {
+            layer_channels.erase(layer_channels.begin() + HasAlpha);
+            layer_channels.insert(std::min(layer_channels.begin() + 3, layer_channels.end()), alpha_chanel_name);
+        }
 
         ImGui::Text("layer channels display order:\n  %s", join_string(layer_channels, ", ").c_str());
 
