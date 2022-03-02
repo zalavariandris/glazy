@@ -200,7 +200,6 @@ namespace glazy {
 
 		// create main window
 		//glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
-		glfwWindowHint(GLFW_FLOATING, GLFW_TRUE);
 
 		window = glfwCreateWindow(1024, 768, "MiniViewer", nullptr, nullptr);
 

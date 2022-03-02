@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <array>
+#include <ranges>
 
 #include <numeric>
 #include <charconv> // std::to_chars
@@ -146,66 +147,29 @@ inline std::wstring s2ws(const std::string& s)
 }
 #endif
 
+class ChannelsSelector
+{
+private:
+
+public:
+    std::unique_ptr<Imf::MultiPartInputFile> file;
+    int selected_part;
+    int selected_layer;
+    ChannelsSelector() {
+
+    }
+
+    std::vector<std::string> selected_channels()
+    {
+
+    }
+};
+
 namespace Widgets
 {
-    void EXRChannelSelector(Imf::MultiPartInputFile* file, int* selected_part, std::vector<std::string>& selected_channels)
-    {
-        std::vector<std::string> part_names;
-        auto parts = file->parts();
-        for (auto p = 0; p < parts; p++)
-        {
-            Imf::InputPart in(*file, p);
-            part_names.push_back(in.header().hasName() ? in.header().name() : "");
-        }
-
-        if (ImGui::BeginCombo("parts", part_names[*selected_part].c_str(), ImGuiComboFlags_NoArrowButton))
-        {
-            for (auto i = 0; i < part_names.size(); i++) {
-                const bool is_selected = i == *selected_part;
-                if (ImGui::Selectable(part_names[i].c_str(), is_selected)) {
-                    *selected_part = i;
-                }
-
-                if (is_selected) ImGui::SetItemDefaultFocus();
-            }
-            ImGui::EndCombo();
-        }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("parts");
-
-        // available channels
-        std::vector<std::string> available_channels;
-        Imf::InputPart in(*file, *selected_part);
-        auto cl = in.header().channels();
-        for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
-        {
-            available_channels.push_back(i.name());
-        }
-
-        ImGui::Text("Available channels\n  %s", join_string(available_channels, ", ").c_str());
-
-        if (ImGui::BeginListBox("select channels"))
-        {
-
-            for (auto i = 0; i < available_channels.size(); ++i)
-            {
-                auto name = available_channels[i];
-                auto it = std::find(selected_channels.begin(), selected_channels.end(), name);
-                const bool is_selected = it != selected_channels.end();
-                if (ImGui::Selectable(available_channels[i].c_str(), is_selected))
-                {
-                    if (is_selected)
-                    {
-                        selected_channels.erase(it);
-                    }
-                    else {
-                        selected_channels.push_back(available_channels[i]);
-                    }
-                }
-            }
-            ImGui::EndListBox();
-        }
-    }
+    
 }
+
 
 
 class SequenceRenderer
@@ -225,7 +189,7 @@ public:
     std::unique_ptr<Imf::MultiPartInputFile> current_file;
 
     int selected_part{ 0 };
-    std::vector<std::string> selected_channels{ "A", "B", "G", "R" };
+    std::vector<std::string> selected_channels{ "B", "G", "R", "A"};
     GLenum glinternalformat = GL_RGBA16F;
     GLenum glformat = GL_BGR;
     GLenum gltype = GL_HALF_FLOAT;
@@ -238,18 +202,37 @@ public:
 
     }
 
+    //std::vector<std::string>::iterator group_by_patterns(std::vector<std::string> channel_names) {
+    //    // find group patterns in channel list
+    //    std::vector<std::vector<std::string>> patterns{
+    //        {"A", "B", "G", "R" },
+    //        {"B", "G", "R" },
+    //        {"u", "v", "w"},
+    //        {"u", "v"},
+    //        {"x", "y", "z"},
+    //        {"x", "y"}
+    //    };
+
+    //    std::vector<std::string>::iterator it = std::search(channel_names.begin(), channel_names.end(), patterns[0].begin(), patterns[0].end(), [](std::vector<std::string> A, std::vector<std::string> B) {
+    //        return A == B;
+    //    });
+
+    //    return it;
+    //}
+
     void onGUI()    
     {
         if (ImGui::CollapsingHeader("Channels", ImGuiTreeNodeFlags_DefaultOpen))
         {
+            // collect exr parts (MultiPartFile)->part_names
             std::vector<std::string> part_names;
-            auto parts = first_file->parts();
-            for (auto p = 0; p < parts; p++)
+            for (auto p = 0; p < first_file->parts(); p++)
             {
-                Imf::InputPart in(*first_file, p);
-                part_names.push_back(in.header().hasName() ? in.header().name() : "");
+                std::string part_name = first_file->header(p).hasName() ? first_file->header(p).name() : "";
+                part_names.push_back(part_name);
             }
 
+            // EXR Parts GUI
             if (ImGui::BeginCombo("parts", part_names[selected_part].c_str(), ImGuiComboFlags_NoArrowButton))
             {
                 for (auto i = 0; i < part_names.size(); i++) {
@@ -257,14 +240,14 @@ public:
                     if (ImGui::Selectable(part_names[i].c_str(), is_selected)) {
                         selected_part = i;
                     }
-
                     if (is_selected) ImGui::SetItemDefaultFocus();
                 }
                 ImGui::EndCombo();
             }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("parts");
 
-            // available channels
+            // Collect all Channels in selected part
+            // (file, part)->channellist
             std::vector<std::string> available_channels;
             Imf::InputPart in(*first_file, selected_part);
             auto cl = in.header().channels();
@@ -274,6 +257,131 @@ public:
             }
 
             ImGui::Text("Available channels\n  %s", join_string(available_channels, ", ").c_str());
+
+            /// Group available channels to layers
+            // (channellist)->{layer: [channels]...}
+            std::vector<std::string> available_layers;
+            //auto cl = in.header().channels();
+            for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
+            {
+                std::vector<std::string> name_parts = split_string(std::string(i.name()), ".");
+                if (name_parts.size() == 1)
+                {
+                    auto channel_part = name_parts.end() - 1;
+                    if (std::find(available_layers.begin(), available_layers.end(), "") == available_layers.end()) {
+                        available_layers.push_back("");
+                    }
+                }
+
+                if (name_parts.size() > 1)
+                {
+                    auto channel_part = name_parts.end() - 1;
+                    auto layerview_part = join_string(std::vector<std::string>(name_parts.begin(), name_parts.end() - 1), ".");
+                    if (std::find(available_layers.begin(), available_layers.end(), layerview_part) == available_layers.end()) {
+                        available_layers.push_back(layerview_part);
+                    }
+                }
+            }
+
+            ImGui::Text("Available layers\n  %s", join_string(available_layers, ", ").c_str());
+
+            static std::string selected_layer_name = "";
+            if (ImGui::BeginCombo("layers", selected_layer_name.c_str()))
+            {
+                for (auto layer_name : available_layers)
+                {
+                    bool is_selected = layer_name == selected_layer_name;
+                    if (ImGui::Selectable(layer_name.c_str(), is_selected)) {
+                        selected_layer_name = layer_name;
+                    }
+                    if (is_selected) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+
+            std::vector<std::string> layer_channels;
+            for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
+            {
+                if (selected_layer_name.empty()) {
+                    if (std::strstr(i.name(), ".") == NULL) {
+                        layer_channels.push_back(i.name());
+                    }
+                }
+                else {
+                    if (starts_with(i.name(), selected_layer_name)) {
+                        layer_channels.push_back(i.name());
+                    }
+                }
+            }
+
+            ImGui::Text("layer channels:\n  %s", join_string(layer_channels, ", ").c_str());
+
+            // EXR sort layer names in alphabetically order, therefore the alpha channel comes before RGB
+            // if exr contains alpha move this channel to the 4th position or the last position.
+            { // fix alpha order
+                int AlphaIndex{ -1 };
+                std::string alpha_channel_name{};
+                for (auto i = 0; i < layer_channels.size(); i++)
+                {
+                    auto channel_name = layer_channels[i];
+                    if (ends_with(channel_name, "A") || ends_with(channel_name, "a") || ends_with(channel_name, "alpha")) {
+                        AlphaIndex = i;
+                        alpha_channel_name = channel_name;
+                    }
+                }
+
+                ImGui::Text("HasAlpha: %s", AlphaIndex >= 0 ? "yes" : "no");
+                if (AlphaIndex >= 0) {
+                    layer_channels.erase(layer_channels.begin() + AlphaIndex);
+                    layer_channels.insert(std::min(layer_channels.begin() + 3, layer_channels.end()), alpha_channel_name);
+                }
+            }
+
+            ImGui::Text("layer channels display order:\n  %s", join_string(layer_channels, ", ").c_str());
+
+            // keep first 4 channels
+            selected_channels.clear();
+            for (auto i = 0; i < 4 && i < layer_channels.size(); i++)
+            {
+                selected_channels.push_back(layer_channels[i]);
+            }
+            ImGui::Text("Selected channels\n  %s", join_string(selected_channels, ", ").c_str());
+        }
+
+        if (ImGui::CollapsingHeader("Layers", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            // collect channel names
+            Imf::InputPart in(*first_file, selected_part);
+            auto cl = in.header().channels();
+            std::vector<std::string> channel_names;
+            for (auto it = cl.begin(); it != cl.end(); it++) channel_names.push_back(it.name());
+
+            auto parse_channel = [](std::string channel_name)->std::tuple<std::string, std::string>
+            {
+                std::size_t found = channel_name.find_last_of(".");
+                auto layerview = found==std::string::npos ? "" : channel_name.substr(0, found);
+                auto channel = channel_name.substr(found + 1);
+                return { layerview, channel };
+            };
+
+            // group specific layers only
+            // collect adjacent groups
+            std::map<std::string, std::vector<std::string>> adjacent_layers;
+            
+            for (auto full_channel_name : channel_names) {
+                auto [layerview, channel] = parse_channel(full_channel_name);
+                adjacent_layers[layerview].push_back(full_channel_name);
+            }
+            
+            for (auto [layer, channels] : adjacent_layers) {
+                if (ImGui::TreeNode(layer.c_str()))
+                {
+                    for (auto channel : channels) {
+                        ImGui::Text(channel.c_str());
+                    }
+                    ImGui::TreePop();
+                }
+            }
         }
 
         if (ImGui::CollapsingHeader("data format", ImGuiTreeNodeFlags_DefaultOpen))
@@ -320,7 +428,7 @@ public:
 
         sequence = seq;
 
-        Imf::setGlobalThreadCount(8);
+        Imf::setGlobalThreadCount(3);
 
         ///
         /// Open file
@@ -454,105 +562,10 @@ public:
         }
 
         ImGui::Text("current filename: %s", filename.string().c_str());
-
-        // Collect all available channels
-        std::vector<std::string> available_channels;
-        Imf::InputPart in(*current_file, selected_part);
-        auto cl = in.header().channels();
-        for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
-        {
-            available_channels.push_back(i.name());
-        }
-
-        ImGui::Text("Available channels\n  %s", join_string(available_channels, ", ").c_str());
-
-        /// Group available channels to layers
-        std::vector<std::string> available_layers;
-        //auto cl = in.header().channels();
-        for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
-        {
-            std::vector<std::string> name_parts = split_string(std::string(i.name()), ".");
-            if (name_parts.size() == 1)
-            {
-                auto channel_part = name_parts.end() - 1;
-                if (std::find(available_layers.begin(), available_layers.end(), "") == available_layers.end()) {
-                    available_layers.push_back("");
-                }
-            }
-            
-            if (name_parts.size() > 1)
-            {
-                auto channel_part = name_parts.end() - 1;
-                auto layerview_part = join_string(std::vector<std::string>(name_parts.begin(), name_parts.end() - 1), ".");
-                if (std::find(available_layers.begin(), available_layers.end(), layerview_part) == available_layers.end()) {
-                    available_layers.push_back(layerview_part);
-                }
-            }
-        }
-
-        ImGui::Text("Available layers\n  %s", join_string(available_layers, ", ").c_str());
-
-        static std::string selected_layer_name = "";
-        if (ImGui::BeginCombo("layers", selected_layer_name.c_str()))
-        {
-            for (auto layer_name : available_layers)
-            {
-                bool is_selected = layer_name == selected_layer_name;
-                if (ImGui::Selectable(layer_name.c_str(), is_selected)) {
-                    selected_layer_name = layer_name;
-                }
-                if (is_selected) ImGui::SetItemDefaultFocus();
-            }
-            ImGui::EndCombo();
-        }
-
-        std::vector<std::string> layer_channels;
-        for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
-        {
-            if (selected_layer_name.empty()) {
-                if (std::strstr(i.name(), ".") == NULL) {
-                    layer_channels.push_back(i.name());
-                }
-            }
-            else {
-                if (starts_with(i.name(), selected_layer_name)) {
-                    layer_channels.push_back(i.name());
-                }
-            }
-        }
-
-        ImGui::Text("layer channels:\n  %s", join_string(layer_channels, ", ").c_str());
-
-        // EXR sort layer names in alphabetically order, therefore the alpha channel comes before RGB
-        // if exr contains alpha move this channel to the 4th position or the last position.
-        int HasAlpha{ -1 };
-        std::string alpha_chanel_name{};
-        for (auto i = 0; i < layer_channels.size();i++)
-        {
-            auto channel_name = layer_channels[i];
-            if (ends_with(channel_name, "A") || ends_with(channel_name, "a") || ends_with(channel_name, "alpha")) {
-                HasAlpha = i;
-                alpha_chanel_name = channel_name;
-            }
-        }
-
-        ImGui::Text("HasAlpha: %s", HasAlpha >= 0 ? "yey" : "no");
-        if (HasAlpha >= 0) {
-            layer_channels.erase(layer_channels.begin() + HasAlpha);
-            layer_channels.insert(std::min(layer_channels.begin() + 3, layer_channels.end()), alpha_chanel_name);
-        }
-
-        ImGui::Text("layer channels display order:\n  %s", join_string(layer_channels, ", ").c_str());
-
-        //
-        selected_channels = std::vector<std::string>(available_channels.begin(), available_channels.begin() + std::min(available_channels.size(), (size_t)4));
-        if (selected_channels == std::vector<std::string>({ "A", "B", "G", "R" }))
-        {
-            selected_channels = { "B", "G", "R", "A" };
-        }
-        ImGui::Text("Selected channels\n  %s", join_string(selected_channels, ", ").c_str());
+        
 
         /// read pixels to pixels PBO
+        Imf::InputPart in(*current_file, selected_part);
         Imath::Box2i dataWindow = in.header().dataWindow();
         auto data_width = dataWindow.max.x - dataWindow.min.x + 1;
         auto data_height = dataWindow.max.y - dataWindow.min.y + 1;
@@ -579,7 +592,6 @@ public:
             chanoffset += chanbytes;
         }
 
-        
         in.setFrameBuffer(frameBuffer);
         in.readPixels(dataWindow.min.y, dataWindow.max.y);
 
@@ -648,25 +660,25 @@ public:
         }
         else
         {
-            static int index{ 0 };
-            static int nextIndex;
+            static int draw_index{ 0 };
+            static int update_index;
 
-            index = (index + 1) % pbos.size();
-            nextIndex = (index + 1) % pbos.size();
+            draw_index = (draw_index + 1) % pbos.size();
+            update_index = (update_index + 1) % pbos.size();
 
-            ImGui::Text("using PBOs, update:%d  display: %d", index, nextIndex);
+            ImGui::Text("using PBOs\n  - draw: %d (%d,%d)\n  - update: %d (%d,%d)", draw_index, update_index, std::get<2>(pbo_data_sizes[draw_index]), std::get<3>(pbo_data_sizes[update_index]));
 
             // pbo to texture
             glBindTexture(GL_TEXTURE_2D, tex);
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[index]);
-            if(orphaning) glTexSubImage2D(GL_TEXTURE_2D, 0, 0,0, std::get<2>(pbo_data_sizes[index]), std::get<3>(pbo_data_sizes[index]), glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[draw_index]);
+            if(orphaning) glTexSubImage2D(GL_TEXTURE_2D, 0, 0,0, std::get<2>(pbo_data_sizes[draw_index]), std::get<3>(pbo_data_sizes[draw_index]), glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
 
             // channel swizzle
             glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
 
             //// pixels to other PBO
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[nextIndex]);
-            pbo_data_sizes[nextIndex] = {dx, dy, data_width, data_height };
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[update_index]);
+            pbo_data_sizes[update_index] = {dx, dy, data_width, data_height };
             glBufferData(GL_PIXEL_UNPACK_BUFFER, data_width * data_height * nchannels * sizeof(half), 0, GL_STREAM_DRAW);
             // map the buffer object into client's memory
             GLubyte* ptr = (GLubyte*)glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
