@@ -58,6 +58,38 @@ public:
     int last_frame;
 };
 
+std::vector<std::tuple<int, int>> group_by_patterns(std::vector<std::string> statement, std::vector<std::vector<std::string>> patterns) {
+    int i = 0;
+    std::vector<std::tuple<int, int>> matches;
+
+    // sort patterns
+    while (i < statement.size())
+    {
+        std::optional<std::tuple<int, int>> match;
+
+        for (std::vector<std::string> pattern : patterns) {
+            auto begin = i;
+            auto end = i + pattern.size();
+            if (pattern == std::vector<std::string>(statement.begin() + begin, statement.begin() + end))
+            {
+                match = std::tuple<int, int>(begin, end);
+                i = end - 1;
+                break;
+            }
+        }
+
+        if (match)
+        {
+            matches.push_back(match.value());
+        }
+        else {
+            matches.push_back(std::tuple<int, int>(i, i + 1));
+        }
+        i++;
+    }
+    return matches;
+}
+
 namespace ImGui
 {
     bool Frameslider(const char* label, bool *is_playing, int* v, int v_min, int v_max, const char* format = "%d", ImGuiSliderFlags flags = 0)
