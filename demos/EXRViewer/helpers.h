@@ -14,7 +14,7 @@
 #include <OpenExr/ImfMultiPartInputFile.h>
 #include <string>
 
-std::string printInfo(const Imf::MultiPartInputFile& in);
+std::string get_infostring(const Imf::MultiPartInputFile& in);
 
 std::string to_string(Imf::PixelType pt)
 {

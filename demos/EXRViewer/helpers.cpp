@@ -189,7 +189,7 @@ printChannelList(const ChannelList& cl)
 }
 
 std::string
-printInfo(const MultiPartInputFile& in)
+get_infostring(const MultiPartInputFile& in)
 {
     std::stringstream ss;
     int                parts = in.parts();

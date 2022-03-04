@@ -161,6 +161,7 @@
   <ItemGroup>
     <ClCompile Include="..\..\tracy\TracyClient.cpp" />
     <ClCompile Include="EXRViewer.cpp" />
+    <ClCompile Include="FileSequence.cpp" />
     <ClCompile Include="helpers.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -169,7 +170,9 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="FileSequence.h" />
     <ClInclude Include="helpers.h" />
+    <ClInclude Include="Layer.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
