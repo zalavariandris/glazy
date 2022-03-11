@@ -14,9 +14,19 @@ std::vector<std::string> split_string(const std::string& text, const std::string
     return tokens;
 };
 
-std::string join_string(const std::vector<std::string>& segments, const std::string& delimiter, int range_start, int range_end) {
+std::string join_string(const std::vector<std::string>& segments, const std::string& delimiter, int range_start, int range_end)
+{
+    if (segments.empty()) return "";
     if (range_end < 0) range_end = segments.size();
     assert(("invalid range", range_start < range_end));
+
+    if (segments.empty()) return "";
+
+    if (segments.size() == 1)
+    {
+        return segments.back();
+    }
+
     std::string result;
 
     // append all +delimiter but last item

@@ -87,18 +87,18 @@ namespace ImGui
 		return true;
 	};
 
-	bool Combo(const char* label, int* currIndex, std::vector<std::string>& values)
+	bool Combo(const char* label, int* currIndex, const std::vector<std::string>& values)
 	{
 		if (values.empty()) { return false; }
 		return Combo(label, currIndex, vector_getter,
-			static_cast<void*>(&values), values.size());
+			(void*)(&values), values.size()); // TODO: switch to c++ style cast. but ImGui doesn not accept const pointer. I dont know why, when its not chahgint the values array. Theoretically this is not safe. In practice with this particular function its seems safe
 	}
 
 	bool ListBox(const char* label, int* currIndex, std::vector<std::string>& values)
 	{
 		if (values.empty()) { return false; }
 		return ListBox(label, currIndex, vector_getter,
-			static_cast<void*>(&values), values.size());
+			(void*)(&values), values.size()); // TODO: switch to c++ style cast. but ImGui doesn not accept const pointer. I dont know why, when its not chahgint the values array.
 	}
 }
 
@@ -398,7 +398,7 @@ namespace glazy {
 
 	void new_frame(bool wait_events = false)
 	{
-		ZoneScoped;
+		//ZoneNamed(HELLO, true);
 		// poll events
 		if (wait_events) {
 			glfwWaitEvents();
@@ -453,7 +453,7 @@ namespace glazy {
 
 	void end_frame()
 	{
-		ZoneScoped;
+		//ZoneScoped;
 		// glazy windows
 		{
 			static bool themes;

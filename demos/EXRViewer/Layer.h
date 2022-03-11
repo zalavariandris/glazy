@@ -2,6 +2,7 @@
 #include <vector>
 #include <iostream>
 #include <string>
+#include <format>
 
 std::vector<std::tuple<int, int>> group_stringvector_by_patterns(const std::vector<std::string>& statement, const std::vector<std::vector<std::string>>& patterns) {
 
@@ -11,9 +12,9 @@ std::vector<std::tuple<int, int>> group_stringvector_by_patterns(const std::vect
     auto sorted_patterns = patterns;
     sort(sorted_patterns.begin(), sorted_patterns.end(), [](const std::vector<std::string>& A, const std::vector<std::string>& B) {
         return A.size() > B.size();
-        });
+    });
 
-    // collect pattenr matches
+    // collect pattern matches
     int i = 0;
     while (i < statement.size())
     {
@@ -24,7 +25,9 @@ std::vector<std::tuple<int, int>> group_stringvector_by_patterns(const std::vect
         for (std::vector<std::string> pattern : sorted_patterns) {
             auto begin = i;
             auto end = i + pattern.size();
-            if (pattern == std::vector<std::string>(statement.begin() + begin, std::min(statement.begin() + end, statement.end())))
+            auto statement_sample = std::vector<std::string>(statement.begin() + begin, statement.begin() + std::min(end, statement.size()));
+            bool IsMatch = pattern == statement_sample;
+            if (IsMatch)
             {
                 match = std::tuple<int, int>(begin, end);
                 i = end - 1;
@@ -46,18 +49,55 @@ std::vector<std::tuple<int, int>> group_stringvector_by_patterns(const std::vect
     return groups;
 }
 
-
-
 class Layer {
+private:
+    std::string mName;
+    std::vector<std::string> mChannels;
+
+    std::string mPart_name;
+    int mPart_idx;
+    std::vector<std::string> full_channel_name;
 public:
-    std::string name;
-    std::vector<std::string> channels;
+    Layer(std::string name, std::vector<std::string> channels, std::string part_name, int part_idx) : mName(name), mChannels(channels), mPart_name(part_name), mPart_idx(part_idx) {}
 
-    Layer(std::string name) : name(name) {}
+    std::string part_name() const {
+        return mPart_name;
+    }
 
-    friend auto operator<<(std::ostream& os, Layer const& m) -> std::ostream& {
-        os << "Layer('" << m.name << "': " << join_string(m.channels, ", ") << ")";
-        return os;
+    int part_idx() const {
+        return mPart_idx;
+    }
+
+    /// the layer name
+    std::string name() const {
+        return mName;
+    }
+
+    /// full EXR channel name
+    std::vector<std::string> channel_ids() const {
+        std::vector<std::string> full_names;
+        for (auto channel : mChannels) {
+            full_names.push_back(mName.empty() ? channel : join_string({ mName, channel }, "."));
+        }
+        return full_names;
+    }
+
+    Layer sublayer(std::vector<std::string> subchannels, std::string sublayer_name = "", bool compose = true) const
+    {
+        // keep channels on this layer only
+        auto channel_names = this->channels();
+        std::erase_if(subchannels, [&](std::string c) {
+            return std::find(channel_names.begin(), channel_names.end(), c) == channel_names.end();
+        });
+
+        //// compose part and layer name
+        if (compose) {
+            std::vector<std::string> names{ this->mName, sublayer_name };
+            names.erase(std::remove_if(names.begin(), names.end(), [](const std::string& s) {return s.empty(); }), names.end());
+            sublayer_name = join_string(names, ".");
+        }
+
+        return Layer(sublayer_name, subchannels, this->part_name(), this->part_idx());
     }
 
     static std::tuple<std::string, std::string> split_channel_id(const std::string& channel_id)
@@ -68,49 +108,83 @@ public:
         return { viewlayer, channel };
     }
 
-    std::vector<Layer> group_by_delimiter() const {
+    std::vector<Layer> split_by_delimiter() const {
         std::vector<Layer> sublayers;
 
-        for (std::string channel_id : channels) {
+        for (std::string channel_id : mChannels) {
             auto [viewlayer, channel] = Layer::split_channel_id(channel_id);
 
-            if (sublayers.empty()) {
-                sublayers.push_back(Layer(viewlayer));
+
+
+            if (sublayers.empty())
+            {
+                sublayers.push_back(sublayer({}, viewlayer));
             }
 
-            if (sublayers.back().name == viewlayer) {
+            if (sublayers.back().mName == viewlayer) {
 
             }
             else
             {
-                sublayers.push_back(Layer(viewlayer));
+                sublayers.push_back(sublayer({}, viewlayer));
             }
 
-            sublayers.back().channels.push_back(channel);
+            sublayers.back().mChannels.push_back(channel);
         }
 
         return sublayers;
     }
 
-    std::vector<Layer> group_by_patterns(const std::vector<std::vector<std::string>>& patterns) const {
+    std::vector<Layer> split_by_patterns(const std::vector<std::vector<std::string>>& patterns) const {
         std::vector<Layer> sublayers;
 
-        for (auto span : group_stringvector_by_patterns(channels, patterns)) {
+        for (auto span : group_stringvector_by_patterns(mChannels, patterns)) {
             auto [begin, end] = span;
-            Layer sublayer{ this->name };
-            sublayer.channels = std::vector<std::string>(channels.begin() + begin, channels.begin() + end);
-            sublayers.push_back(sublayer);
+            //Layer sublayer{ this->mName,  };
+            auto channels = std::vector<std::string>(mChannels.begin() + begin, mChannels.begin() + end);
+            sublayers.push_back(sublayer(channels));
         }
 
         return sublayers;
     }
 
-    std::vector<std::string> channel_ids() {
-        std::vector<std::string> full_names;
-        for (auto channel : channels) {
-            full_names.push_back(name.empty() ? channel : join_string({ name,channel }, "."));
+    std::vector<std::string> channels() const {
+        return mChannels;
+    }
+
+    /// nice name
+    std::string display_name() const {
+        std::stringstream ss;
+        
+        auto part_idx = this->part_idx();
+        auto part_name = this->part_name();
+        auto layer_name = this->name();
+        auto channels = this->channels();
+
+        std::string name;
+
+        if (part_name != layer_name) {
+            if (!part_name.empty() && !layer_name.empty()) {
+                ss << part_name << "/" << layer_name;
+            }
+            else {
+                ss << part_name << layer_name;
+            }
         }
-        return full_names;
+        else {
+            ss << layer_name;
+        }
+
+        ss <<  " (";
+        for (auto c : this->mChannels) ss << c;
+        ss << ")";
+        return ss.str();
+    }
+
+    /// support stringtream
+    friend auto operator<<(std::ostream& os, Layer const& lyr) -> std::ostream& {
+        os << lyr.display_name();
+        return os;
     }
 };
 
@@ -159,9 +233,8 @@ namespace Test {
                 "left.Z",
                 "whitebarmask.left.mask",
                 "whitebarmask.right.mask" };
-            Layer lyr("");
-            lyr.channels = cl;
-            auto sublayers = lyr.group_by_delimiter();
+            Layer lyr("", cl, "", 0);
+            auto sublayers = lyr.split_by_delimiter();
             //std::cout << lyr << "\n";
 
 
@@ -172,11 +245,10 @@ namespace Test {
 
         {
             std::cout << "\nTEST: Layer::group_by_patterns" << "\n";
-            auto lyr = Layer("color");
-            lyr.channels = { "red", "green", "blue", "A", "B", "G", "R", "Z", "u", "v", "w", "u", "v", "x", "y", "k", "B", "G", "R" };
+            auto lyr = Layer("color", { "red", "green", "blue", "A", "B", "G", "R", "Z", "u", "v", "w", "u", "v", "x", "y", "k", "B", "G", "R" }, "", 0);
 
 
-            for (auto sublyr : lyr.group_by_patterns(patterns))
+            for (auto sublyr : lyr.split_by_patterns(patterns))
             {
                 std::cout << sublyr << "\n";
             }

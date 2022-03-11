@@ -20,6 +20,7 @@
 #include "pathutils.h"
 #include "stringutils.h"
 #include "glhelpers.h"
+#include <imgui_stdlib.h>
 
 // OpenEXR
 #include <OpenEXR/ImfMultiPartInputFile.h>
@@ -38,9 +39,6 @@
 #include "FileSequence.h"
 #include "Layer.h"
 #include "helpers.h"
-
-
-
 
 namespace ImGui
 {
@@ -115,6 +113,104 @@ namespace ImGui
 }
 
 
+class LayerManager
+{
+    int current_layer_idx = 0;
+public:
+    std::vector<Layer> mLayers;
+    LayerManager(Imf::MultiPartInputFile* file)
+    {
+        mLayers = get_all_part_layers(file);
+    }
+
+    //std::vector<Layer> layers() {
+    //    return mLayers;
+    //}
+
+    std::vector<std::string> names()
+    {
+        std::vector<std::string> names;
+        for (auto lyr : mLayers) {
+            names.push_back(lyr.display_name());
+        }
+        return names;
+    }
+
+    void set_current(int i)
+    {
+        assert(("out of range", i < mLayers.size()));
+        current_layer_idx = i;
+    }
+
+    int current() {
+        return current_layer_idx;
+    }
+
+    std::string current_name() {
+        return mLayers.at(current_layer_idx).display_name();
+    }
+
+    std::vector<std::string> current_channel_ids() {
+        return mLayers.at(current_layer_idx).channel_ids();
+    }
+
+    int current_part_idx() {
+        return mLayers.at(current_layer_idx).part_idx();
+    }
+
+private:
+    static std::vector<Layer> get_all_part_layers(Imf::MultiPartInputFile* file)
+    {
+        std::vector<Layer> layers;
+
+        /// parts as layers
+        {
+            std::vector<Layer> partlayers;
+            std::vector<std::string> part_names;
+            for (auto p = 0; p < file->parts(); p++)
+            {
+                auto header = file->header(p);
+
+                std::string part_name = file->header(p).hasName() ? file->header(p).name() : "";
+                auto cl = header.channels();
+                std::vector<std::string> channel_names;
+                for (Imf::ChannelList::ConstIterator c = cl.begin(); c != cl.end(); ++c) channel_names.push_back(c.name());
+
+                auto lyr = Layer("", channel_names, part_name, p);
+                partlayers.push_back(lyr);
+            }
+            layers = partlayers;
+        }
+        //return layers;
+
+        /// split by channel delimiters
+        {
+            std::vector<Layer> sublayers;
+            for (auto lyr : layers) {
+                for (auto sublyr : lyr.split_by_delimiter()) {
+                    sublayers.push_back(sublyr);
+                }
+            }
+            layers = sublayers;
+        }
+        //return layers;
+
+        /// split by patters
+        {
+            const std::vector<std::vector<std::string>> patterns = { {"red", "green", "blue"},{"A", "B", "G", "R"},{"B", "G", "R"},{"x", "y"},{"u", "v"},{"u", "v", "w"} };
+            std::vector<Layer> sublayers;
+            for (auto lyr : layers) {
+                for (auto sublayer : lyr.split_by_patterns(patterns)) {
+                    sublayers.push_back(sublayer);
+                }
+            }
+            layers = sublayers;
+        }
+
+        return layers;
+    }
+};
+
 #if defined(_WIN32) || defined(__WIN32__) || defined(WIN32)
 inline std::wstring s2ws(const std::string& s)
 {
@@ -140,7 +236,6 @@ std::vector<Key> extract_keys(std::map<Key, Value> const& input_map) {
     return retval;
 }
 
-
 class SequenceRenderer
 {
 public:
@@ -157,12 +252,15 @@ public:
     Imf::MultiPartInputFile* first_file;
     std::unique_ptr<Imf::MultiPartInputFile> current_file;
 
-    int selected_part{ 0 };
-    std::vector<std::string> selected_channels{ "B", "G", "R", "A"};
+    int selected_part_idx{ 0 };
+    int selected_layer_idx{ 0 };
+    std::vector<std::string> selected_channels{ "A", "B", "G", "R" };
+    bool group_by_patterns{ true };
+    bool merge_parts_into_layers{ false };
+
     GLenum glinternalformat = GL_RGBA16F;
     GLenum glformat = GL_BGR;
     GLenum gltype = GL_HALF_FLOAT;
-
 
 public:
 
@@ -171,100 +269,260 @@ public:
 
     }
 
-    void onGUI()    
+
+    /// collect EXR part names
+    const std::vector<std::string> get_parts() const
     {
-        if (ImGui::CollapsingHeader("Parts", ImGuiTreeNodeFlags_DefaultOpen))
+        std::vector<std::string> part_names;
+        for (auto p = 0; p < first_file->parts(); p++)
         {
-            // collect exr parts (MultiPartFile)->part_names
+            std::string part_name = first_file->header(p).hasName() ? first_file->header(p).name() : "";
+            part_names.push_back(part_name);
+        }
+        return part_names;
+    }
+
+    std::vector<Layer> get_selected_part_layers() {
+        std::vector<Layer>sublayers;
+
+        // collect channels in selected part
+        std::vector<std::string> part_channels;
+        Imf::InputPart in(*first_file, selected_part_idx);
+        auto header = in.header();
+        auto cl = header.channels();
+        for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i) part_channels.push_back(i.name());
+
+        // group all channels to layers with the help of the Layer Class
+        // based on delimiters
+        // layer.view.channel
+
+        Layer lyr("", part_channels, header.hasName() ? header.name(): "", selected_part_idx);
+        sublayers = lyr.split_by_delimiter();
+
+        if (group_by_patterns) {
+            const std::vector<std::vector<std::string>> patterns = { {"red", "green", "blue"},{"A", "B", "G", "R"},{"B", "G", "R"},{"x", "y"},{"u", "v"},{"u", "v", "w"} };
+            std::vector<Layer> subsublyrs;
+            for (const auto& sublyr : sublayers)
+            {
+                for (auto subsub : sublyr.split_by_patterns(patterns)) {
+                    subsublyrs.push_back(subsub);
+                }
+            }
+            sublayers = subsublyrs;
+        }
+        return sublayers;
+    }
+
+    std::vector<Layer> get_all_part_layers()
+    {
+        std::vector<Layer> layers;
+
+        /// parts as layers
+        {
+            std::vector<Layer> partlayers;
             std::vector<std::string> part_names;
             for (auto p = 0; p < first_file->parts(); p++)
             {
-                std::string part_name = first_file->header(p).hasName() ? first_file->header(p).name() : "";
-                part_names.push_back(part_name);
-            }
+                auto header = first_file->header(p);
 
-            // EXR Parts GUI
-            if (ImGui::BeginCombo("parts", part_names[selected_part].c_str(), ImGuiComboFlags_NoArrowButton))
+                std::string part_name = first_file->header(p).hasName() ? first_file->header(p).name() : "";
+                auto cl = header.channels();
+                std::vector<std::string> channel_names;
+                for (Imf::ChannelList::ConstIterator c = cl.begin(); c != cl.end(); ++c) channel_names.push_back(c.name());
+
+                auto lyr = Layer("", channel_names, part_name, p);
+                partlayers.push_back(lyr);
+            }
+            layers = partlayers;
+        }
+        //return layers;
+
+        /// split by channel delimiters
+        {
+            std::vector<Layer> sublayers;
+            for (auto lyr : layers) {
+                for (auto sublyr : lyr.split_by_delimiter()) {
+                    sublayers.push_back(sublyr);
+                }
+            }
+            layers = sublayers;
+        }
+        //return layers;
+
+        /// split by patters
+        {
+            const std::vector<std::vector<std::string>> patterns = { {"red", "green", "blue"},{"A", "B", "G", "R"},{"B", "G", "R"},{"x", "y"},{"u", "v"},{"u", "v", "w"} };
+            std::vector<Layer> sublayers;
+            for (auto lyr : layers) {
+                for (auto sublayer : lyr.split_by_patterns(patterns)) {
+                    sublayers.push_back(sublayer);
+                }
+            }
+            layers = sublayers;
+        }
+
+        return layers;
+    }
+
+    int alpha_index(std::vector<std::string> channels) {
+        /// find alpha channel index
+        int AlphaIndex{ -1 };
+        std::string alpha_channel_name{};
+        for (auto i = 0; i < channels.size(); i++)
+        {
+            auto channel_name = channels[i];
+            if (ends_with(channel_name, "A") || ends_with(channel_name, "a") || ends_with(channel_name, "alpha")) {
+                AlphaIndex = i;
+                alpha_channel_name = channel_name;
+                break;
+            }
+        }
+        return AlphaIndex;
+    }
+
+    static int alpha_channel(const std::vector<std::string>& channels) {
+        int AlphaIndex{ -1 };
+        std::string alpha_channel_name{};
+        for (auto i = 0; i < channels.size(); i++)
+        {
+            auto channel_name = channels[i];
+            if (ends_with(channel_name, "A") || ends_with(channel_name, "a") || ends_with(channel_name, "alpha")) {
+                AlphaIndex = i;
+                alpha_channel_name = channel_name;
+                break;
+            }
+        }
+        return AlphaIndex;
+    }
+
+    std::vector<std::string> get_display_channels(const std::vector<std::string>& channels) const
+    {
+        // Reorder Alpha
+        // EXR sort layer names in alphabetically order, therefore the alpha channel comes before RGB
+        // if exr contains alpha move this channel to the 4th position or the last position.
+
+        auto AlphaIndex = alpha_channel(channels);
+
+        // move alpha channel to 4th idx
+        std::vector<std::string> reordered_channels{ channels };
+        if (AlphaIndex >= 0) {
+            reordered_channels.erase(reordered_channels.begin() + AlphaIndex);
+            reordered_channels.insert(reordered_channels.begin() + std::min((size_t)3, reordered_channels.size()), channels[AlphaIndex]);
+        }
+
+        // keep first 4 channels only
+        if (reordered_channels.size() > 4) {
+            reordered_channels = std::vector<std::string>(reordered_channels.begin(), reordered_channels.begin() + 4);
+        }
+        return reordered_channels;
+    };
+
+    void onGUI()    
+    {
+        if (ImGui::CollapsingHeader("ChannelManager", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            auto layers = get_all_part_layers();
+
+            std::vector<std::string> layer_names;
+            for (auto lyr : layers) layer_names.push_back(lyr.display_name());
+            static int current_idx{ 0 };
+            if (ImGui::Combo("all layers", &current_idx, layer_names))
             {
-                for (auto i = 0; i < part_names.size(); i++) {
-                    const bool is_selected = i == selected_part;
-                    if (ImGui::Selectable(part_names[i].c_str(), is_selected)) {
-                        selected_part = i;
+                auto lyr = layers.at(current_idx);
+                selected_part_idx = lyr.part_idx();
+                selected_channels = lyr.channel_ids();
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("layers");
+
+            if (ImGui::BeginCombo("all_layers with info", layers[current_idx].display_name().c_str())){
+                if (ImGui::BeginTable("layers table", 3))
+                {
+                    ImGui::TableSetupColumn("name");
+                    ImGui::TableSetupColumn("channels");
+                    ImGui::TableSetupColumn("part");
+                    ImGui::TableHeadersRow();
+                    for (auto i = 0; i < layers.size(); i++) {
+                        ImGui::PushID(i);
+                        bool is_selected = i == layers[current_idx].part_idx();
+
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        if (ImGui::Selectable(layers[i].name().c_str(), is_selected, ImGuiSelectableFlags_SpanAllColumns)) {
+                            current_idx = i;
+                            auto lyr = layers.at(current_idx);
+                            selected_part_idx = lyr.part_idx();
+                            selected_channels = lyr.channel_ids();
+                        }
+
+                        ImGui::TableNextColumn();
+                        ImGui::Text("%s", join_string(layers[i].channels(), ", ").c_str());
+
+                        ImGui::TableNextColumn();
+                        ImGui::Text("%s #%i", layers[i].part_name().c_str(), layers[i].part_idx());
+                        ImGui::PopID();
                     }
-                    if (is_selected) ImGui::SetItemDefaultFocus();
+                    ImGui::EndTable();
                 }
                 ImGui::EndCombo();
             }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("parts");
-
-            // Collect all Channels in selected part
-            // (file, part)->channellist
-            std::vector<std::string> available_channels;
-            Imf::InputPart in(*first_file, selected_part);
-            auto cl = in.header().channels();
-            for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
-            {
-                available_channels.push_back(i.name());
-            }
-
-            ImGui::Text("Available channels\n  %s", join_string(available_channels, ", ").c_str());
         }
-
-        if (ImGui::CollapsingHeader("Layers", ImGuiTreeNodeFlags_DefaultOpen))
+        if (ImGui::CollapsingHeader("Channels Selector", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            std::vector<std::string> available_channels;
-            Imf::InputPart in(*first_file, selected_part);
-            auto cl = in.header().channels();
-            for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0);
+            if (ImGui::Button(ICON_FA_COG))
+                ImGui::OpenPopup("layer_settings_popup");
+            ImGui::PopStyleColor();
+            ImGui::PopStyleVar();
+            if (ImGui::BeginPopup("layer_settings_popup"))
             {
-                available_channels.push_back(i.name());
+                ImGui::Checkbox("merge parts into layers", &merge_parts_into_layers);
+                ImGui::Checkbox("group layers by common patterns", &group_by_patterns);
+                ImGui::EndPopup();
             }
 
-            Layer lyr("");
-            lyr.channels = available_channels;
+            //static int selected_all_part_layer_idx;
+            //std::vector<std::string> all_part_layer_names;
+            //for (auto lyr : get_all_part_layers()) all_part_layer_names.push_back(lyr.display_name());
+            //ImGui::Combo("all layers", &selected_all_part_layer_idx, all_part_layer_names);
 
-            std::stringstream ss;
-            ss << lyr;
-            ImGui::Text("%s", ss.str().c_str());
+            /// parts
+            auto part_names = get_parts();
+            ImGui::Combo("parts", &selected_part_idx, part_names);
 
-            std::vector<Layer>sublayers;
-            sublayers = lyr.group_by_delimiter();
+            /// Layers
+            auto layers = get_selected_part_layers();
 
-            static bool group_by_patterns{ true };
-            ImGui::Checkbox("group by patterns", &group_by_patterns);
-            if(group_by_patterns) {
-                const std::vector<std::vector<std::string>> patterns = { {"red", "green", "blue"},{"A", "B", "G", "R"},{"B", "G", "R"},{"x", "y"},{"u", "v"},{"u", "v", "w"} };
-                std::vector<Layer> subsublyrs;
-                for (const auto& sublyr : sublayers)
-                {
-                    for (auto subsub : sublyr.group_by_patterns(patterns)) {
-                        subsublyrs.push_back(subsub);
-                    }
-                }
-                sublayers = subsublyrs;
+            std::vector<std::string> layer_names;
+            for (auto lyr : layers) layer_names.push_back(lyr.display_name());
+
+            if (ImGui::Combo("part layers", &selected_layer_idx, layer_names)) {
+                selected_channels = layers.at(selected_layer_idx).channel_ids();
             }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("layers");
 
-            //static int selected_layer;
-            if (ImGui::BeginListBox("layers"))
+            /// Channels
+            const auto layer_channels = layers.at(selected_layer_idx).channel_ids();
+            if (ImGui::BeginListBox("layer channels", { 0, ImGui::GetTextLineHeightWithSpacing() * std::min((size_t)4, layer_channels.size()) }))
             {
-                for (auto i=0; i<sublayers.size(); i++)
-                {
-                    std::stringstream ss;
-                    ss << sublayers[i].name << "(";
-                    for (auto c : sublayers[i].channels) ss << c;
-                    ss << ")";
-
-                    bool is_selected = sublayers[i].channel_ids() == selected_channels;
-                    if (ImGui::Selectable(ss.str().c_str(), is_selected))
+                for (auto channel : layer_channels) {
+                    bool is_selected = std::find(selected_channels.begin(), selected_channels.end(), channel) != selected_channels.end();
+                    if (ImGui::Selectable(channel.c_str(), is_selected))
                     {
-
-                        selected_channels = sublayers[i].channel_ids();
+                        if (is_selected) {
+                            selected_channels.erase(std::remove(selected_channels.begin(), selected_channels.end(), channel), selected_channels.end());
+                        }
+                        else {
+                            selected_channels.push_back(channel);
+                        }
+                        std::sort(selected_channels.begin(), selected_channels.end());
                     }
                 }
                 ImGui::EndListBox();
             }
-
-            ImGui::LabelText("read channels", join_string(selected_channels, ", ").c_str());
+            ImGui::Text("debug info");
+            ImGui::LabelText("has alpha", "%s", alpha_index(selected_channels)>=0 ? "Yes" : "No");
+            ImGui::LabelText("selected channels", join_string(selected_channels, ", ").c_str());
         }
 
         if (ImGui::CollapsingHeader("data format", ImGuiTreeNodeFlags_DefaultOpen))
@@ -345,6 +603,10 @@ public:
             std::cerr << "NULL allocation" << "\n";
         }
 
+        selected_part_idx = 0;
+        selected_layer_idx = 0;
+        selected_channels = get_selected_part_layers()[0].channel_ids();
+
         // init texture object
         init_tex();
 
@@ -390,7 +652,7 @@ public:
         }
 
         pbos.resize(n);
-        pbo_data_sizes.reserve(n);
+        pbo_data_sizes.resize(n);
 
         for (auto i=0; i<n;i++)
         {
@@ -415,7 +677,7 @@ public:
     void update(int F)
     {
         ZoneScoped;
-
+        if (selected_channels.empty()) return;
         auto filename = sequence.item(F);
         if (!std::filesystem::exists(filename)) {
             std::cerr << "file does not exist: " << filename << "\n";
@@ -445,63 +707,22 @@ public:
             return;
         }
 
-        //ImGui::Text("current filename: %s", filename.string().c_str());
+        Imf::InputPart in(*current_file, selected_part_idx);
 
-        // Collect all available channels
-        //std::vector<std::string> available_channels;
-        Imf::InputPart in(*current_file, selected_part);
-        //auto cl = in.header().channels();
-        //for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
-        //{
-        //    available_channels.push_back(i.name());
-        //}
-
-        //ImGui::Text("Available channels\n  %s", join_string(available_channels, ", ").c_str());
 
         /// read pixels to pixels PBO
-        //Imf::InputPart in(*current_file, selected_part);
         Imath::Box2i dataWindow = in.header().dataWindow();
         auto data_width = dataWindow.max.x - dataWindow.min.x + 1;
         auto data_height = dataWindow.max.y - dataWindow.min.y + 1;
-        auto nchannels = selected_channels.size();
         int dx = dataWindow.min.x;
         int dy = dataWindow.min.y;
 
-        //ImGui::Text("data window: (%d %d) %d x %d", dx, dy, data_width, data_height);
-        const auto display_channels_from_selected_channels = [](const std::vector<std::string>& channels) {
-            // Reorder Alpha
-            // EXR sort layer names in alphabetically order, therefore the alpha channel comes before RGB
-            // if exr contains alpha move this channel to the 4th position or the last position.
-
-            // find alpha channel index
-            int AlphaIndex{ -1 };
-            std::string alpha_channel_name{};
-            for (auto i = 0; i < channels.size(); i++)
-            {
-                auto channel_name = channels[i];
-                if (ends_with(channel_name, "A") || ends_with(channel_name, "a") || ends_with(channel_name, "alpha")) {
-                    AlphaIndex = i;
-                    alpha_channel_name = channel_name;
-                    break;
-                }
-            }
-
-            // move alpha channel to 4th idx
-            std::vector<std::string> reordered_channels{ channels };
-            ImGui::LabelText("HasAlpha", AlphaIndex >= 0 ? "yes" : "no");
-            if (AlphaIndex >= 0) {
-                reordered_channels.erase(reordered_channels.begin() + AlphaIndex);
-                reordered_channels.insert(std::min(reordered_channels.begin() + 3, reordered_channels.end()), alpha_channel_name);
-            }
-            return reordered_channels;
-        };
-
-        auto display_channels = display_channels_from_selected_channels(selected_channels);
+        auto display_channels = get_display_channels(selected_channels);
         {
             ZoneScopedN("ReadPixels");
             Imf::FrameBuffer frameBuffer;
             //size_t chanoffset = 0;
-            unsigned long long xstride = sizeof(half) * nchannels;
+            unsigned long long xstride = sizeof(half) * display_channels.size();
             char* buf = (char*)pixels - (dx * xstride + dy * data_width * xstride);
 
             for (auto i = 0; i < display_channels.size(); i++) {
@@ -578,7 +799,6 @@ public:
         }
 
         //ImGui::Text("swizzle mask: %s %s %s %s", to_string(swizzle_mask[0]), to_string(swizzle_mask[1]), to_string(swizzle_mask[2]), to_string(swizzle_mask[3]));
-
         if (pbos.empty())
         {
             ZoneScopedN("pixels to texture");
@@ -611,14 +831,14 @@ public:
             //// pixels to other PBO
             glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[nextIndex]);
             pbo_data_sizes[nextIndex] = {dx, dy, data_width, data_height };
-            glBufferData(GL_PIXEL_UNPACK_BUFFER, data_width * data_height * nchannels * sizeof(half), 0, GL_STREAM_DRAW);
+            glBufferData(GL_PIXEL_UNPACK_BUFFER, data_width * data_height * display_channels.size() * sizeof(half), 0, GL_STREAM_DRAW);
             // map the buffer object into client's memory
             GLubyte* ptr = (GLubyte*)glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
             if (ptr)
             {
                 ZoneScopedN("pixels to pbo");
                 // update data directly on the mapped buffer
-                memcpy(ptr, pixels, data_width * data_height * nchannels * sizeof(half));
+                memcpy(ptr, pixels, data_width * data_height * display_channels.size() * sizeof(half));
                 glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
             }
             glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
@@ -628,9 +848,10 @@ public:
 
     void draw()
     {
+        if (selected_channels.empty()) return;
         ZoneScoped;
-        glClearColor(1, 0, 0, 0);
-        glClear(GL_COLOR_BUFFER_BIT);
+        //glClearColor(0, 0, 0, 0);
+        //glClear(GL_COLOR_BUFFER_BIT);
         //imdraw::quad(glazy::checkerboard_tex);
         //std::cout << "draw from: " << texIds[texCurrentIndex].id << "\n";
         imdraw::quad(tex);
@@ -648,10 +869,9 @@ int main()
 
     bool is_playing = false;
     int F, first_frame, last_frame;
-    int selected_part{ 0 };
-    FileSequence sequence{ "C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr" };
+    //FileSequence sequence{ "C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr" };
     //FileSequence sequence{ "C:/Users/andris/Desktop/52_EXAM_v51-raw/52_01_EXAM_v51.0001.exr" };
-    //FileSequence sequence{ "C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr" };
+    FileSequence sequence{ "C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr" };
     first_frame = sequence.first_frame;
     last_frame = sequence.last_frame;
     F = sequence.first_frame;
@@ -660,6 +880,8 @@ int main()
 
     SequenceRenderer seq_renderer;
     seq_renderer.setup(sequence);
+
+    LayerManager layer_manager{ seq_renderer.first_file };
 
     glazy::set_vsync(false);
     while (glazy::is_running())
@@ -704,7 +926,6 @@ int main()
                         auto cl = header.channels();
                         ImGui::Text("  part %d\n name: %s\n view: %s", p, header.hasName() ? header.name().c_str() : "", header.hasView() ? header.view().c_str() : "");
 
-
                         if (ImGui::BeginTable("channels table", 4))
                         {
                             ImGui::TableSetupColumn("name");
@@ -714,13 +935,12 @@ int main()
                             ImGui::TableHeadersRow();
                             for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
                             {
-                                ImGui::PushID(p);
                                 //ImGui::TableNextRow();
                                 ImGui::TableNextColumn();
-                                bool is_selected = (seq_renderer.selected_part == p) && std::find(seq_renderer.selected_channels.begin(), seq_renderer.selected_channels.end(), std::string(i.name())) != seq_renderer.selected_channels.end();
+                                bool is_selected = (seq_renderer.selected_part_idx == p) && std::find(seq_renderer.selected_channels.begin(), seq_renderer.selected_channels.end(), std::string(i.name())) != seq_renderer.selected_channels.end();
                                 if (ImGui::Selectable(i.name(), is_selected, ImGuiSelectableFlags_SpanAllColumns))
                                 {
-                                    seq_renderer.selected_part = p;
+                                    seq_renderer.selected_part_idx = p;
                                     auto channel_name = std::string(i.name());
                                     seq_renderer.selected_channels = {channel_name};
                                 }
@@ -747,6 +967,8 @@ int main()
                     ImGui::TextWrapped(get_infostring(*seq_renderer.current_file).c_str());
                     ImGui::EndTabItem();
                 }
+
+                ImGui::EndTabBar();
             }
 
         }
@@ -755,6 +977,24 @@ int main()
 
         if (ImGui::Begin("Inspector"))
         {
+            if (ImGui::CollapsingHeader("LayerManagerGUI", ImGuiTreeNodeFlags_DefaultOpen)) {
+                static int current_idx = 0;
+                auto layer_names = layer_manager.names();
+                if (ImGui::BeginCombo("layermanager_combo", layer_manager.current_name().c_str())) {
+                    for (auto i = 0; i < layer_names.size(); i++) {
+                        ImGui::PushID(i);
+                        bool is_selected = i == layer_manager.current();
+                        if (ImGui::Selectable(layer_names.at(i).c_str(), is_selected, ImGuiSelectableFlags_SpanAllColumns)) {
+                            layer_manager.set_current(i);
+                            seq_renderer.selected_part_idx = layer_manager.current_part_idx();
+                            seq_renderer.selected_channels = layer_manager.current_channel_ids();
+                        }
+                        ImGui::PopID();
+                    }
+                    ImGui::EndCombo();
+                }
+                
+            }
             seq_renderer.onGUI();
         }
         ImGui::End();
