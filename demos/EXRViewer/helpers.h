@@ -18,6 +18,7 @@
 std::vector<GLuint> fbo_stack;
 std::vector<std::array<GLint, 4>> viewport_stack;
 
+// begin rendering to fbo, at glviewport: x,y,width,height
 void BeginRenderToTexture(GLuint fbo, GLint x, GLint y, GLsizei width, GLsizei height)
 {
     // push fbo

@@ -65,6 +65,12 @@ public:
 	void dolly(double offset);
 
 	void to_program(unsigned int shader_program, std::string projection_name = "projection", std::string view_name = "view") const;
+
+	void fit(float width, float height) {
+		float camDistance = std::max(width / 2 / tan(this->fovx() / 2), height / 2 / tan(this->fovy / 2));
+		this->eye = { width / 2.0, height / 2.0, camDistance };
+		this->target = { width / 2.0, height / 2.0, 0.0 };
+	}
 };
 
 

@@ -14,6 +14,12 @@
 #include <string>
 #include <unordered_set>
 
+// ImGui
+#define IMGUI_DEFINE_MATH_OPERATORS
+#include "imgui.h"
+#include "imgui_stdlib.h"
+#include "imgui_internal.h" // use imgui math operators
+
 // from glazy
 #include "glazy.h"
 #include "pathutils.h"
@@ -24,11 +30,7 @@
 #include "OpenImageIO/imageio.h""
 #include "OpenImageIO/imagecache.h"
 
-// ImGui
-#define IMGUI_DEFINE_MATH_OPERATORS
-#include "imgui.h"
-#include "imgui_stdlib.h"
-#include "imgui_internal.h" // use imgui math operators
+
 
 // widgets
 #include "imgui_widget_flamegraph.h"
