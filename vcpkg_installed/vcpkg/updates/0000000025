@@ -1,0 +1,10 @@
+Package: openexr
+Version: 2.5.0
+Port-Version: 3
+Depends: zlib
+Architecture: x86-windows
+Multi-Arch: same
+Abi: 8fb73f3328d68e95e56fe96e707dacf9c802273082256be4f4a65adfd58ff05a
+Description: OpenEXR is a high dynamic-range (HDR) image file format developed by Industrial Light & Magic for use in computer imaging applications
+Type: Port
+Status: install ok installed

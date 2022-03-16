@@ -1,0 +1,7 @@
+Package: glad
+Feature: loader
+Architecture: x86-windows
+Multi-Arch: same
+Description: Generate loader logic.
+Type: Port
+Status: install ok installed

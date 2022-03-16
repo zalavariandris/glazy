@@ -20,6 +20,7 @@
 #include "pathutils.h"
 #include "stringutils.h"
 #include "glhelpers.h"
+
 #include <imgui_stdlib.h>
 
 // OpenEXR
@@ -34,10 +35,10 @@
 #include <OpenEXR/ImfFrameBuffer.h>
 #include <OpenEXR/ImfHeader.h>
 
-
 //
 #include "FileSequence.h"
 #include "Layer.h"
+#include "LayerManager.h"
 #include "helpers.h"
 
 namespace ImGui
@@ -95,7 +96,7 @@ namespace ImGui
             ImGui::InputInt("##start frame", &v_min, 0, 0);
             ImGui::EndDisabled();
             ImGui::SameLine();
-            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvailWidth() - ImGui::GetTextLineHeight() * 2 - ImGui::GetStyle().ItemSpacing.x);
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::GetTextLineHeight() * 2 - ImGui::GetStyle().ItemSpacing.x);
             if (ImGui::SliderInt("##frame", v, v_min, v_max)) {
                 changed = true;
             }
@@ -112,104 +113,6 @@ namespace ImGui
 
 }
 
-
-class LayerManager
-{
-    int current_layer_idx = 0;
-public:
-    std::vector<Layer> mLayers;
-    LayerManager(Imf::MultiPartInputFile* file)
-    {
-        mLayers = get_all_part_layers(file);
-    }
-
-    //std::vector<Layer> layers() {
-    //    return mLayers;
-    //}
-
-    std::vector<std::string> names()
-    {
-        std::vector<std::string> names;
-        for (auto lyr : mLayers) {
-            names.push_back(lyr.display_name());
-        }
-        return names;
-    }
-
-    void set_current(int i)
-    {
-        assert(("out of range", i < mLayers.size()));
-        current_layer_idx = i;
-    }
-
-    int current() {
-        return current_layer_idx;
-    }
-
-    std::string current_name() {
-        return mLayers.at(current_layer_idx).display_name();
-    }
-
-    std::vector<std::string> current_channel_ids() {
-        return mLayers.at(current_layer_idx).channel_ids();
-    }
-
-    int current_part_idx() {
-        return mLayers.at(current_layer_idx).part_idx();
-    }
-
-private:
-    static std::vector<Layer> get_all_part_layers(Imf::MultiPartInputFile* file)
-    {
-        std::vector<Layer> layers;
-
-        /// parts as layers
-        {
-            std::vector<Layer> partlayers;
-            std::vector<std::string> part_names;
-            for (auto p = 0; p < file->parts(); p++)
-            {
-                auto header = file->header(p);
-
-                std::string part_name = file->header(p).hasName() ? file->header(p).name() : "";
-                auto cl = header.channels();
-                std::vector<std::string> channel_names;
-                for (Imf::ChannelList::ConstIterator c = cl.begin(); c != cl.end(); ++c) channel_names.push_back(c.name());
-
-                auto lyr = Layer("", channel_names, part_name, p);
-                partlayers.push_back(lyr);
-            }
-            layers = partlayers;
-        }
-        //return layers;
-
-        /// split by channel delimiters
-        {
-            std::vector<Layer> sublayers;
-            for (auto lyr : layers) {
-                for (auto sublyr : lyr.split_by_delimiter()) {
-                    sublayers.push_back(sublyr);
-                }
-            }
-            layers = sublayers;
-        }
-        //return layers;
-
-        /// split by patters
-        {
-            const std::vector<std::vector<std::string>> patterns = { {"red", "green", "blue"},{"A", "B", "G", "R"},{"B", "G", "R"},{"x", "y"},{"u", "v"},{"u", "v", "w"} };
-            std::vector<Layer> sublayers;
-            for (auto lyr : layers) {
-                for (auto sublayer : lyr.split_by_patterns(patterns)) {
-                    sublayers.push_back(sublayer);
-                }
-            }
-            layers = sublayers;
-        }
-
-        return layers;
-    }
-};
 
 #if defined(_WIN32) || defined(__WIN32__) || defined(WIN32)
 inline std::wstring s2ws(const std::string& s)
@@ -239,6 +142,14 @@ std::vector<Key> extract_keys(std::map<Key, Value> const& input_map) {
 class SequenceRenderer
 {
 public:
+    int current_frame{ 0 };
+    Imf::MultiPartInputFile* current_file = nullptr;
+    
+
+    int selected_part_idx{ 0 };
+    std::vector<std::string> selected_channels{ "A", "B", "G", "R" };
+private:
+    Imf::MultiPartInputFile* first_file = nullptr;
     FileSequence sequence;
     //Imf::Header header;
     void* pixels = NULL;
@@ -247,124 +158,70 @@ public:
     bool orphaning{ true };
     GLuint tex{ 0 };
 
-    //int width, height, nchannels;
-    std::string infostring;
-    Imf::MultiPartInputFile* first_file;
-    std::unique_ptr<Imf::MultiPartInputFile> current_file;
+    int display_width, display_height;
 
-    int selected_part_idx{ 0 };
-    int selected_layer_idx{ 0 };
-    std::vector<std::string> selected_channels{ "A", "B", "G", "R" };
-    bool group_by_patterns{ true };
-    bool merge_parts_into_layers{ false };
+    //int width, height, nchannels;
+    //std::string infostring;
 
     GLenum glinternalformat = GL_RGBA16F;
     GLenum glformat = GL_BGR;
     GLenum gltype = GL_HALF_FLOAT;
 
-public:
-
-    SequenceRenderer()
-    {
-
+    /// Match glformat and swizzle to data
+    /// this is a very important step. It depends on the framebuffer channel order.
+    /// exr order channel names in aplhebetic order. So by default, ABGR is the read order.
+    /// upstream this can be changed, therefore we must handle various channel orders eg.: RGBA, BGRA, and alphebetically sorted eg.: ABGR channel orders.
+    static GLenum format_from_channels(std::vector<std::string> display_channels, std::array<GLint, 4>& swizzle_mask) {
+        GLenum glformat;
+        if (display_channels == std::vector<std::string>({ "B", "G", "R", "A" }))
+        {
+            glformat = GL_BGRA;
+            swizzle_mask = { GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA };
+        }
+        else if (display_channels == std::vector<std::string>({ "R", "G", "B", "A" }))
+        {
+            glformat = GL_BGRA;
+            swizzle_mask = { GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA };
+        }
+        else if (display_channels == std::vector<std::string>({ "A", "B", "G", "R" }))
+        {
+            glformat = GL_BGRA;
+            swizzle_mask = { GL_ALPHA, GL_RED, GL_GREEN, GL_BLUE };
+        }
+        else if (display_channels == std::vector<std::string>({ "B", "G", "R" }))
+        {
+            glformat = GL_BGR;
+            swizzle_mask = { GL_BLUE, GL_GREEN, GL_RED, GL_ONE };
+        }
+        else if (display_channels.size() == 4)
+        {
+            glformat = GL_BGRA;
+            swizzle_mask = { GL_RED, GL_GREEN, GL_BLUE , GL_ALPHA };
+        }
+        else if (display_channels.size() == 3)
+        {
+            glformat = GL_RGB;
+            swizzle_mask = { GL_RED , GL_GREEN, GL_BLUE, GL_ONE };
+        }
+        else if (display_channels.size() == 2) {
+            glformat = GL_RG;
+            swizzle_mask = { GL_RED, GL_GREEN, GL_ZERO, GL_ONE };
+        }
+        else if (display_channels.size() == 1)
+        {
+            glformat = GL_RED;
+            if (display_channels[0] == "R") swizzle_mask = { GL_RED, GL_ZERO, GL_ZERO, GL_ONE };
+            else if (display_channels[0] == "G") swizzle_mask = { GL_ZERO, GL_RED, GL_ZERO, GL_ONE };
+            else if (display_channels[0] == "B") swizzle_mask = { GL_ZERO, GL_ZERO, GL_RED, GL_ONE };
+            else swizzle_mask = { GL_RED, GL_RED, GL_RED, GL_ONE };
+        }
+        else {
+            throw "cannot match selected channels to glformat";
+        }
+        return glformat;
     }
 
-
-    /// collect EXR part names
-    const std::vector<std::string> get_parts() const
-    {
-        std::vector<std::string> part_names;
-        for (auto p = 0; p < first_file->parts(); p++)
-        {
-            std::string part_name = first_file->header(p).hasName() ? first_file->header(p).name() : "";
-            part_names.push_back(part_name);
-        }
-        return part_names;
-    }
-
-    std::vector<Layer> get_selected_part_layers() {
-        std::vector<Layer>sublayers;
-
-        // collect channels in selected part
-        std::vector<std::string> part_channels;
-        Imf::InputPart in(*first_file, selected_part_idx);
-        auto header = in.header();
-        auto cl = header.channels();
-        for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i) part_channels.push_back(i.name());
-
-        // group all channels to layers with the help of the Layer Class
-        // based on delimiters
-        // layer.view.channel
-
-        Layer lyr("", part_channels, header.hasName() ? header.name(): "", selected_part_idx);
-        sublayers = lyr.split_by_delimiter();
-
-        if (group_by_patterns) {
-            const std::vector<std::vector<std::string>> patterns = { {"red", "green", "blue"},{"A", "B", "G", "R"},{"B", "G", "R"},{"x", "y"},{"u", "v"},{"u", "v", "w"} };
-            std::vector<Layer> subsublyrs;
-            for (const auto& sublyr : sublayers)
-            {
-                for (auto subsub : sublyr.split_by_patterns(patterns)) {
-                    subsublyrs.push_back(subsub);
-                }
-            }
-            sublayers = subsublyrs;
-        }
-        return sublayers;
-    }
-
-    std::vector<Layer> get_all_part_layers()
-    {
-        std::vector<Layer> layers;
-
-        /// parts as layers
-        {
-            std::vector<Layer> partlayers;
-            std::vector<std::string> part_names;
-            for (auto p = 0; p < first_file->parts(); p++)
-            {
-                auto header = first_file->header(p);
-
-                std::string part_name = first_file->header(p).hasName() ? first_file->header(p).name() : "";
-                auto cl = header.channels();
-                std::vector<std::string> channel_names;
-                for (Imf::ChannelList::ConstIterator c = cl.begin(); c != cl.end(); ++c) channel_names.push_back(c.name());
-
-                auto lyr = Layer("", channel_names, part_name, p);
-                partlayers.push_back(lyr);
-            }
-            layers = partlayers;
-        }
-        //return layers;
-
-        /// split by channel delimiters
-        {
-            std::vector<Layer> sublayers;
-            for (auto lyr : layers) {
-                for (auto sublyr : lyr.split_by_delimiter()) {
-                    sublayers.push_back(sublyr);
-                }
-            }
-            layers = sublayers;
-        }
-        //return layers;
-
-        /// split by patters
-        {
-            const std::vector<std::vector<std::string>> patterns = { {"red", "green", "blue"},{"A", "B", "G", "R"},{"B", "G", "R"},{"x", "y"},{"u", "v"},{"u", "v", "w"} };
-            std::vector<Layer> sublayers;
-            for (auto lyr : layers) {
-                for (auto sublayer : lyr.split_by_patterns(patterns)) {
-                    sublayers.push_back(sublayer);
-                }
-            }
-            layers = sublayers;
-        }
-
-        return layers;
-    }
-
-    int alpha_index(std::vector<std::string> channels) {
+    static int alpha_index(std::vector<std::string> channels) {
         /// find alpha channel index
         int AlphaIndex{ -1 };
         std::string alpha_channel_name{};
@@ -395,7 +252,7 @@ public:
         return AlphaIndex;
     }
 
-    std::vector<std::string> get_display_channels(const std::vector<std::string>& channels) const
+    static std::vector<std::string> get_display_channels(const std::vector<std::string>& channels)
     {
         // Reorder Alpha
         // EXR sort layer names in alphabetically order, therefore the alpha channel comes before RGB
@@ -417,114 +274,15 @@ public:
         return reordered_channels;
     };
 
+public:
+
+    SequenceRenderer()
+    {
+
+    }
+    
     void onGUI()    
     {
-        if (ImGui::CollapsingHeader("ChannelManager", ImGuiTreeNodeFlags_DefaultOpen))
-        {
-            auto layers = get_all_part_layers();
-
-            std::vector<std::string> layer_names;
-            for (auto lyr : layers) layer_names.push_back(lyr.display_name());
-            static int current_idx{ 0 };
-            if (ImGui::Combo("all layers", &current_idx, layer_names))
-            {
-                auto lyr = layers.at(current_idx);
-                selected_part_idx = lyr.part_idx();
-                selected_channels = lyr.channel_ids();
-            }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("layers");
-
-            if (ImGui::BeginCombo("all_layers with info", layers[current_idx].display_name().c_str())){
-                if (ImGui::BeginTable("layers table", 3))
-                {
-                    ImGui::TableSetupColumn("name");
-                    ImGui::TableSetupColumn("channels");
-                    ImGui::TableSetupColumn("part");
-                    ImGui::TableHeadersRow();
-                    for (auto i = 0; i < layers.size(); i++) {
-                        ImGui::PushID(i);
-                        bool is_selected = i == layers[current_idx].part_idx();
-
-                        ImGui::TableNextRow();
-                        ImGui::TableNextColumn();
-                        if (ImGui::Selectable(layers[i].name().c_str(), is_selected, ImGuiSelectableFlags_SpanAllColumns)) {
-                            current_idx = i;
-                            auto lyr = layers.at(current_idx);
-                            selected_part_idx = lyr.part_idx();
-                            selected_channels = lyr.channel_ids();
-                        }
-
-                        ImGui::TableNextColumn();
-                        ImGui::Text("%s", join_string(layers[i].channels(), ", ").c_str());
-
-                        ImGui::TableNextColumn();
-                        ImGui::Text("%s #%i", layers[i].part_name().c_str(), layers[i].part_idx());
-                        ImGui::PopID();
-                    }
-                    ImGui::EndTable();
-                }
-                ImGui::EndCombo();
-            }
-        }
-        if (ImGui::CollapsingHeader("Channels Selector", ImGuiTreeNodeFlags_DefaultOpen))
-        {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0);
-            if (ImGui::Button(ICON_FA_COG))
-                ImGui::OpenPopup("layer_settings_popup");
-            ImGui::PopStyleColor();
-            ImGui::PopStyleVar();
-            if (ImGui::BeginPopup("layer_settings_popup"))
-            {
-                ImGui::Checkbox("merge parts into layers", &merge_parts_into_layers);
-                ImGui::Checkbox("group layers by common patterns", &group_by_patterns);
-                ImGui::EndPopup();
-            }
-
-            //static int selected_all_part_layer_idx;
-            //std::vector<std::string> all_part_layer_names;
-            //for (auto lyr : get_all_part_layers()) all_part_layer_names.push_back(lyr.display_name());
-            //ImGui::Combo("all layers", &selected_all_part_layer_idx, all_part_layer_names);
-
-            /// parts
-            auto part_names = get_parts();
-            ImGui::Combo("parts", &selected_part_idx, part_names);
-
-            /// Layers
-            auto layers = get_selected_part_layers();
-
-            std::vector<std::string> layer_names;
-            for (auto lyr : layers) layer_names.push_back(lyr.display_name());
-
-            if (ImGui::Combo("part layers", &selected_layer_idx, layer_names)) {
-                selected_channels = layers.at(selected_layer_idx).channel_ids();
-            }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("layers");
-
-            /// Channels
-            const auto layer_channels = layers.at(selected_layer_idx).channel_ids();
-            if (ImGui::BeginListBox("layer channels", { 0, ImGui::GetTextLineHeightWithSpacing() * std::min((size_t)4, layer_channels.size()) }))
-            {
-                for (auto channel : layer_channels) {
-                    bool is_selected = std::find(selected_channels.begin(), selected_channels.end(), channel) != selected_channels.end();
-                    if (ImGui::Selectable(channel.c_str(), is_selected))
-                    {
-                        if (is_selected) {
-                            selected_channels.erase(std::remove(selected_channels.begin(), selected_channels.end(), channel), selected_channels.end());
-                        }
-                        else {
-                            selected_channels.push_back(channel);
-                        }
-                        std::sort(selected_channels.begin(), selected_channels.end());
-                    }
-                }
-                ImGui::EndListBox();
-            }
-            ImGui::Text("debug info");
-            ImGui::LabelText("has alpha", "%s", alpha_index(selected_channels)>=0 ? "Yes" : "No");
-            ImGui::LabelText("selected channels", join_string(selected_channels, ", ").c_str());
-        }
-
         if (ImGui::CollapsingHeader("data format", ImGuiTreeNodeFlags_DefaultOpen))
         {
             // Data format
@@ -567,31 +325,24 @@ public:
         ZoneScoped;
 
         sequence = seq;
-
+        current_frame = sequence.first_frame;
         Imf::setGlobalThreadCount(32);
 
         ///
         /// Open file
         /// 
         auto filename = sequence.item(sequence.first_frame);
-        Imf::MultiPartInputFile* file;
 
-        #if (defined(_WIN32) || defined(__WIN32__) || defined(WIN32)) && !defined(__MINGW32__)
-        auto inputStr = new std::ifstream(s2ws(filename.string()), std::ios_base::binary);
-        auto inputStdStream = new Imf::StdIFStream(*inputStr, filename.string().c_str());
-        file = new Imf::MultiPartInputFile(*inputStdStream);
-        #else
-        file = new Imf::MultiPartInputFile(filename.c_str());
-        #endif
-        first_file = file;
+        first_file = new Imf::MultiPartInputFile(filename.string().c_str());
+
         // read info to string
-        infostring = get_infostring(*first_file);
+        //infostring = get_infostring(*first_file);
 
         /// read header 
-        int parts = file->parts();
+        int parts = first_file->parts();
         bool fileComplete = true;
         for (int i = 0; i < parts && fileComplete; ++i)
-            if (!file->partComplete(i)) fileComplete = false;
+            if (!first_file->partComplete(i)) fileComplete = false;
 
         /// alloc 
         Imath::Box2i displayWindow = first_file->header(0).displayWindow();
@@ -603,10 +354,6 @@ public:
             std::cerr << "NULL allocation" << "\n";
         }
 
-        selected_part_idx = 0;
-        selected_layer_idx = 0;
-        selected_channels = get_selected_part_layers()[0].channel_ids();
-
         // init texture object
         init_tex();
 
@@ -617,8 +364,8 @@ public:
     void init_tex() {
         // init texture object
         Imath::Box2i display_window = first_file->header(0).displayWindow();
-        auto display_width = display_window.max.x - display_window.min.x + 1;
-        auto display_height = display_window.max.y - display_window.min.y + 1;
+        display_width = display_window.max.x - display_window.min.x + 1;
+        display_height = display_window.max.y - display_window.min.y + 1;
         glPrintErrors();
         glGenTextures(1, &tex);
         glBindTexture(GL_TEXTURE_2D, tex);
@@ -674,11 +421,11 @@ public:
         glDeleteTextures(1, &tex);
     }
 
-    void update(int F)
+    void update()
     {
         ZoneScoped;
         if (selected_channels.empty()) return;
-        auto filename = sequence.item(F);
+        auto filename = sequence.item(current_frame);
         if (!std::filesystem::exists(filename)) {
             std::cerr << "file does not exist: " << filename << "\n";
             return;
@@ -686,20 +433,12 @@ public:
 
         // open current file
 
-        #if (defined(_WIN32) || defined(__WIN32__) || defined(WIN32)) && !defined(__MINGW32__)
-        std::unique_ptr<std::ifstream> inputStr;
-        std::unique_ptr<Imf::StdIFStream> inputStdStream;
-        #endif
         try
         {
             ZoneScopedN("OpenFile");
-            #if (defined(_WIN32) || defined(__WIN32__) || defined(WIN32)) && !defined(__MINGW32__)
-            inputStr = std::make_unique<std::ifstream>(s2ws(filename.string()), std::ios_base::binary);
-            inputStdStream = std::make_unique<Imf::StdIFStream>(*inputStr, filename.string().c_str());
-            current_file = std::make_unique<Imf::MultiPartInputFile>(*inputStdStream);
-            #else
-            current_file = std::make_unique<Imf::MultiPartInputFile>(filename.c_str());
-            #endif
+            if (current_file != nullptr) delete current_file;
+            current_file = new Imf::MultiPartInputFile(filename.string().c_str());
+
         }
         catch (const Iex::InputExc& ex) {
             std::cerr << "file doesn't appear to really be an EXR file" << "\n";
@@ -707,6 +446,7 @@ public:
             return;
         }
 
+        ImGui::Text("selected part idx: %d", selected_part_idx);
         Imf::InputPart in(*current_file, selected_part_idx);
 
 
@@ -745,58 +485,9 @@ public:
         ///
         /// Transfer pixels to Texture
         /// 
-        // Match glformat and swizzle to data
-        // this is a very important step. It depends on the framebuffer channel order.
-        // exr order channel names in aplhebetic order. So by default, ABGR is the read order.
-        // upstream this can be changed, therefore we must handle various channel orders eg.: RGBA, BGRA, and alphebetically sorted eg.: ABGR channel orders.
 
         std::array<GLint, 4> swizzle_mask{ GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA };
-
-        if (display_channels == std::vector<std::string>({ "B", "G", "R", "A" }))
-        {
-            glformat = GL_BGRA;
-            swizzle_mask = { GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA };
-        }
-        else if (display_channels == std::vector<std::string>({ "R", "G", "B", "A" }))
-        {
-            glformat = GL_BGRA;
-            swizzle_mask = { GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA };
-        }
-        else if (display_channels == std::vector<std::string>({ "A", "B", "G", "R" }))
-        {
-            glformat = GL_BGRA;
-            swizzle_mask = { GL_ALPHA, GL_RED, GL_GREEN, GL_BLUE };
-        }
-        else if (display_channels == std::vector<std::string>({ "B", "G", "R" }))
-        {
-            glformat = GL_BGR;
-            swizzle_mask = { GL_BLUE, GL_GREEN, GL_RED, GL_ONE };
-        }
-        else if (display_channels.size() == 4)
-        {
-            glformat = GL_BGRA;
-            swizzle_mask = { GL_RED, GL_GREEN, GL_BLUE , GL_ALPHA };
-        }
-        else if (display_channels.size() == 3)
-        {
-            glformat = GL_RGB;
-            swizzle_mask = { GL_RED , GL_GREEN, GL_BLUE, GL_ONE };
-        }
-        else if (display_channels.size() == 2) {
-            glformat = GL_RG;
-            swizzle_mask = { GL_RED, GL_GREEN, GL_ZERO, GL_ONE };
-        }
-        else if (display_channels.size() == 1)
-        {
-            glformat = GL_RED;
-            if (display_channels[0] == "R") swizzle_mask = { GL_RED, GL_ZERO, GL_ZERO, GL_ONE };
-            else if (display_channels[0] == "G") swizzle_mask = { GL_ZERO, GL_RED, GL_ZERO, GL_ONE };
-            else if (display_channels[0] == "B") swizzle_mask = { GL_ZERO, GL_ZERO, GL_RED, GL_ONE };
-            else swizzle_mask = { GL_RED, GL_RED, GL_RED, GL_ONE };  
-        }
-        else {
-            throw "cannot match selected channels to glformat";
-        }
+        glformat = format_from_channels(display_channels, swizzle_mask);
 
         //ImGui::Text("swizzle mask: %s %s %s %s", to_string(swizzle_mask[0]), to_string(swizzle_mask[1]), to_string(swizzle_mask[2]), to_string(swizzle_mask[3]));
         if (pbos.empty())
@@ -823,8 +514,7 @@ public:
             // pbo to texture
             glBindTexture(GL_TEXTURE_2D, tex);
             glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[index]);
-            if(orphaning) glTexSubImage2D(GL_TEXTURE_2D, 0, 0,0, std::get<2>(pbo_data_sizes[index]), std::get<3>(pbo_data_sizes[index]), glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
-
+            if(orphaning) glTexSubImage2D(GL_TEXTURE_2D, 0, std::get<0>(pbo_data_sizes[index]), std::get<1>(pbo_data_sizes[index]), std::get<2>(pbo_data_sizes[index]), std::get<3>(pbo_data_sizes[index]), glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
             // channel swizzle
             glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
 
@@ -854,7 +544,7 @@ public:
         //glClear(GL_COLOR_BUFFER_BIT);
         //imdraw::quad(glazy::checkerboard_tex);
         //std::cout << "draw from: " << texIds[texCurrentIndex].id << "\n";
-        imdraw::quad(tex);
+        imdraw::quad(tex, {0,0},{ display_width, display_height});
     }
 
     ~SequenceRenderer() {
@@ -881,7 +571,8 @@ int main()
     SequenceRenderer seq_renderer;
     seq_renderer.setup(sequence);
 
-    LayerManager layer_manager{ seq_renderer.first_file };
+
+    LayerManager layer_manager{ sequence.item(sequence.first_frame)};
 
     glazy::set_vsync(false);
     while (glazy::is_running())
@@ -890,6 +581,7 @@ int main()
         {
             F++;
             if (F > last_frame) F = first_frame;
+            seq_renderer.current_frame = F;
         }
 
         glazy::new_frame();
@@ -900,16 +592,85 @@ int main()
             {
                 if (ImGui::MenuItem("open", "")) {
                     auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0JPEG images\0*.jpg");
+
                     sequence = FileSequence(filepath);
                     first_frame = sequence.first_frame;
                     last_frame = sequence.last_frame;
                     F = sequence.first_frame;
+
                     seq_renderer.destroy();
                     seq_renderer.setup(sequence);
+
+                    layer_manager = LayerManager(sequence.item(sequence.first_frame));
                 }
                 ImGui::EndMenu();
             }
             ImGui::EndMainMenuBar();
+        }
+
+
+        if (ImGui::Begin("Viewer"))
+        {
+            static GLuint viewport_fbo;
+            static GLuint viewport_color_attachment;
+            static Camera camera = Camera({ 0,0,5000 }, { 0,0,0 }, { 0,1,0 });
+            { /// Viewport
+                auto item_size = ImGui::GetContentRegionAvail();
+                auto item_pos = ImGui::GetCursorPos(); // if child window has no border this is: 0,0
+
+                // Resize Viewport FBO
+                static glm::ivec2 viewport_size;
+                if (viewport_size.x != item_size.x || viewport_size.y != item_size.y)
+                {
+                    ZoneScopedN("update viewport fbo");
+                    //std::cout << "update viewport fbo: " << item_size.x << ", " << item_size.y << "\n";
+                    viewport_size = { item_size.x, item_size.y };
+                    if (glIsFramebuffer(viewport_fbo))
+                        glDeleteFramebuffers(1, &viewport_fbo);
+                    if (glIsTexture(viewport_color_attachment))
+                        glDeleteTextures(1, &viewport_color_attachment);
+                    viewport_color_attachment = imdraw::make_texture_float(viewport_size.x, viewport_size.y, NULL, GL_RGBA);
+                    viewport_fbo = imdraw::make_fbo(viewport_color_attachment);
+
+                    camera.aspect = (float)viewport_size.x / viewport_size.y;
+                }
+
+                // Control Camera
+                ImGui::InvisibleButton("camera control", item_size);
+                if (ImGui::IsItemActive()) {
+                    if (ImGui::IsMouseDragging(0) && (ImGui::GetIO().KeyMods == (ImGuiKeyModFlags_Ctrl | ImGuiKeyModFlags_Alt)))
+                    {
+                        camera.orbit(-ImGui::GetIO().MouseDelta.x * 0.006, -ImGui::GetIO().MouseDelta.y * 0.006);
+                    }
+                    else if (ImGui::IsMouseDragging(0))// && !ImGui::GetIO().KeyMods)
+                    {
+                        camera.pan(-ImGui::GetIO().MouseDelta.x / item_size.x, -ImGui::GetIO().MouseDelta.y / item_size.y);
+                    }
+                }
+                if (ImGui::IsItemHovered()) {
+                    if (ImGui::GetIO().MouseWheel != 0 && !ImGui::GetIO().KeyMods) {
+                        const auto target_distance = camera.get_target_distance();
+                        camera.dolly(-ImGui::GetIO().MouseWheel * target_distance * 0.2);
+                    }
+                }
+
+                // Display viewport GUI
+                ImGui::SetCursorPos(item_pos);
+                ImGui::SetItemAllowOverlap();
+                ImGui::Image((ImTextureID)viewport_color_attachment, item_size, ImVec2(0, 1), ImVec2(1, 0));
+
+                BeginRenderToTexture(viewport_fbo, 0, 0, item_size.x, item_size.y);
+                glClearColor(0, 0, 0,0);
+                glClear(GL_COLOR_BUFFER_BIT);
+                imdraw::set_projection(camera.getProjection());
+                imdraw::set_view(camera.getView());
+                glm::mat4 M{ 1 };
+                M = glm::scale(M, { 1024, 1024, 1 });
+                seq_renderer.draw();
+                EndRenderToTexture();
+            }
+
+            ImGui::End();
         }
 
         if (ImGui::Begin("Info"))
@@ -917,16 +678,18 @@ int main()
             if (ImGui::BeginTabBar("info")) {
                 if (ImGui::BeginTabItem("channels"))
                 {
-                    auto parts = seq_renderer.first_file->parts();
+                    auto file = Imf::MultiPartInputFile(sequence.item(sequence.first_frame).string().c_str());
+                    auto parts = file.parts();
                     for (auto p = 0; p < parts; p++)
                     {
                         ImGui::PushID(p);
-                        auto in = Imf::InputPart(*seq_renderer.first_file, p);
+                        auto in = Imf::InputPart(file, p);
                         auto header = in.header();
                         auto cl = header.channels();
-                        ImGui::Text("  part %d\n name: %s\n view: %s", p, header.hasName() ? header.name().c_str() : "", header.hasView() ? header.view().c_str() : "");
-
-                        if (ImGui::BeginTable("channels table", 4))
+                        ImGui::LabelText("Part", "%d", p);
+                        ImGui::LabelText("Name", "%s", header.hasName() ? header.name().c_str() : "");
+                        ImGui::LabelText("View", "%s", header.hasView() ? header.view().c_str() : "");
+                        if (ImGui::BeginTable("channels table", 4, ImGuiTableFlags_NoBordersInBody))
                         {
                             ImGui::TableSetupColumn("name");
                             ImGui::TableSetupColumn("type");
@@ -974,38 +737,37 @@ int main()
         }
         ImGui::End();
 
-
         if (ImGui::Begin("Inspector"))
         {
-            if (ImGui::CollapsingHeader("LayerManagerGUI", ImGuiTreeNodeFlags_DefaultOpen)) {
-                static int current_idx = 0;
+            if (ImGui::BeginCombo("##layers", layer_manager.current_name().c_str()))\
+            {
                 auto layer_names = layer_manager.names();
-                if (ImGui::BeginCombo("layermanager_combo", layer_manager.current_name().c_str())) {
-                    for (auto i = 0; i < layer_names.size(); i++) {
-                        ImGui::PushID(i);
-                        bool is_selected = i == layer_manager.current();
-                        if (ImGui::Selectable(layer_names.at(i).c_str(), is_selected, ImGuiSelectableFlags_SpanAllColumns)) {
-                            layer_manager.set_current(i);
-                            seq_renderer.selected_part_idx = layer_manager.current_part_idx();
-                            seq_renderer.selected_channels = layer_manager.current_channel_ids();
-                        }
-                        ImGui::PopID();
+                for (auto i = 0; i < layer_names.size(); i++) {
+                    ImGui::PushID(i);
+                    bool is_selected = i == layer_manager.current();
+                    if (ImGui::Selectable(layer_names.at(i).c_str(), is_selected, ImGuiSelectableFlags_SpanAllColumns)) {
+                        layer_manager.set_current(i);
+                        seq_renderer.selected_part_idx = layer_manager.current_part_idx();
+                        seq_renderer.selected_channels = layer_manager.current_channel_ids();
                     }
-                    ImGui::EndCombo();
+                    ImGui::PopID();
                 }
-                
+                ImGui::EndCombo();
             }
-            seq_renderer.onGUI();
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("layers");
         }
         ImGui::End();
 
         if (ImGui::Begin("Timeline"))
         {
-            ImGui::Frameslider("timeslider", &is_playing, &F, first_frame, last_frame);
+            if (ImGui::Frameslider("timeslider", &is_playing, &F, first_frame, last_frame)) {
+                seq_renderer.current_frame = F;
+            }
         }
         ImGui::End();
 
-        seq_renderer.update(F);
+        seq_renderer.update();
+        
         seq_renderer.draw();
 
         glazy::end_frame();

@@ -25,10 +25,11 @@
 #include "OpenImageIO/imagecache.h"
 
 // ImGui
+#define IMGUI_DEFINE_MATH_OPERATORS
 #include "imgui.h"
 #include "imgui_stdlib.h"
-#define IMGUI_DEFINE_MATH_OPERATORS
 #include "imgui_internal.h" // use imgui math operators
+
 // widgets
 #include "imgui_widget_flamegraph.h"
 
@@ -393,7 +394,7 @@ void ShowInfo()
     if (ImGui::CollapsingHeader("sequence", ImGuiTreeNodeFlags_DefaultOpen))
     {
         ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, { ImGui::GetStyle().CellPadding.x,0 });
-        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvailWidth());
+        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
         if (ImGui::BeginTable("sequence table", 2))
         {
             ImGui::TableNextColumn();
@@ -473,7 +474,7 @@ void ShowInfo()
                                 text = text + " (" + (spec.channelformats[i].c_str()) + ")";
                             }
 
-                            if (ImGui::GetStyle().ItemSpacing.x + ImGui::CalcTextSize(text.c_str()).x > ImGui::GetContentRegionAvailWidth()) ImGui::NewLine();
+                            if (ImGui::GetStyle().ItemSpacing.x + ImGui::CalcTextSize(text.c_str()).x > ImGui::GetContentRegionAvail().x) ImGui::NewLine();
 
                             ImGui::Text("%s", text.c_str());
 
@@ -563,7 +564,7 @@ void ShowTimeline()
         ImGui::InputInt("##start frame", &state.start_frame, 0, 0);
         ImGui::EndDisabled();
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvailWidth() - ImGui::GetTextLineHeight() * 2 - ImGui::GetStyle().ItemSpacing.x);
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::GetTextLineHeight() * 2 - ImGui::GetStyle().ItemSpacing.x);
         if (ImGui::SliderInt("##frame", &state.current_frame, state.start_frame, state.end_frame)) {
             on_frame_change();
         }
@@ -755,11 +756,13 @@ void ShowViewer(bool *p_open)
                         state.camera.dolly(-ImGui::GetIO().MouseWheel * target_distance * 0.2);
                     }
                 }
+
                 // Display viewport GUI
                 ImGui::SetCursorPos(item_pos);
                 ImGui::SetItemAllowOverlap();
                 ImGui::Image((ImTextureID)viewport_color_attachment, item_size, ImVec2(0, 1), ImVec2(1, 0));
 
+                // display spec
                 if (!state.spec.undefined())
                 {
                     glm::vec3 screen_pos = glm::project(glm::vec3(state.spec.full_width, state.spec.full_height, 0.0), state.camera.getView(), state.camera.getProjection(), glm::vec4(0, 0, item_size.x, item_size.y));

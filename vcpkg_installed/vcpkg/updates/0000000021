@@ -1,0 +1,7 @@
+Package: imgui
+Feature: opengl3-binding
+Architecture: x86-windows
+Multi-Arch: same
+Description: Make available OpenGL3/ES/ES2 (modern) binding
+Type: Port
+Status: install ok installed

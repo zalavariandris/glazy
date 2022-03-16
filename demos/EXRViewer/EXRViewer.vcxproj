@@ -173,6 +173,7 @@
     <ClInclude Include="FileSequence.h" />
     <ClInclude Include="helpers.h" />
     <ClInclude Include="Layer.h" />
+    <ClInclude Include="LayerManager.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

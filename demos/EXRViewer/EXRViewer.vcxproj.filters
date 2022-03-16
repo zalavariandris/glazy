@@ -38,5 +38,8 @@
     <ClInclude Include="FileSequence.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="LayerManager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

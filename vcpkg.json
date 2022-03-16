@@ -1,0 +1,27 @@
+{
+  "name": "glazy",
+  "version-string": "0.01",
+
+  "description": "opengl experiemnt starter pack",
+  "dependencies": [
+    {
+      "name": "glm"
+    },
+    {
+      "name": "OpenImageIO"
+    },
+    {
+      "name": "glad"
+    },
+    {
+      "name": "glfw3"
+    },
+    {
+      "name": "openexr"
+    },
+    {
+      "name": "imgui",
+      "features": [ "docking-experimental", "glfw-binding", "opengl3-binding" ]
+    }
+  ]
+}

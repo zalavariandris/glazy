@@ -95,7 +95,7 @@ void Camera::pan(double horizontal, double vertical) {
 	auto forward = glm::vec3(view[0][2], view[1][2], view[2][2]);
 
 	auto target_distance = glm::distance(eye, target);
-	auto offset = right * (float)horizontal - up * (float)vertical;
+	auto offset = right * (float)horizontal*aspect - up * (float)vertical;
 	offset *= tan(fovy / 2) * 2;
 	offset *= target_distance;
 	target += offset;

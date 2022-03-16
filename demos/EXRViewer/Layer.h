@@ -4,8 +4,8 @@
 #include <string>
 #include <format>
 
-std::vector<std::tuple<int, int>> group_stringvector_by_patterns(const std::vector<std::string>& statement, const std::vector<std::vector<std::string>>& patterns) {
-
+std::vector<std::tuple<int, int>> group_stringvector_by_patterns(const std::vector<std::string>& statement, const std::vector<std::vector<std::string>>& patterns)
+{
     std::vector<std::tuple<int, int>> groups;
 
     // sort patterns
@@ -71,6 +71,10 @@ public:
     /// the layer name
     std::string name() const {
         return mName;
+    }
+
+    std::string path() const {
+        return part_name() + "." + name();
     }
 
     /// full EXR channel name

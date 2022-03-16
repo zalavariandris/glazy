@@ -245,7 +245,7 @@ namespace glazy {
 		ImGui::CreateContext();
 		ImGuiIO& io = ImGui::GetIO();
 		io.ConfigFlags |= ImGuiConfigFlags_DockingEnable; // enable docking
-		io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable; // enable multiviewports
+		//io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable; // enable multiviewports
 		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // enable keyboard navigation
 		
 		
@@ -541,8 +541,6 @@ namespace glazy {
 				high_limit = std::max(high_limit, framerate);
 
 				ImGui::Text("%.1f fps", fps_history[0]);
-				ImPlot::SetNextPlotLimits(0, fps_history.size(), low_limit, high_limit, ImGuiCond_Always);
-
 				ImGui::PlotLines("fps", fps_history.data(), fps_history.size(), 0, "", 0, 120);
 
 				ImGui::End();

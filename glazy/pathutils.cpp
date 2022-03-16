@@ -29,7 +29,7 @@ std::string to_string(std::vector<std::filesystem::path> sequence) {
 }
 
 std::tuple<std::filesystem::path, int, int, int> scan_for_sequence(const std::filesystem::path& input_path) {
-    assert(std::filesystem::exists(input_path));
+    assert(("file does not exist", std::filesystem::exists(input_path)));
 
     std::vector<std::filesystem::path> sequence;
     std::vector<int> framenumbers;

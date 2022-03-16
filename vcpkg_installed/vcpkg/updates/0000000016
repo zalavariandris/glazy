@@ -1,0 +1,8 @@
+Package: imgui
+Feature: glfw-binding
+Depends: glfw3
+Architecture: x86-windows
+Multi-Arch: same
+Description: Make available GLFW binding
+Type: Port
+Status: install ok half-installed
