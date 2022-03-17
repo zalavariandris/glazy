@@ -45,6 +45,43 @@
 #include "LayerManager.h"
 #include "helpers.h"
 
+const char* PASS_CAMERA_VERTEX_CODE = R"(
+#version 330 core
+layout (location = 0) in vec3 aPos;
+
+uniform mat4 projection;
+uniform mat4 view;
+uniform mat4 model;
+
+out vec3 nearPoint;
+out vec3 farPoint;
+
+uniform bool use_geometry;
+
+vec3 UnprojectPoint(float x, float y, float z, mat4 view, mat4 projection) {
+    mat4 viewInv = inverse(view);
+    mat4 projInv = inverse(projection);
+    vec4 unprojectedPoint =  viewInv * projInv * vec4(x, y, z, 1.0);
+    return unprojectedPoint.xyz / unprojectedPoint.w;
+}
+				
+void main()
+{
+    nearPoint = UnprojectPoint(aPos.x, aPos.y, 0.0, view, projection).xyz;
+    farPoint = UnprojectPoint(aPos.x, aPos.y, 1.0, view, projection).xyz;
+    gl_Position = use_geometry ? (projection * view * model * vec4(aPos, 1.0)) : vec4(aPos, 1.0);
+}
+)";
+
+const char* PASS_THROUGH_VERTEX_CODE = R"(
+                    #version 330 core
+                    layout (location = 0) in vec3 aPos;
+                    void main()
+                    {
+                        gl_Position = vec4(aPos, 1.0);
+                    }
+                    )";
+
 namespace ImGui
 {
     bool Frameslider(const char* label, bool *is_playing, int* v, int v_min, int v_max, const char* format = "%d", ImGuiSliderFlags flags = 0)
@@ -70,7 +107,6 @@ namespace ImGui
             if (ImGui::Button(*is_playing ? ICON_FA_PAUSE : ICON_FA_PLAY "##play"))
             {
                 *is_playing = !*is_playing;
-                std::cout << "oress play" << *is_playing << "\n";
             }
             ImGui::SameLine();
             ImGui::SetNextItemWidth(ImGui::GetTextLineHeight());
@@ -115,8 +151,21 @@ namespace ImGui
         return changed;
     }
 
+    int CalcComboWidth(const std::vector<std::string>& values, ImGuiComboFlags flags = 0)
+    {
+        int min_width = ImGui::GetTextLineHeight();
+        for (const auto& layer : values)
+        {
+            auto item_width = ImGui::CalcTextSize(layer.c_str()).x;
+            if (item_width > min_width) {
+                min_width = item_width;
+            }
+        }
+        min_width += ImGui::GetStyle().FramePadding.x * 2;
+        if ((flags & ImGuiComboFlags_NoArrowButton) == 0) min_width += ImGui::GetTextLineHeight() + ImGui::GetStyle().FramePadding.y * 2;
+        return min_width;
+    }
 }
-
 
 #if defined(_WIN32) || defined(__WIN32__) || defined(WIN32)
 inline std::wstring s2ws(const std::string& s)
@@ -149,11 +198,12 @@ public:
     int current_frame{ 0 };
     Imf::MultiPartInputFile* current_file = nullptr;
     
-
     int selected_part_idx{ 0 };
     std::vector<std::string> selected_channels{ "A", "B", "G", "R" };
 
     int display_width, display_height;
+    GLuint output_tex{ 0 };
+
 private:
     Imf::MultiPartInputFile* first_file = nullptr;
     FileSequence sequence;
@@ -162,8 +212,6 @@ private:
     std::vector<GLuint> pbos;
     std::vector<std::tuple<int, int, int, int>> pbo_data_sizes;
     bool orphaning{ true };
-    GLuint tex{ 0 };
-
     
 
     //int width, height, nchannels;
@@ -282,51 +330,7 @@ private:
 
 public:
 
-    SequenceRenderer()
-    {
-
-    }
-    
-    void onGUI()    
-    {
-        if (ImGui::CollapsingHeader("data format", ImGuiTreeNodeFlags_DefaultOpen))
-        {
-            // Data format
-            ImGui::Text("glformat: %s", to_string(glformat).c_str());
-            ImGui::Text("gltype:   %s", to_string(gltype).c_str());
-        }
-
-        if (ImGui::CollapsingHeader("OpenGL", ImGuiTreeNodeFlags_DefaultOpen))
-        {
-
-            /// PBOS
-            static int npbos = pbos.size();
-            if (ImGui::InputInt("pbos", &npbos))
-            {
-                init_pbos(npbos);
-            }
-
-            ImGui::Checkbox("orphaning", &orphaning);
-
-            /// Internalformat
-            if (ImGui::BeginListBox("texture internal format"))
-            {
-                std::vector<GLenum> glinternalformats{ GL_RGB16F, GL_RGBA16F, GL_RGB32F, GL_RGBA32F };
-                for (auto i = 0; i < glinternalformats.size(); ++i)
-                {
-                    const bool is_selected = glinternalformat == glinternalformats[i];
-                    if (ImGui::Selectable(to_string(glinternalformats[i]).c_str(), is_selected))
-                    {
-                        glinternalformat = glinternalformats[i];
-                        init_tex();
-                    }
-                }
-                ImGui::EndListBox();
-            }
-        }
-    }
-
-    void setup(FileSequence seq)
+    SequenceRenderer(const FileSequence& seq)
     {
         ZoneScoped;
 
@@ -364,7 +368,50 @@ public:
         init_tex();
 
         // init pixel buffers
-        init_pbos(1);
+        init_pbos(0);
+    }
+    
+    void onGUI()    
+    {
+        if (ImGui::CollapsingHeader("attributes", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::DragInt("current frame", &current_frame);
+        }
+
+        if (ImGui::CollapsingHeader("data format", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            // Data format
+            ImGui::Text("glformat: %s", to_string(glformat).c_str());
+            ImGui::Text("gltype:   %s", to_string(gltype).c_str());
+        }
+
+        if (ImGui::CollapsingHeader("OpenGL", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+
+            /// PBOS
+            static int npbos = pbos.size();
+            if (ImGui::InputInt("pbos", &npbos))
+            {
+                init_pbos(npbos);
+            }
+
+            ImGui::Checkbox("orphaning", &orphaning);
+
+            /// Internalformat
+            if (ImGui::BeginListBox("texture internal format"))
+            {
+                std::vector<GLenum> glinternalformats{ GL_RGB16F, GL_RGBA16F, GL_RGB32F, GL_RGBA32F };
+                for (auto i = 0; i < glinternalformats.size(); ++i)
+                {
+                    const bool is_selected = glinternalformat == glinternalformats[i];
+                    if (ImGui::Selectable(to_string(glinternalformats[i]).c_str(), is_selected))
+                    {
+                        glinternalformat = glinternalformats[i];
+                        init_tex();
+                    }
+                }
+                ImGui::EndListBox();
+            }
+        }
     }
 
     void init_tex() {
@@ -373,8 +420,8 @@ public:
         display_width = display_window.max.x - display_window.min.x + 1;
         display_height = display_window.max.y - display_window.min.y + 1;
         glPrintErrors();
-        glGenTextures(1, &tex);
-        glBindTexture(GL_TEXTURE_2D, tex);
+        glGenTextures(1, &output_tex);
+        glBindTexture(GL_TEXTURE_2D, output_tex);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
@@ -419,14 +466,6 @@ public:
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
     }
 
-    void destroy()
-    {
-        for (auto i = 0; i < pbos.size(); i++) {
-            glDeleteBuffers(1, &pbos[i]);
-        }
-        glDeleteTextures(1, &tex);
-    }
-
     void update()
     {
         ZoneScoped;
@@ -452,7 +491,7 @@ public:
             return;
         }
 
-        ImGui::Text("selected part idx: %d", selected_part_idx);
+        //ImGui::Text("selected part idx: %d", selected_part_idx);
         Imf::InputPart in(*current_file, selected_part_idx);
 
 
@@ -500,8 +539,8 @@ public:
         {
             ZoneScopedN("pixels to texture");
             // pixels to texture
-            glInvalidateTexImage(tex, 1);
-            glBindTexture(GL_TEXTURE_2D, tex);
+            glInvalidateTexImage(output_tex, 1);
+            glBindTexture(GL_TEXTURE_2D, output_tex);
             glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0,0, data_width, data_height, glformat, GL_HALF_FLOAT, pixels);
             glBindTexture(GL_TEXTURE_2D, 0);
@@ -518,7 +557,7 @@ public:
             //ImGui::Text("using PBOs, update:%d  display: %d", index, nextIndex);
 
             // pbo to texture
-            glBindTexture(GL_TEXTURE_2D, tex);
+            glBindTexture(GL_TEXTURE_2D, output_tex);
             glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[index]);
             if(orphaning) glTexSubImage2D(GL_TEXTURE_2D, 0, std::get<0>(pbo_data_sizes[index]), std::get<1>(pbo_data_sizes[index]), std::get<2>(pbo_data_sizes[index]), std::get<3>(pbo_data_sizes[index]), glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
             // channel swizzle
@@ -550,27 +589,37 @@ public:
         //glClear(GL_COLOR_BUFFER_BIT);
         //imdraw::quad(glazy::checkerboard_tex);
         //std::cout << "draw from: " << texIds[texCurrentIndex].id << "\n";
-        imdraw::quad(tex, {0,0},{ display_width, display_height});
+        imdraw::quad(output_tex, {0,0},{ display_width, display_height});
     }
 
     ~SequenceRenderer() {
-        destroy();
+        for (auto i = 0; i < pbos.size(); i++) {
+            glDeleteBuffers(1, &pbos[i]);
+        }
+        glDeleteTextures(1, &output_tex);
     }
 };
+
 
 class CorrectionPlate
 {
 private:
+    GLuint mInputtex;
     GLuint fbo;
     GLuint color_attachment;
     int mWidth;
     int mHeight;
+    GLuint mProgram;
 
-
+    int selected_device{ 1 };
+    float gain{ 0 };
+    float gamma{ 1.0 };
 public:
     CorrectionPlate(int width, int height, GLuint inputtex)
     {
+        mInputtex = inputtex;
         resize(width, height);
+        compile_program();
     }
 
     void resize(int width, int height)
@@ -587,13 +636,163 @@ public:
         mHeight = height;
     }
 
+    void onGui()
+    {
+        ImGui::BeginGroup(); // display correction
+        {
+            static const std::vector<std::string> devices{ "linear", "sRGB", "Rec.709" };
+            int devices_combo_width = ImGui::CalcComboWidth(devices);
+            ImGui::SetNextItemWidth(ImGui::GetTextLineHeight() * 6);
+            ImGui::SliderFloat(ICON_FA_ADJUST "##gain", &gain, -6.0f, 6.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("gain");
+            if (ImGui::IsItemClicked(1)) gain = 0.0;
+
+            ImGui::SetNextItemWidth(ImGui::GetTextLineHeight() * 6);
+            ImGui::SliderFloat("##gamma", &gamma, 0, 4);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("gamma");
+            if (ImGui::IsItemClicked(1)) gamma = 1.0;
+
+
+            ImGui::SetNextItemWidth(devices_combo_width);
+            ImGui::Combo("##device", &selected_device, "linear\0sRGB\0Rec.709\0");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("device");
+
+        }
+        ImGui::EndGroup();
+    }
+
+    void set_input_tex(GLuint tex) {
+        mInputtex = tex;
+    }
+
+    void compile_program()
+    {
+        const char* display_correction_fragment_code = R"(
+            #version 330 core
+            out vec4 FragColor;
+            uniform mediump sampler2D inputTexture;
+            uniform vec2 resolution;
+
+            uniform float gamma_correction;
+            uniform float gain_correction;
+            uniform int convert_to_device; // 0:linear | 1:sRGB | 2:Rec709
+
+            float sRGB_to_linear(float channel){
+                return channel <= 0.04045
+                    ? channel / 12.92
+                    : pow((channel + 0.055) / 1.055, 2.4);
+            }
+
+            vec3 sRGB_to_linear(vec3 color){
+                return vec3(
+                    sRGB_to_linear(color.r),
+                    sRGB_to_linear(color.g),
+                    sRGB_to_linear(color.b)
+                    );
+            }
+
+            float linear_to_sRGB(float channel){
+                    return channel <= 0.0031308f
+                    ? channel * 12.92
+                    : pow(channel, 1.0f/2.4) * 1.055f - 0.055f;
+            }
+
+            vec3 linear_to_sRGB(vec3 color){
+                return vec3(
+                    linear_to_sRGB(color.r),
+                    linear_to_sRGB(color.g),
+                    linear_to_sRGB(color.b)
+                );
+            }
+
+            const float REC709_ALPHA = 0.099f;
+            float linear_to_rec709(float channel) {
+                if(channel <= 0.018f)
+                    return 4.5f * channel;
+                else
+                    return (1.0 + REC709_ALPHA) * pow(channel, 0.45f) - REC709_ALPHA;
+            }
+
+            vec3 linear_to_rec709(vec3 rgb) {
+                return vec3(
+                    linear_to_rec709(rgb.r),
+                    linear_to_rec709(rgb.g),
+                    linear_to_rec709(rgb.b)
+                );
+            }
+
+
+            vec3 reinhart_tonemap(vec3 hdrColor){
+                return vec3(1.0) - exp(-hdrColor);
+            }
+
+            void main(){
+                vec2 uv = gl_FragCoord.xy/resolution;
+                vec3 rawColor = texture(inputTexture, uv).rgb;
+                
+                // apply corrections
+                vec3 color = rawColor;
+
+                // apply exposure correction
+                color = color * pow(2, gain_correction);
+
+                // exposure tone mapping
+                //mapped = reinhart_tonemap(mapped);
+
+                // apply gamma correction
+                color = pow(color, vec3(gamma_correction));
+
+                // convert color to device
+                if(convert_to_device==0) // linear, no conversion
+                {
+
+                }
+                else if(convert_to_device==1) // sRGB
+                {
+                    color = linear_to_sRGB(color);
+                }
+                if(convert_to_device==2) // Rec.709
+                {
+                    color = linear_to_rec709(color);
+                }
+
+                FragColor = vec4(color, texture(inputTexture, uv).a);
+            }
+            )";
+
+        ZoneScopedN("recompile display correction shader");
+        if (glIsProgram(mProgram)) glDeleteProgram(mProgram);
+        mProgram = imdraw::make_program_from_source(PASS_THROUGH_VERTEX_CODE, display_correction_fragment_code);
+
+        
+    }
+
     void update()
     {
         // update result texture
         BeginRenderToTexture(fbo, 0, 0, mWidth, mHeight);
-        glClearColor(1, 0, 0, 0);
+        glClearColor(0, 0, 0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
 
+        imdraw::push_program(mProgram);
+        /// Draw quad with fragment shader
+        imgeo::quad();
+        static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
+        static auto vao = imdraw::make_vao(mProgram, { {"aPos", {vbo, 3}} });
+
+        imdraw::set_uniforms(mProgram, {
+            {"inputTexture", 0},
+            {"resolution", glm::vec2(mWidth, mHeight)},
+            {"gain_correction", gain},
+            {"gamma_correction", 1.0f / gamma},
+            {"convert_to_device", selected_device},
+            });
+        glBindTexture(GL_TEXTURE_2D, mInputtex);
+        glBindVertexArray(vao);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        glBindVertexArray(0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        imdraw::pop_program();
         EndRenderToTexture();
     }
 
@@ -601,6 +800,65 @@ public:
     {
         // draw result texture
         imdraw::quad(color_attachment, { 0,0 }, { mWidth, mHeight });
+    }
+};
+
+class PolkaPlate
+{
+private:
+    int mWidth;
+    int mHeight;
+    glm::mat4 mView;
+    glm::mat4 mProjection;
+public:
+    PolkaPlate(int width, int height) {
+        mWidth = width;
+        mHeight = height;
+    }
+
+    void set_view(glm::mat4 view) {
+        mView = view;
+    }
+
+    void set_projection(glm::mat4 projection)
+    {
+        mProjection = projection;
+    }
+
+    void draw()
+    {
+        ZoneScopedN("draw polka");
+        static std::filesystem::path fragment_path{ "./polka.frag" };
+        static std::string fragment_code;
+        static GLuint polka_program;
+        if (glazy::is_file_modified(fragment_path)) {
+            // reload shader
+            ZoneScopedN("recompile polka shader");
+            fragment_code = glazy::read_text(fragment_path.string().c_str());
+            if (glIsProgram(polka_program)) glDeleteProgram(polka_program); // recompile shader
+            polka_program = imdraw::make_program_from_source(
+                PASS_CAMERA_VERTEX_CODE,
+                fragment_code.c_str()
+            );
+        }
+
+        /// Draw quad with fragment shader
+        static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
+        static auto vao = imdraw::make_vao(polka_program, { {"aPos", {vbo, 3}} });
+
+        imdraw::push_program(polka_program);
+        imdraw::set_uniforms(polka_program, {
+            {"projection", mProjection},
+            {"view", mView},
+            {"model", glm::mat4(1)},
+            {"uResolution", glm::vec2(mWidth, mHeight)},
+            {"radius", 0.01f}
+            });
+
+        glBindVertexArray(vao);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        glBindVertexArray(0);
+        imdraw::pop_program();
     }
 };
 
@@ -704,11 +962,12 @@ bool run_tests()
 bool is_playing = false;
 int F, first_frame, last_frame;
 FileSequence sequence;
-SequenceRenderer seq_renderer;
+std::unique_ptr<SequenceRenderer> seq_renderer;
 std::unique_ptr<LayerManager> layer_manager;
 ImGui::GLViewerState viewer_state;
 
 std::unique_ptr<CorrectionPlate> correction_plate;
+std::unique_ptr<PolkaPlate> polka_plate;
 
 void open(std::filesystem::path filename)
 {
@@ -717,12 +976,11 @@ void open(std::filesystem::path filename)
     last_frame = sequence.last_frame;
     F = sequence.first_frame;
 
-    seq_renderer.destroy();
-    seq_renderer.setup(sequence);
-
+    seq_renderer = std::make_unique<SequenceRenderer>(sequence);
     layer_manager = std::make_unique<LayerManager>(sequence.item(sequence.first_frame));
+    correction_plate = std::make_unique<CorrectionPlate>(seq_renderer->display_width, seq_renderer->display_height, seq_renderer->output_tex);
 
-    viewer_state.camera.fit(seq_renderer.display_width, seq_renderer.display_height);
+    viewer_state.camera.fit(seq_renderer->display_width, seq_renderer->display_height);
 }
 
 void drop_callback(GLFWwindow* window, int argc, const char** argv)
@@ -734,6 +992,13 @@ void drop_callback(GLFWwindow* window, int argc, const char** argv)
     if (argc > 0) {
         open(argv[0]);
     }
+}
+
+void update() {
+    seq_renderer->update();
+    //seq_renderer.draw();
+    correction_plate->set_input_tex(seq_renderer->output_tex);
+    correction_plate->update();
 }
 
 int main(int argc, char* argv[])
@@ -756,21 +1021,25 @@ int main(int argc, char* argv[])
         //sequence = FileSequence("C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr" );
         //sequence = FileSequence("C:/Users/andris/Desktop/52_EXAM_v51-raw/52_01_EXAM_v51.0001.exr" );
     }
+    update();
+    polka_plate = std::make_unique<PolkaPlate>(2048, 2048);
 
     while (glazy::is_running())
     {
+        glazy::new_frame();
         if (is_playing)
         {
             F++;
             if (F > last_frame) F = first_frame;
-            seq_renderer.current_frame = F;
+            seq_renderer->current_frame = F;
+
+            update();
+
         }
 
         if (ImGui::IsKeyPressed('F')) {
-            viewer_state.camera.fit(seq_renderer.display_width, seq_renderer.display_height);
+            viewer_state.camera.fit(seq_renderer->display_width, seq_renderer->display_height);
         }
-
-        glazy::new_frame();
 
         if (ImGui::BeginMainMenuBar())
         {
@@ -786,10 +1055,7 @@ int main(int argc, char* argv[])
             if (ImGui::BeginMenu("View")) {
                 if (ImGui::MenuItem("fit", "f"))
                 {
-                    float width, height;
-                    width = seq_renderer.display_width;
-                    height = seq_renderer.display_height;
-                    viewer_state.camera.fit(width, height);
+                    viewer_state.camera.fit(seq_renderer->display_width, seq_renderer->display_height);
                 }
                 ImGui::EndMenu();
             }
@@ -801,6 +1067,7 @@ int main(int argc, char* argv[])
         {
             if (ImGui::BeginMenuBar())
             {
+                ImGui::SetNextItemWidth(ImGui::CalcComboWidth(layer_manager->names()));
                 if (ImGui::BeginCombo("##layers", layer_manager->current_name().c_str()))\
                 {
                     auto layer_names = layer_manager->names();
@@ -809,14 +1076,19 @@ int main(int argc, char* argv[])
                         bool is_selected = i == layer_manager->current();
                         if (ImGui::Selectable(layer_names.at(i).c_str(), is_selected, ImGuiSelectableFlags_SpanAllColumns)) {
                             layer_manager->set_current(i);
-                            seq_renderer.selected_part_idx = layer_manager->current_part_idx();
-                            seq_renderer.selected_channels = layer_manager->current_channel_ids();
+                            seq_renderer->selected_part_idx = layer_manager->current_part_idx();
+                            seq_renderer->selected_channels = layer_manager->current_channel_ids();
                         }
                         ImGui::PopID();
                     }
                     ImGui::EndCombo();
                 }
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("layers");
+                if (ImGui::Button("fit")) {
+                    viewer_state.camera.fit(seq_renderer->display_width, seq_renderer->display_height);
+                }
+                correction_plate->onGui();
+
                 ImGui::EndMenuBar();
             }
 
@@ -826,9 +1098,13 @@ int main(int argc, char* argv[])
                 glClear(GL_COLOR_BUFFER_BIT);
                 imdraw::set_projection(viewer_state.camera.getProjection());
                 imdraw::set_view(viewer_state.camera.getView());
-                glm::mat4 M{ 1 };
-                M = glm::scale(M, { 1024, 1024, 1 });
-                seq_renderer.draw();
+                //glm::mat4 M{ 1 };
+                //M = glm::scale(M, { 1024, 1024, 1 });
+                //seq_renderer.draw();
+                polka_plate->set_projection(viewer_state.camera.getProjection());
+                polka_plate->set_view(viewer_state.camera.getView());
+                polka_plate->draw();
+                correction_plate->draw();
             }
             ImGui::EndGLViewer();
         }
@@ -844,7 +1120,7 @@ int main(int argc, char* argv[])
                 {
                     if (ImGui::BeginTabItem("info (current file)"))
                     {
-                        auto file = Imf::MultiPartInputFile(sequence.item(seq_renderer.current_frame).string().c_str());
+                        auto file = Imf::MultiPartInputFile(sequence.item(seq_renderer->current_frame).string().c_str());
                         ImGui::TextWrapped(get_infostring(file).c_str());
                         ImGui::EndTabItem();
                     }
@@ -873,12 +1149,12 @@ int main(int argc, char* argv[])
                                 {
                                     //ImGui::TableNextRow();
                                     ImGui::TableNextColumn();
-                                    bool is_selected = (seq_renderer.selected_part_idx == p) && std::find(seq_renderer.selected_channels.begin(), seq_renderer.selected_channels.end(), std::string(i.name())) != seq_renderer.selected_channels.end();
+                                    bool is_selected = (seq_renderer->selected_part_idx == p) && std::find(seq_renderer->selected_channels.begin(), seq_renderer->selected_channels.end(), std::string(i.name())) != seq_renderer->selected_channels.end();
                                     if (ImGui::Selectable(i.name(), is_selected, ImGuiSelectableFlags_SpanAllColumns))
                                     {
-                                        seq_renderer.selected_part_idx = p;
+                                        seq_renderer->selected_part_idx = p;
                                         auto channel_name = std::string(i.name());
-                                        seq_renderer.selected_channels = { channel_name };
+                                        seq_renderer->selected_channels = { channel_name };
                                     }
 
                                     ImGui::TableNextColumn();
@@ -898,7 +1174,7 @@ int main(int argc, char* argv[])
                         ImGui::EndTabItem();
                     }
                     if (ImGui::BeginTabItem("Settings")) {
-                        seq_renderer.onGUI();
+                        seq_renderer->onGUI();
                         ImGui::EndTabItem();
                     }
                     ImGui::EndTabBar();
@@ -914,13 +1190,12 @@ int main(int argc, char* argv[])
             if (ImGui::Begin("Timeline", (bool*)0, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoDecoration))
             {
                 if (ImGui::Frameslider("timeslider", &is_playing, &F, first_frame, last_frame)) {
-                    seq_renderer.current_frame = F;
+                    seq_renderer->current_frame = F;
+                    update();
                 }
             }
             ImGui::End();
         }
-        seq_renderer.update();
-        seq_renderer.draw();
 
         glazy::end_frame();
         FrameMark;
