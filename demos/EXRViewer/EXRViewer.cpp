@@ -46,31 +46,31 @@
 #include "helpers.h"
 
 const char* PASS_CAMERA_VERTEX_CODE = R"(
-#version 330 core
-layout (location = 0) in vec3 aPos;
+    #version 330 core
+    layout (location = 0) in vec3 aPos;
 
-uniform mat4 projection;
-uniform mat4 view;
-uniform mat4 model;
+    uniform mat4 projection;
+    uniform mat4 view;
+    uniform mat4 model;
 
-out vec3 nearPoint;
-out vec3 farPoint;
+    out vec3 nearPoint;
+    out vec3 farPoint;
 
-uniform bool use_geometry;
+    uniform bool use_geometry;
 
-vec3 UnprojectPoint(float x, float y, float z, mat4 view, mat4 projection) {
-    mat4 viewInv = inverse(view);
-    mat4 projInv = inverse(projection);
-    vec4 unprojectedPoint =  viewInv * projInv * vec4(x, y, z, 1.0);
-    return unprojectedPoint.xyz / unprojectedPoint.w;
-}
+    vec3 UnprojectPoint(float x, float y, float z, mat4 view, mat4 projection) {
+        mat4 viewInv = inverse(view);
+        mat4 projInv = inverse(projection);
+        vec4 unprojectedPoint =  viewInv * projInv * vec4(x, y, z, 1.0);
+        return unprojectedPoint.xyz / unprojectedPoint.w;
+    }
 				
-void main()
-{
-    nearPoint = UnprojectPoint(aPos.x, aPos.y, 0.0, view, projection).xyz;
-    farPoint = UnprojectPoint(aPos.x, aPos.y, 1.0, view, projection).xyz;
-    gl_Position = use_geometry ? (projection * view * model * vec4(aPos, 1.0)) : vec4(aPos, 1.0);
-}
+    void main()
+    {
+        nearPoint = UnprojectPoint(aPos.x, aPos.y, 0.0, view, projection).xyz;
+        farPoint = UnprojectPoint(aPos.x, aPos.y, 1.0, view, projection).xyz;
+        gl_Position = use_geometry ? (projection * view * model * vec4(aPos, 1.0)) : vec4(aPos, 1.0);
+    }
 )";
 
 const char* PASS_THROUGH_VERTEX_CODE = R"(
@@ -862,6 +862,65 @@ public:
     }
 };
 
+class CheckerPlate
+{
+private:
+    int mWidth;
+    int mHeight;
+    glm::mat4 mView;
+    glm::mat4 mProjection;
+public:
+    CheckerPlate(int width, int height) {
+        mWidth = width;
+        mHeight = height;
+    }
+
+    void set_view(glm::mat4 view) {
+        mView = view;
+    }
+
+    void set_projection(glm::mat4 projection)
+    {
+        mProjection = projection;
+    }
+
+    void draw()
+    {
+        ZoneScopedN("draw polka");
+        static std::filesystem::path fragment_path{ "./checker.frag" };
+        static std::string fragment_code;
+        static GLuint polka_program;
+        if (glazy::is_file_modified(fragment_path)) {
+            // reload shader
+            ZoneScopedN("recompile polka shader");
+            fragment_code = glazy::read_text(fragment_path.string().c_str());
+            if (glIsProgram(polka_program)) glDeleteProgram(polka_program); // recompile shader
+            polka_program = imdraw::make_program_from_source(
+                PASS_CAMERA_VERTEX_CODE,
+                fragment_code.c_str()
+            );
+        }
+
+        /// Draw quad with fragment shader
+        static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
+        static auto vao = imdraw::make_vao(polka_program, { {"aPos", {vbo, 3}} });
+
+        imdraw::push_program(polka_program);
+        imdraw::set_uniforms(polka_program, {
+            {"projection", mProjection},
+            {"view", mView},
+            {"model", glm::mat4(1)},
+            {"uResolution", glm::vec2(mWidth, mHeight)},
+            {"radius", 0.01f}
+            });
+
+        glBindVertexArray(vao);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        glBindVertexArray(0);
+        imdraw::pop_program();
+    }
+};
+
 namespace ImGui {
     bool CameraControl(Camera* camera, ImVec2 item_size)
     {
@@ -968,6 +1027,7 @@ ImGui::GLViewerState viewer_state;
 
 std::unique_ptr<CorrectionPlate> correction_plate;
 std::unique_ptr<PolkaPlate> polka_plate;
+std::unique_ptr<CheckerPlate> checker_plate;
 
 void open(std::filesystem::path filename)
 {
@@ -1022,7 +1082,8 @@ int main(int argc, char* argv[])
         //sequence = FileSequence("C:/Users/andris/Desktop/52_EXAM_v51-raw/52_01_EXAM_v51.0001.exr" );
     }
     update();
-    polka_plate = std::make_unique<PolkaPlate>(2048, 2048);
+    polka_plate = std::make_unique<PolkaPlate>(1, 1);
+    checker_plate = std::make_unique<CheckerPlate>(1, 1);
 
     while (glazy::is_running())
     {
@@ -1101,9 +1162,14 @@ int main(int argc, char* argv[])
                 //glm::mat4 M{ 1 };
                 //M = glm::scale(M, { 1024, 1024, 1 });
                 //seq_renderer.draw();
-                polka_plate->set_projection(viewer_state.camera.getProjection());
-                polka_plate->set_view(viewer_state.camera.getView());
-                polka_plate->draw();
+                checker_plate->set_projection(viewer_state.camera.getProjection());
+                checker_plate->set_view(viewer_state.camera.getView());
+                checker_plate->draw();
+
+                //polka_plate->set_projection(viewer_state.camera.getProjection());
+                //polka_plate->set_view(viewer_state.camera.getView());
+                //polka_plate->draw();
+
                 correction_plate->draw();
             }
             ImGui::EndGLViewer();
