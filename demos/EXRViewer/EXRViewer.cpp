@@ -45,6 +45,8 @@
 #include "LayerManager.h"
 #include "helpers.h"
 
+#include "RenderPlates.h"
+
 const char* PASS_CAMERA_VERTEX_CODE = R"(
     #version 330 core
     layout (location = 0) in vec3 aPos;
@@ -600,7 +602,6 @@ public:
     }
 };
 
-
 class CorrectionPlate
 {
 private:
@@ -803,123 +804,6 @@ public:
     }
 };
 
-class PolkaPlate
-{
-private:
-    int mWidth;
-    int mHeight;
-    glm::mat4 mView;
-    glm::mat4 mProjection;
-public:
-    PolkaPlate(int width, int height) {
-        mWidth = width;
-        mHeight = height;
-    }
-
-    void set_view(glm::mat4 view) {
-        mView = view;
-    }
-
-    void set_projection(glm::mat4 projection)
-    {
-        mProjection = projection;
-    }
-
-    void draw()
-    {
-        ZoneScopedN("draw polka");
-        static std::filesystem::path fragment_path{ "./polka.frag" };
-        static std::string fragment_code;
-        static GLuint polka_program;
-        if (glazy::is_file_modified(fragment_path)) {
-            // reload shader
-            ZoneScopedN("recompile polka shader");
-            fragment_code = glazy::read_text(fragment_path.string().c_str());
-            if (glIsProgram(polka_program)) glDeleteProgram(polka_program); // recompile shader
-            polka_program = imdraw::make_program_from_source(
-                PASS_CAMERA_VERTEX_CODE,
-                fragment_code.c_str()
-            );
-        }
-
-        /// Draw quad with fragment shader
-        static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
-        static auto vao = imdraw::make_vao(polka_program, { {"aPos", {vbo, 3}} });
-
-        imdraw::push_program(polka_program);
-        imdraw::set_uniforms(polka_program, {
-            {"projection", mProjection},
-            {"view", mView},
-            {"model", glm::mat4(1)},
-            {"uResolution", glm::vec2(mWidth, mHeight)},
-            {"radius", 0.01f}
-            });
-
-        glBindVertexArray(vao);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        glBindVertexArray(0);
-        imdraw::pop_program();
-    }
-};
-
-class CheckerPlate
-{
-private:
-    int mWidth;
-    int mHeight;
-    glm::mat4 mView;
-    glm::mat4 mProjection;
-public:
-    CheckerPlate(int width, int height) {
-        mWidth = width;
-        mHeight = height;
-    }
-
-    void set_view(glm::mat4 view) {
-        mView = view;
-    }
-
-    void set_projection(glm::mat4 projection)
-    {
-        mProjection = projection;
-    }
-
-    void draw()
-    {
-        ZoneScopedN("draw polka");
-        static std::filesystem::path fragment_path{ "./checker.frag" };
-        static std::string fragment_code;
-        static GLuint polka_program;
-        if (glazy::is_file_modified(fragment_path)) {
-            // reload shader
-            ZoneScopedN("recompile polka shader");
-            fragment_code = glazy::read_text(fragment_path.string().c_str());
-            if (glIsProgram(polka_program)) glDeleteProgram(polka_program); // recompile shader
-            polka_program = imdraw::make_program_from_source(
-                PASS_CAMERA_VERTEX_CODE,
-                fragment_code.c_str()
-            );
-        }
-
-        /// Draw quad with fragment shader
-        static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
-        static auto vao = imdraw::make_vao(polka_program, { {"aPos", {vbo, 3}} });
-
-        imdraw::push_program(polka_program);
-        imdraw::set_uniforms(polka_program, {
-            {"projection", mProjection},
-            {"view", mView},
-            {"model", glm::mat4(1)},
-            {"uResolution", glm::vec2(mWidth, mHeight)},
-            {"radius", 0.01f}
-            });
-
-        glBindVertexArray(vao);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        glBindVertexArray(0);
-        imdraw::pop_program();
-    }
-};
 
 namespace ImGui {
     bool CameraControl(Camera* camera, ImVec2 item_size)
@@ -1020,6 +904,9 @@ bool run_tests()
 
 bool is_playing = false;
 int F, first_frame, last_frame;
+
+int selected_viewport_background{ 1 };//0: transparent 1: checkerboard 2:black
+
 FileSequence sequence;
 std::unique_ptr<SequenceRenderer> seq_renderer;
 std::unique_ptr<LayerManager> layer_manager;
@@ -1083,7 +970,7 @@ int main(int argc, char* argv[])
     }
     update();
     polka_plate = std::make_unique<PolkaPlate>(1, 1);
-    checker_plate = std::make_unique<CheckerPlate>(1, 1);
+    checker_plate = std::make_unique<CheckerPlate>();
 
     while (glazy::is_running())
     {
@@ -1145,9 +1032,63 @@ int main(int argc, char* argv[])
                     ImGui::EndCombo();
                 }
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("layers");
-                if (ImGui::Button("fit")) {
-                    viewer_state.camera.fit(seq_renderer->display_width, seq_renderer->display_height);
+
+                ImGui::Separator();
+
+                ImGui::BeginGroup();
+                {
+                    if (ImGui::Button("fit")) {
+                        viewer_state.camera.fit(seq_renderer->display_width, seq_renderer->display_height);
+                    }
+                    if (ImGui::Button("flip y")) {
+                        viewer_state.camera = Camera(
+                            viewer_state.camera.eye * glm::vec3(1, 1, -1),
+                            viewer_state.camera.target * glm::vec3(1, 1, -1),
+                            viewer_state.camera.up * glm::vec3(1, -1, 1),
+                            viewer_state.camera.ortho,
+                            viewer_state.camera.aspect,
+                            viewer_state.camera.fovy,
+                            viewer_state.camera.tiltshift,
+                            viewer_state.camera.near_plane,
+                            viewer_state.camera.far_plane
+                        );
+                    }
+                    //ImGui::MenuItem(ICON_FA_CHESS_BOARD, "", &display_checkerboard);
+                    ImGui::SetNextItemWidth(ImGui::GetFrameHeightWithSpacing());
+                    std::vector<std::string> preview_texts{ ICON_FA_SQUARE_FULL, ICON_FA_CHESS_BOARD ," " };
+                    if (selected_viewport_background == 0) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 0, 0, 1));
+                    }
+                    else {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
+                    }
+                    if (ImGui::BeginCombo("##background", preview_texts[selected_viewport_background].c_str(), ImGuiComboFlags_NoArrowButton))
+                    {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 0, 0, 1));
+                        if (ImGui::Selectable(ICON_FA_SQUARE_FULL, selected_viewport_background == 0)) {
+                            selected_viewport_background = 0;
+                        }
+                        ImGui::PopStyleColor();
+
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1,1,1, 1));
+                        if (ImGui::Selectable(ICON_FA_CHESS_BOARD, selected_viewport_background ==1)) {
+                            selected_viewport_background = 1;
+                        };
+
+                        if (ImGui::Selectable(" ", selected_viewport_background ==2)) {
+                            selected_viewport_background = 2;
+                        };
+                        ImGui::PopStyleColor();
+                        ImGui::EndCombo();
+                    }
+                    ImGui::PopStyleColor();
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("background");
+                    }
                 }
+                ImGui::EndGroup();
+
+                ImGui::Separator();
                 correction_plate->onGui();
 
                 ImGui::EndMenuBar();
@@ -1159,15 +1100,25 @@ int main(int argc, char* argv[])
                 glClear(GL_COLOR_BUFFER_BIT);
                 imdraw::set_projection(viewer_state.camera.getProjection());
                 imdraw::set_view(viewer_state.camera.getView());
-                //glm::mat4 M{ 1 };
-                //M = glm::scale(M, { 1024, 1024, 1 });
+                glm::mat4 M{ 1 };
+                M = glm::scale(M, { seq_renderer->display_width, seq_renderer->display_height, 1 });
+                M = glm::translate(M, { 0.5,0.5, 0 });
                 //seq_renderer.draw();
-                checker_plate->set_projection(viewer_state.camera.getProjection());
-                checker_plate->set_view(viewer_state.camera.getView());
-                checker_plate->draw();
 
-                //polka_plate->set_projection(viewer_state.camera.getProjection());
-                //polka_plate->set_view(viewer_state.camera.getView());
+
+                if (selected_viewport_background == 1)
+                {
+                    checker_plate->set_uniforms({
+                        {"projection", viewer_state.camera.getProjection()},
+                        {"view", viewer_state.camera.getView()},
+                        {"model", M},
+                        {"tile_size", 8}
+                    });
+                    checker_plate->draw();
+                }
+
+                polka_plate->set_projection(viewer_state.camera.getProjection());
+                polka_plate->set_view(viewer_state.camera.getView());
                 //polka_plate->draw();
 
                 correction_plate->draw();

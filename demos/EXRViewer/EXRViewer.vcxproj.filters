@@ -41,6 +41,9 @@
     <ClInclude Include="LayerManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="RenderPlates.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="checker.frag" />

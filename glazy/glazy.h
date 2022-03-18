@@ -358,13 +358,19 @@ namespace glazy {
 	/// changes are kept for mutliple calls. And renew new frame
 	/// </summary>
 	std::map<std::filesystem::path, std::filesystem::file_time_type> mod_times;
-	bool is_file_modified(const std::filesystem::path& path) {
-		if (!mod_times.contains(path)) {
-			mod_times[path] = std::filesystem::last_write_time(path);
-			return true;
+	bool is_file_modified(const std::filesystem::path& path)
+	{
+		
+		if (!mod_times.contains(path)) 
+		{ 
+			mod_times[path] = std::filesystem::last_write_time(path); // add path to watchlists
+			std::cout << "watch: " << path << "\n";
+			return true; // return true at first encounter
 		}
-		if (mod_times[path] != std::filesystem::last_write_time(path)) {
-			return true;
+		if (mod_times[path] != std::filesystem::last_write_time(path))
+		{
+			std::cout << "modified: " << path << "\n";
+			return true; // return true when modification time has changed
 		}
 		return false;
 	}
