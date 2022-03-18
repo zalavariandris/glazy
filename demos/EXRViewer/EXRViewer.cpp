@@ -764,8 +764,6 @@ public:
         ZoneScopedN("recompile display correction shader");
         if (glIsProgram(mProgram)) glDeleteProgram(mProgram);
         mProgram = imdraw::make_program_from_source(PASS_THROUGH_VERTEX_CODE, display_correction_fragment_code);
-
-        
     }
 
     void update()
@@ -913,8 +911,9 @@ std::unique_ptr<LayerManager> layer_manager;
 ImGui::GLViewerState viewer_state;
 
 std::unique_ptr<CorrectionPlate> correction_plate;
-std::unique_ptr<PolkaPlate> polka_plate;
-std::unique_ptr<CheckerPlate> checker_plate;
+std::unique_ptr<RenderPlate> polka_plate;
+std::unique_ptr<RenderPlate> checker_plate;
+std::unique_ptr<RenderPlate> black_plate;
 
 void open(std::filesystem::path filename)
 {
@@ -969,8 +968,9 @@ int main(int argc, char* argv[])
         //sequence = FileSequence("C:/Users/andris/Desktop/52_EXAM_v51-raw/52_01_EXAM_v51.0001.exr" );
     }
     update();
-    polka_plate = std::make_unique<PolkaPlate>(1, 1);
-    checker_plate = std::make_unique<CheckerPlate>();
+    polka_plate = std::make_unique<RenderPlate>("./shaders/PASS_THROUGH_CAMERA.vert", "./shaders/polka.frag");
+    checker_plate = std::make_unique<RenderPlate>("./shaders/checker.vert", "./shaders/checker.frag");
+    black_plate = std::make_unique<RenderPlate>("./shaders/checker.vert", "./shaders/constant.frag");
 
     while (glazy::is_running())
     {
@@ -1114,13 +1114,28 @@ int main(int argc, char* argv[])
                         {"model", M},
                         {"tile_size", 8}
                     });
-                    checker_plate->draw();
+                    checker_plate->render();
                 }
 
-                polka_plate->set_projection(viewer_state.camera.getProjection());
-                polka_plate->set_view(viewer_state.camera.getView());
-                //polka_plate->draw();
+                if (selected_viewport_background == 0)
+                {
+                    black_plate->set_uniforms({
+                        {"projection", viewer_state.camera.getProjection()},
+                        {"view", viewer_state.camera.getView()},
+                        {"model", M},
+                        {"uColor", glm::vec3(0,0,0)}
+                        });
+                    black_plate->render();
+                }
 
+                //polka_plate->set_uniforms({
+                //    {"projection", viewer_state.camera.getProjection()},
+                //    {"view", viewer_state.camera.getView()},
+                //    {"model", glm::mat4(1)},
+                //    {"radius", 0.01f}
+                //});
+                //polka_plate->render();
+                //correction_plate->update();
                 correction_plate->draw();
             }
             ImGui::EndGLViewer();

@@ -40,7 +40,7 @@ void main(){
     vec3 ray_origin = nearPoint;
     vec3 ray_dir = farPoint-nearPoint;
 
-    vec3 col = vec3(1,1,1);
+    vec3 col = vec3(0);
     float alpha = 0.0;
     float t;
     if(ray_ground_intersection(ray_origin, ray_dir, t)){
