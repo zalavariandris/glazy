@@ -38,7 +38,32 @@
 #include <OpenEXR/ImfVersion.h> // get version
 #include <OpenEXR/ImfFrameBuffer.h>
 #include <OpenEXR/ImfHeader.h>
+int pixelTypeSize(Imf::PixelType type)
+{
+    int size;
 
+    switch (type)
+    {
+    case OPENEXR_IMF_INTERNAL_NAMESPACE::UINT:
+
+        size = sizeof(unsigned int);
+        break;
+
+    case OPENEXR_IMF_INTERNAL_NAMESPACE::HALF:
+
+        size = sizeof(half);
+        break;
+
+    case OPENEXR_IMF_INTERNAL_NAMESPACE::FLOAT:
+
+        size = sizeof(float);
+        break;
+
+    default: throw IEX_NAMESPACE::ArgExc("Unknown pixel type.");
+    }
+
+    return size;
+}
 //
 #include "FileSequence.h"
 #include "Layer.h"
@@ -185,97 +210,281 @@ inline std::wstring s2ws(const std::string& s)
 }
 #endif
 
-template<typename Key, typename Value>
-std::vector<Key> extract_keys(std::map<Key, Value> const& input_map) {
-    std::vector<Key> retval;
-    for (auto const& element : input_map) {
-        retval.push_back(element.first);
+class PixelsRenderer
+{
+private:
+
+    GLuint output_tex;
+    // GPU Stream
+    std::vector<GLuint> pbos;
+    std::vector<std::tuple<int, int, int, int>> pbo_data_sizes;
+    bool orphaning{ true };
+
+    GLenum glinternalformat = GL_RGBA16F;
+    GLenum glformat = GL_BGR;
+    GLenum gltype = GL_HALF_FLOAT;
+    
+
+public:
+    void init_pbos(int width, int height, int channels, int n)
+    {
+        ZoneScoped;
+
+        TracyMessage(("set pbo count to: " + std::to_string(n)).c_str(), 9);
+        if (!pbos.empty())
+        {
+            for (auto i = 0; i < pbos.size(); i++) {
+                glDeleteBuffers(1, &pbos[i]);
+            }
+
+        }
+
+        pbos.resize(n);
+        pbo_data_sizes.resize(n);
+
+        for (auto i = 0; i < n; i++)
+        {
+            GLuint pbo;
+            glGenBuffers(1, &pbo);
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
+            glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * channels * sizeof(half), 0, GL_STREAM_DRAW);
+            pbos[i] = pbo;
+            pbo_data_sizes[i] = { 0,0, 0,0 };
+        }
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
     }
-    return retval;
+
+    void init_tex(int width, int height) {
+        // init texture object
+
+        glPrintErrors();
+        glGenTextures(1, &output_tex);
+        glBindTexture(GL_TEXTURE_2D, output_tex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+        glTexStorage2D(GL_TEXTURE_2D, 1, glinternalformat, width, height);
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        std::cout << "init tex errors:" << "\n";
+        glPrintErrors();
+    }
+
+    void stream_data(int x, int y, int data_width, int data_height, int data_channels, GLenum format, GLenum type, void* pixels)
+    {
+        if (pbos.empty())
+        {
+            ZoneScopedN("pixels to texture");
+            // pixels to texture
+            glInvalidateTexImage(output_tex, 1);
+            glBindTexture(GL_TEXTURE_2D, output_tex);
+            //glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, data_width, data_height, glformat, GL_HALF_FLOAT, pixels);
+            glBindTexture(GL_TEXTURE_2D, 0);
+        }
+        else
+        {
+            ZoneScopedN("pixels to texture");
+            static int index{ 0 };
+            static int nextIndex;
+
+            index = (index + 1) % pbos.size();
+            nextIndex = (index + 1) % pbos.size();
+
+            //ImGui::Text("using PBOs, update:%d  display: %d", index, nextIndex);
+
+            // pbo to texture
+            glBindTexture(GL_TEXTURE_2D, output_tex);
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[index]);
+            if (orphaning) glTexSubImage2D(GL_TEXTURE_2D, 0, std::get<0>(pbo_data_sizes[index]), std::get<1>(pbo_data_sizes[index]), std::get<2>(pbo_data_sizes[index]), std::get<3>(pbo_data_sizes[index]), glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
+
+            //glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
+
+            //// pixels to other PBO
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[nextIndex]);
+            pbo_data_sizes[nextIndex] = { 0,0, data_width, data_height };
+            glBufferData(GL_PIXEL_UNPACK_BUFFER, data_width * data_height * data_channels * sizeof(half), 0, GL_STREAM_DRAW);
+            // map the buffer object into client's memory
+            GLubyte* ptr = (GLubyte*)glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
+            if (ptr)
+            {
+                ZoneScopedN("pixels to pbo");
+                // update data directly on the mapped buffer
+                memcpy(ptr, pixels, data_width * data_height * data_channels * sizeof(half));
+                glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
+            }
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+            glBindTexture(GL_TEXTURE_2D, 0);
+        }
+    }
+
+    void render()
+    {
+
+    }
+};
+
+
+//void* alloc_memory(int width, int height, int nchannels, size_t typesize)
+//{
+//    return (void*)malloc((size_t)width * height * nchannels * sizeof(half));
+//}
+//
+//void alloc_pbos(int width, int height, int nchannels, size_t typesize, intN)
+//{
+//
+//}
+//
+//void alloc_tex(int width, int height, GLenum glinternalformat)
+//{
+//
+//}
+
+/// Read pixels to memory
+void exr_to_memory(Imf::InputPart& inputpart, int x, int y, int width, int height, std::vector<std::string> channels, void* memory)
+{
+    ZoneScoped;
+    Imf::FrameBuffer frameBuffer;
+    //size_t chanoffset = 0;
+    unsigned long long xstride = sizeof(half) * channels.size();
+    char* buf = (char*)memory;
+    buf -= (x * xstride + y * width * xstride);
+
+    size_t chanoffset = 0;
+    for (auto name : channels)
+    {
+        size_t chanbytes = sizeof(half);
+        frameBuffer.insert(name,   // name
+            Imf::Slice(Imf::PixelType::HALF, // type
+                buf + chanoffset,           // base
+                xstride,
+                (size_t)width * xstride
+            )
+        );
+        chanoffset += chanbytes;
+    }
+
+    inputpart.setFrameBuffer(frameBuffer);
+    inputpart.readPixels(y, y + height - 1);
+};
+
+static GLenum glformat_from_channels(std::vector<std::string> channels, std::array<GLint, 4>& swizzle_mask) {
+    GLenum glformat;
+    if (channels == std::vector<std::string>({ "B", "G", "R", "A" }))
+    {
+        glformat = GL_BGRA;
+        swizzle_mask = { GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA };
+    }
+    else if (channels == std::vector<std::string>({ "R", "G", "B", "A" }))
+    {
+        glformat = GL_BGRA;
+        swizzle_mask = { GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA };
+    }
+    else if (channels == std::vector<std::string>({ "A", "B", "G", "R" }))
+    {
+        glformat = GL_BGRA;
+        swizzle_mask = { GL_ALPHA, GL_RED, GL_GREEN, GL_BLUE };
+    }
+    else if (channels == std::vector<std::string>({ "B", "G", "R" }))
+    {
+        glformat = GL_BGR;
+        swizzle_mask = { GL_BLUE, GL_GREEN, GL_RED, GL_ONE };
+    }
+    else if (channels.size() == 4)
+    {
+        glformat = GL_BGRA;
+        swizzle_mask = { GL_RED, GL_GREEN, GL_BLUE , GL_ALPHA };
+    }
+    else if (channels.size() == 3)
+    {
+        glformat = GL_RGB;
+        swizzle_mask = { GL_RED , GL_GREEN, GL_BLUE, GL_ONE };
+    }
+    else if (channels.size() == 2) {
+        glformat = GL_RG;
+        swizzle_mask = { GL_RED, GL_GREEN, GL_ZERO, GL_ONE };
+    }
+    else if (channels.size() == 1)
+    {
+        glformat = GL_RED;
+        if (channels[0] == "R") swizzle_mask = { GL_RED, GL_ZERO, GL_ZERO, GL_ONE };
+        else if (channels[0] == "G") swizzle_mask = { GL_ZERO, GL_RED, GL_ZERO, GL_ONE };
+        else if (channels[0] == "B") swizzle_mask = { GL_ZERO, GL_ZERO, GL_RED, GL_ONE };
+        else swizzle_mask = { GL_RED, GL_RED, GL_RED, GL_ONE };
+    }
+    else {
+        throw "cannot match selected channels to glformat";
+    }
+    return glformat;
 }
+
+void memory_to_texture(void* memory, int x, int y, int width, int height, std::vector<std::string> channels, GLenum data_gltype, GLuint output_tex)
+{
+    std::array<GLint, 4> swizzle_mask{ GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA };
+    auto data_glformat = glformat_from_channels(channels, swizzle_mask);
+    glInvalidateTexImage(output_tex, 1);
+    glBindTexture(GL_TEXTURE_2D, output_tex);
+    glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, data_glformat, data_gltype, memory);
+    glBindTexture(GL_TEXTURE_2D, 0);
+};
+
+void pbo_to_tex()
+{
+
+}
+
+
 
 class SequenceRenderer
 {
 public:
     int current_frame{ 0 };
     Imf::MultiPartInputFile* current_file = nullptr;
-    
-    int selected_part_idx{ 0 };
-    std::vector<std::string> selected_channels{ "A", "B", "G", "R" };
 
-    int display_width, display_height;
+    int selected_part_idx{ 0 };
+    Imf::InputPart* current_inputpart = nullptr;
+
+    int data_x, data_y, data_width, data_height; // data window
+    int display_x, display_y, display_width, display_height; // display_window
+
     GLuint output_tex{ 0 };
 
+    /// set channels for display. 
+    /// proces channels arg: keep maximum 4 channels. reorder alpha etc.
+    void set_selected_channels(std::vector<std::string> channels)
+    {
+        mSelectedChannels = get_display_channels(channels);
+    }
+
+    auto selected_channels() {
+        return mSelectedChannels;
+    }
 private:
+    std::vector<std::string> mSelectedChannels{ "A", "B", "G", "R" };
+    ///  Pixels
     Imf::MultiPartInputFile* first_file = nullptr;
     FileSequence sequence;
-    //Imf::Header header;
     void* pixels = NULL;
+
+    // GPU Stream
     std::vector<GLuint> pbos;
     std::vector<std::tuple<int, int, int, int>> pbo_data_sizes;
     bool orphaning{ true };
-    
 
-    //int width, height, nchannels;
-    //std::string infostring;
+    GLenum glinternalformat = GL_RGBA16F; // user selected
+    GLenum glformat = GL_BGR; // from channels
+    GLenum gltype = GL_HALF_FLOAT; // from datatype
 
-    GLenum glinternalformat = GL_RGBA16F;
-    GLenum glformat = GL_BGR;
-    GLenum gltype = GL_HALF_FLOAT;
+    std::unique_ptr<PixelsRenderer> pixels_renderer;
+
 
     /// Match glformat and swizzle to data
     /// this is a very important step. It depends on the framebuffer channel order.
     /// exr order channel names in aplhebetic order. So by default, ABGR is the read order.
     /// upstream this can be changed, therefore we must handle various channel orders eg.: RGBA, BGRA, and alphebetically sorted eg.: ABGR channel orders.
-    static GLenum glformat_from_channels(std::vector<std::string> display_channels, std::array<GLint, 4>& swizzle_mask) {
-        GLenum glformat;
-        if (display_channels == std::vector<std::string>({ "B", "G", "R", "A" }))
-        {
-            glformat = GL_BGRA;
-            swizzle_mask = { GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA };
-        }
-        else if (display_channels == std::vector<std::string>({ "R", "G", "B", "A" }))
-        {
-            glformat = GL_BGRA;
-            swizzle_mask = { GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA };
-        }
-        else if (display_channels == std::vector<std::string>({ "A", "B", "G", "R" }))
-        {
-            glformat = GL_BGRA;
-            swizzle_mask = { GL_ALPHA, GL_RED, GL_GREEN, GL_BLUE };
-        }
-        else if (display_channels == std::vector<std::string>({ "B", "G", "R" }))
-        {
-            glformat = GL_BGR;
-            swizzle_mask = { GL_BLUE, GL_GREEN, GL_RED, GL_ONE };
-        }
-        else if (display_channels.size() == 4)
-        {
-            glformat = GL_BGRA;
-            swizzle_mask = { GL_RED, GL_GREEN, GL_BLUE , GL_ALPHA };
-        }
-        else if (display_channels.size() == 3)
-        {
-            glformat = GL_RGB;
-            swizzle_mask = { GL_RED , GL_GREEN, GL_BLUE, GL_ONE };
-        }
-        else if (display_channels.size() == 2) {
-            glformat = GL_RG;
-            swizzle_mask = { GL_RED, GL_GREEN, GL_ZERO, GL_ONE };
-        }
-        else if (display_channels.size() == 1)
-        {
-            glformat = GL_RED;
-            if (display_channels[0] == "R") swizzle_mask = { GL_RED, GL_ZERO, GL_ZERO, GL_ONE };
-            else if (display_channels[0] == "G") swizzle_mask = { GL_ZERO, GL_RED, GL_ZERO, GL_ONE };
-            else if (display_channels[0] == "B") swizzle_mask = { GL_ZERO, GL_ZERO, GL_RED, GL_ONE };
-            else swizzle_mask = { GL_RED, GL_RED, GL_RED, GL_ONE };
-        }
-        else {
-            throw "cannot match selected channels to glformat";
-        }
-        return glformat;
-    }
+    
 
     static int alpha_index(std::vector<std::string> channels) {
         /// find alpha channel index
@@ -330,6 +539,62 @@ private:
         return reordered_channels;
     };
 
+    void init_pixels(int width, int height, int nchannels, size_t typesize)
+    {
+        Imath::Box2i displayWindow = first_file->header(0).displayWindow();
+        auto display_width = displayWindow.max.x - displayWindow.min.x + 1;
+        auto display_height = displayWindow.max.y - displayWindow.min.y + 1;
+        auto pbo_nchannels = 4;
+        pixels = malloc((size_t)width * height * nchannels * sizeof(half));
+        if (pixels == NULL) {
+            std::cerr << "NULL allocation" << "\n";
+        }
+    }
+
+    void init_pbos(int width, int height, int channels, int n)
+    {
+        ZoneScoped;
+
+        TracyMessage(("set pbo count to: " + std::to_string(n)).c_str(), 9);
+        if (!pbos.empty())
+        {
+            for (auto i = 0; i < pbos.size(); i++) {
+                glDeleteBuffers(1, &pbos[i]);
+            }
+
+        }
+
+        pbos.resize(n);
+        pbo_data_sizes.resize(n);
+
+        for (auto i = 0; i < n; i++)
+        {
+            GLuint pbo;
+            glGenBuffers(1, &pbo);
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
+            glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * channels * sizeof(half), 0, GL_STREAM_DRAW);
+            pbos[i] = pbo;
+            pbo_data_sizes[i] = { 0,0, 0,0 };
+        }
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    }
+
+    void init_tex(int width, int height) {
+        // init texture object
+
+        glPrintErrors();
+        glGenTextures(1, &output_tex);
+        glBindTexture(GL_TEXTURE_2D, output_tex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+        glTexStorage2D(GL_TEXTURE_2D, 1, glinternalformat, width, height);
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        std::cout << "init tex errors:" << "\n";
+        glPrintErrors();
+    }
 public:
 
     SequenceRenderer(const FileSequence& seq)
@@ -338,7 +603,7 @@ public:
 
         sequence = seq;
         current_frame = sequence.first_frame;
-        Imf::setGlobalThreadCount(32);
+        Imf::setGlobalThreadCount(24);
 
         ///
         /// Open file
@@ -349,32 +614,37 @@ public:
 
         // read info to string
         //infostring = get_infostring(*first_file);
-
-        /// read header 
         int parts = first_file->parts();
         bool fileComplete = true;
         for (int i = 0; i < parts && fileComplete; ++i)
             if (!first_file->partComplete(i)) fileComplete = false;
 
-        /// alloc 
-        Imath::Box2i displayWindow = first_file->header(0).displayWindow();
-        auto display_width = displayWindow.max.x - displayWindow.min.x + 1;
-        auto display_height = displayWindow.max.y - displayWindow.min.y + 1;
-        auto pbo_nchannels = 4;
-        pixels = malloc((size_t)display_width * display_height * sizeof(half) * pbo_nchannels);
-        if (pixels == NULL) {
-            std::cerr << "NULL allocation" << "\n";
-        }
+        /// read header 
+        Imath::Box2i display_window = first_file->header(selected_part_idx).displayWindow();
+        display_x = display_window.min.x;
+        display_y = display_window.min.y;
+        display_width = display_window.max.x - display_window.min.x + 1;
+        display_height = display_window.max.y - display_window.min.y + 1;
 
-        // init texture object
-        init_tex();
+        /// alloc space for pixels
+        init_pixels(display_width, display_height, 4, sizeof(half));
 
         // init pixel buffers
-        init_pbos(0);
+        init_pbos(display_width, display_height, 4, 3);
+
+        // init texture object
+        init_tex(display_width, display_height);
     }
-    
-    void onGUI()    
+
+    void onGUI()
     {
+        if (ImGui::CollapsingHeader("performance", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            int thread_count = Imf::globalThreadCount();
+            if (ImGui::InputInt("global thread count", &thread_count)) {
+                Imf::setGlobalThreadCount(thread_count);
+            }
+        }
         if (ImGui::CollapsingHeader("attributes", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::DragInt("current frame", &current_frame);
         }
@@ -393,7 +663,7 @@ public:
             static int npbos = pbos.size();
             if (ImGui::InputInt("pbos", &npbos))
             {
-                init_pbos(npbos);
+                init_pbos(this->display_width, this->display_height, 4, npbos);
             }
 
             ImGui::Checkbox("orphaning", &orphaning);
@@ -408,7 +678,7 @@ public:
                     if (ImGui::Selectable(to_string(glinternalformats[i]).c_str(), is_selected))
                     {
                         glinternalformat = glinternalformats[i];
-                        init_tex();
+                        init_tex(this->display_width, this->display_height);
                     }
                 }
                 ImGui::EndListBox();
@@ -416,117 +686,48 @@ public:
         }
     }
 
-    void init_tex() {
-        // init texture object
-        Imath::Box2i display_window = first_file->header(0).displayWindow();
-        display_width = display_window.max.x - display_window.min.x + 1;
-        display_height = display_window.max.y - display_window.min.y + 1;
-        glPrintErrors();
-        glGenTextures(1, &output_tex);
-        glBindTexture(GL_TEXTURE_2D, output_tex);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-        glTexStorage2D(GL_TEXTURE_2D, 1, glinternalformat, display_width, display_height);
-        glBindTexture(GL_TEXTURE_2D, 0);
-
-        std::cout << "init tex errors:" << "\n";
-        glPrintErrors();
-    }
-
-    void init_pbos(int n)
-    {
-        ZoneScoped;
-
-        Imath::Box2i displayWindow = first_file->header(0).displayWindow();
-        auto display_width = displayWindow.max.x - displayWindow.min.x + 1;
-        auto display_height = displayWindow.max.y - displayWindow.min.y + 1;
-        auto max_nchannels = 4;
-
-        TracyMessage(("set pbo count to: "+std::to_string(n)).c_str(), 9);
-        if (!pbos.empty())
-        {
-            for (auto i = 0; i < pbos.size(); i++) {
-                glDeleteBuffers(1, &pbos[i]);
-            }
-            
-        }
-
-        pbos.resize(n);
-        pbo_data_sizes.resize(n);
-
-        for (auto i=0; i<n;i++)
-        {
-            GLuint pbo;
-            glGenBuffers(1, &pbo);
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
-            glBufferData(GL_PIXEL_UNPACK_BUFFER, display_width * display_height * max_nchannels * sizeof(half), 0, GL_STREAM_DRAW);
-            pbos[i] = pbo;
-            pbo_data_sizes[i] = {0,0, 0,0 };
-        }
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-    }
-
     void update()
     {
         ZoneScoped;
-        if (selected_channels.empty()) return;
-        auto filename = sequence.item(current_frame);
-        if (!std::filesystem::exists(filename)) {
-            std::cerr << "file does not exist: " << filename << "\n";
-            return;
-        }
+        if (mSelectedChannels.empty()) return;
 
-        // open current file
-
-        try
+        /// Open Current InputPart
         {
-            ZoneScopedN("OpenFile");
-            if (current_file != nullptr) delete current_file;
-            current_file = new Imf::MultiPartInputFile(filename.string().c_str());
+            ZoneScopedN("Open Curren InputPart");
+            auto filename = sequence.item(current_frame);
+            //if (!std::filesystem::exists(filename)) {
+            //    std::cerr << "file does not exist: " << filename << "\n";
+            //    return;
+            //}
 
-        }
-        catch (const Iex::InputExc& ex) {
-            std::cerr << "file doesn't appear to really be an EXR file" << "\n";
-            std::cerr << "  " << ex.what() << "\n";
-            return;
-        }
+            try
+            {
+                ZoneScopedN("Open Current File");
+                if (current_file != nullptr) delete current_file;
+                current_file = new Imf::MultiPartInputFile(filename.string().c_str());
 
-        //ImGui::Text("selected part idx: %d", selected_part_idx);
-        Imf::InputPart in(*current_file, selected_part_idx);
-
-
-        /// read pixels to pixels PBO
-        Imath::Box2i dataWindow = in.header().dataWindow();
-        auto data_width = dataWindow.max.x - dataWindow.min.x + 1;
-        auto data_height = dataWindow.max.y - dataWindow.min.y + 1;
-        int dx = dataWindow.min.x;
-        int dy = dataWindow.min.y;
-
-        auto display_channels = get_display_channels(selected_channels);
-        {
-            ZoneScopedN("ReadPixels");
-            Imf::FrameBuffer frameBuffer;
-            //size_t chanoffset = 0;
-            unsigned long long xstride = sizeof(half) * display_channels.size();
-            char* buf = (char*)pixels - (dx * xstride + dy * data_width * xstride);
-
-            for (auto i = 0; i < display_channels.size(); i++) {
-                auto name = display_channels[i];
-                //size_t chanbytes = sizeof(half);
-                frameBuffer.insert(name,   // name
-                    Imf::Slice(Imf::PixelType::HALF, // type
-                        buf + i * sizeof(half),           // base
-                        xstride,
-                        (size_t)data_width * xstride
-                    )
-                );
-                //chanoffset += chanbytes;
+            }
+            catch (const Iex::InputExc& ex) {
+                std::cerr << "file doesn't appear to really be an EXR file" << "\n";
+                std::cerr << "  " << ex.what() << "\n";
+                return;
             }
 
-            in.setFrameBuffer(frameBuffer);
-            in.readPixels(dataWindow.min.y, dataWindow.max.y);
+            {
+                ZoneScopedN("seek part");
+                if (current_inputpart != nullptr) delete current_inputpart;
+                current_inputpart = new Imf::InputPart(*current_file, selected_part_idx);
+            }
+        }
+
+        /// Update datawindow
+        {
+            ZoneScopedN("Update datawindow");
+            Imath::Box2i dataWindow = current_inputpart->header().dataWindow();
+            data_x = dataWindow.min.x;
+            data_y = dataWindow.min.y;
+            data_width = dataWindow.max.x - dataWindow.min.x + 1;
+            data_height = dataWindow.max.y - dataWindow.min.y + 1;
         }
 
         ///
@@ -534,21 +735,26 @@ public:
         /// 
 
         std::array<GLint, 4> swizzle_mask{ GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA };
-        glformat = glformat_from_channels(display_channels, swizzle_mask);
+        glformat = glformat_from_channels(mSelectedChannels, swizzle_mask);
 
-        //ImGui::Text("swizzle mask: %s %s %s %s", to_string(swizzle_mask[0]), to_string(swizzle_mask[1]), to_string(swizzle_mask[2]), to_string(swizzle_mask[3]));
         if (pbos.empty())
         {
+            // Read pixels to memory
+            exr_to_memory(*current_inputpart, data_x, data_y, data_width, data_height, mSelectedChannels, pixels);
+
             ZoneScopedN("pixels to texture");
             // pixels to texture
-            glInvalidateTexImage(output_tex, 1);
-            glBindTexture(GL_TEXTURE_2D, output_tex);
-            glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0,0, data_width, data_height, glformat, GL_HALF_FLOAT, pixels);
-            glBindTexture(GL_TEXTURE_2D, 0);
+            memory_to_texture(pixels, 0, 0, data_width, data_height, mSelectedChannels, GL_HALF_FLOAT, output_tex);
+
+            //glInvalidateTexImage(output_tex, 1);
+            //glBindTexture(GL_TEXTURE_2D, output_tex);
+            //glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
+            //glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, data_width, data_height, glformat, GL_HALF_FLOAT, pixels);
+            //glBindTexture(GL_TEXTURE_2D, 0);
         }
         else
         {
+
             ZoneScopedN("pixels to texture");
             static int index{ 0 };
             static int nextIndex;
@@ -558,39 +764,64 @@ public:
 
             //ImGui::Text("using PBOs, update:%d  display: %d", index, nextIndex);
 
-            // pbo to texture
-            glBindTexture(GL_TEXTURE_2D, output_tex);
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[index]);
-            if(orphaning) glTexSubImage2D(GL_TEXTURE_2D, 0, std::get<0>(pbo_data_sizes[index]), std::get<1>(pbo_data_sizes[index]), std::get<2>(pbo_data_sizes[index]), std::get<3>(pbo_data_sizes[index]), glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
-            // channel swizzle
-            glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
-
-            //// pixels to other PBO
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[nextIndex]);
-            pbo_data_sizes[nextIndex] = {dx, dy, data_width, data_height };
-            glBufferData(GL_PIXEL_UNPACK_BUFFER, data_width * data_height * display_channels.size() * sizeof(half), 0, GL_STREAM_DRAW);
-            // map the buffer object into client's memory
-            GLubyte* ptr = (GLubyte*)glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
-            if (ptr)
+            /// pbo to texture
             {
-                ZoneScopedN("pixels to pbo");
-                // update data directly on the mapped buffer
-                memcpy(ptr, pixels, data_width * data_height * display_channels.size() * sizeof(half));
-                glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
+                glBindTexture(GL_TEXTURE_2D, output_tex);
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[index]);
+                if (orphaning) glTexSubImage2D(GL_TEXTURE_2D, 0, std::get<0>(pbo_data_sizes[index]), std::get<1>(pbo_data_sizes[index]), std::get<2>(pbo_data_sizes[index]), std::get<3>(pbo_data_sizes[index]), glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
+                glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
+                glBindTexture(GL_TEXTURE_2D, 0);
             }
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-            glBindTexture(GL_TEXTURE_2D, 0);
+
+            /// pixels to other PBO
+
+            {
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[index]);
+                pbo_data_sizes[nextIndex] = { data_x, data_y, data_width, data_height };
+                glBufferData(GL_PIXEL_UNPACK_BUFFER, display_width * display_height * mSelectedChannels.size() * sizeof(half), 0, GL_STREAM_DRAW);
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+            }
+
+            /// exr to pbo
+            static bool ReadDirectlyToPBO{ true };
+            //ImGui::Checkbox("ReadDirectlyToPBO", &ReadDirectlyToPBO);
+            if(ReadDirectlyToPBO)
+            {
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[nextIndex]);
+                //pbo_data_sizes[nextIndex] = { data_x, data_y, data_width, data_height };
+                //glBufferData(GL_PIXEL_UNPACK_BUFFER, data_width * data_height * mSelectedChannels.size() * sizeof(half), 0, GL_STREAM_DRAW);
+                GLubyte* ptr = (GLubyte*)glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY); 
+                if (!ptr) std::cerr << "cannot map PBO" << "\n";
+                if (ptr != NULL)
+                {
+                    exr_to_memory(*current_inputpart, data_x, data_y, data_width, data_height, mSelectedChannels, ptr);
+                    glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
+                    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+                }
+            }
+            else {
+                exr_to_memory(*current_inputpart, data_x, data_y, data_width, data_height, mSelectedChannels, pixels);
+
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[nextIndex]);
+                //pbo_data_sizes[nextIndex] = { data_x, data_y, data_width, data_height };
+                //glBufferData(GL_PIXEL_UNPACK_BUFFER, data_width* data_height* mSelectedChannels.size() * sizeof(half), 0, GL_STREAM_DRAW);
+                GLubyte* ptr = (GLubyte*)glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
+                if (!ptr) std::cerr << "cannot map PBO" << "\n";
+                if (ptr != NULL)
+                {
+                    memcpy(ptr, pixels, data_width * data_height * mSelectedChannels.size() * sizeof(half));
+                    glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
+                    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+                }
+            }
+
         }
     }
 
-    void draw()
+    void render()
     {
-        if (selected_channels.empty()) return;
+        if (mSelectedChannels.empty()) return;
         ZoneScoped;
-        //glClearColor(0, 0, 0, 0);
-        //glClear(GL_COLOR_BUFFER_BIT);
-        //imdraw::quad(glazy::checkerboard_tex);
-        //std::cout << "draw from: " << texIds[texCurrentIndex].id << "\n";
         imdraw::quad(output_tex, {0,0},{ display_width, display_height});
     }
 
@@ -601,6 +832,8 @@ public:
         glDeleteTextures(1, &output_tex);
     }
 };
+
+
 
 class CorrectionPlate
 {
@@ -967,7 +1200,6 @@ int main(int argc, char* argv[])
         //sequence = FileSequence("C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr" );
         //sequence = FileSequence("C:/Users/andris/Desktop/52_EXAM_v51-raw/52_01_EXAM_v51.0001.exr" );
     }
-    update();
     polka_plate = std::make_unique<RenderPlate>("./shaders/PASS_THROUGH_CAMERA.vert", "./shaders/polka.frag");
     checker_plate = std::make_unique<RenderPlate>("./shaders/checker.vert", "./shaders/checker.frag");
     black_plate = std::make_unique<RenderPlate>("./shaders/checker.vert", "./shaders/constant.frag");
@@ -981,7 +1213,6 @@ int main(int argc, char* argv[])
             if (F > last_frame) F = first_frame;
             seq_renderer->current_frame = F;
 
-            update();
 
         }
 
@@ -1025,7 +1256,7 @@ int main(int argc, char* argv[])
                         if (ImGui::Selectable(layer_names.at(i).c_str(), is_selected, ImGuiSelectableFlags_SpanAllColumns)) {
                             layer_manager->set_current(i);
                             seq_renderer->selected_part_idx = layer_manager->current_part_idx();
-                            seq_renderer->selected_channels = layer_manager->current_channel_ids();
+                            seq_renderer->set_selected_channels(layer_manager->current_channel_ids() );
                         }
                         ImGui::PopID();
                     }
@@ -1101,8 +1332,8 @@ int main(int argc, char* argv[])
                 imdraw::set_projection(viewer_state.camera.getProjection());
                 imdraw::set_view(viewer_state.camera.getView());
                 glm::mat4 M{ 1 };
-                M = glm::scale(M, { seq_renderer->display_width, seq_renderer->display_height, 1 });
-                M = glm::translate(M, { 0.5,0.5, 0 });
+                M = glm::scale(M, { seq_renderer->display_width/2, seq_renderer->display_height/2, 1 });
+                M = glm::translate(M, { 1,1, 0 });
                 //seq_renderer.draw();
 
 
@@ -1177,16 +1408,17 @@ int main(int argc, char* argv[])
                                 ImGui::TableSetupColumn("sampling");
                                 ImGui::TableSetupColumn("linear");
                                 ImGui::TableHeadersRow();
+                                auto channels = seq_renderer->selected_channels();
                                 for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
                                 {
                                     //ImGui::TableNextRow();
                                     ImGui::TableNextColumn();
-                                    bool is_selected = (seq_renderer->selected_part_idx == p) && std::find(seq_renderer->selected_channels.begin(), seq_renderer->selected_channels.end(), std::string(i.name())) != seq_renderer->selected_channels.end();
+                                    bool is_selected = (seq_renderer->selected_part_idx == p) && std::find(channels.begin(), channels.end(), std::string(i.name())) != channels.end();
                                     if (ImGui::Selectable(i.name(), is_selected, ImGuiSelectableFlags_SpanAllColumns))
                                     {
                                         seq_renderer->selected_part_idx = p;
                                         auto channel_name = std::string(i.name());
-                                        seq_renderer->selected_channels = { channel_name };
+                                        seq_renderer->set_selected_channels( { channel_name } );
                                     }
 
                                     ImGui::TableNextColumn();
@@ -1223,12 +1455,11 @@ int main(int argc, char* argv[])
             {
                 if (ImGui::Frameslider("timeslider", &is_playing, &F, first_frame, last_frame)) {
                     seq_renderer->current_frame = F;
-                    update();
                 }
             }
             ImGui::End();
         }
-
+        update();
         glazy::end_frame();
         FrameMark;
     }
