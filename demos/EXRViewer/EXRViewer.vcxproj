@@ -174,7 +174,8 @@
     <ClInclude Include="helpers.h" />
     <ClInclude Include="Layer.h" />
     <ClInclude Include="LayerManager.h" />
-    <ClInclude Include="RenderPlates.h" />
+    <ClInclude Include="RenderPlates\CorrectionPlate.h" />
+    <ClInclude Include="RenderPlates\RenderPlate.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="checker.frag" />

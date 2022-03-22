@@ -41,7 +41,10 @@
     <ClInclude Include="LayerManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="RenderPlates.h">
+    <ClInclude Include="RenderPlates\RenderPlate.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="RenderPlates\CorrectionPlate.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

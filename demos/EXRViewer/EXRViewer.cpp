@@ -38,6 +38,7 @@
 #include <OpenEXR/ImfVersion.h> // get version
 #include <OpenEXR/ImfFrameBuffer.h>
 #include <OpenEXR/ImfHeader.h>
+
 int pixelTypeSize(Imf::PixelType type)
 {
     int size;
@@ -70,7 +71,7 @@ int pixelTypeSize(Imf::PixelType type)
 #include "LayerManager.h"
 #include "helpers.h"
 
-#include "RenderPlates.h"
+#include "RenderPlates/RenderPlate.h"
 
 const char* PASS_CAMERA_VERTEX_CODE = R"(
     #version 330 core
@@ -192,154 +193,99 @@ namespace ImGui
         if ((flags & ImGuiComboFlags_NoArrowButton) == 0) min_width += ImGui::GetTextLineHeight() + ImGui::GetStyle().FramePadding.y * 2;
         return min_width;
     }
-}
 
-#if defined(_WIN32) || defined(__WIN32__) || defined(WIN32)
-inline std::wstring s2ws(const std::string& s)
-{
-    int len;
-    int slength = (int)s.length() + 1;
-
-    len = MultiByteToWideChar(CP_ACP, 0, s.c_str(), slength, 0, 0);
-    wchar_t* buf = new wchar_t[len];
-    MultiByteToWideChar(CP_ACP, 0, s.c_str(), slength, buf, len);
-    std::wstring r(buf);
-    delete[] buf;
-
-    return r;
-}
-#endif
-
-class PixelsRenderer
-{
-private:
-
-    GLuint output_tex;
-    // GPU Stream
-    std::vector<GLuint> pbos;
-    std::vector<std::tuple<int, int, int, int>> pbo_data_sizes;
-    bool orphaning{ true };
-
-    GLenum glinternalformat = GL_RGBA16F;
-    GLenum glformat = GL_BGR;
-    GLenum gltype = GL_HALF_FLOAT;
-    
-
-public:
-    void init_pbos(int width, int height, int channels, int n)
+    bool CameraControl(Camera* camera, ImVec2 item_size)
     {
-        ZoneScoped;
-
-        TracyMessage(("set pbo count to: " + std::to_string(n)).c_str(), 9);
-        if (!pbos.empty())
-        {
-            for (auto i = 0; i < pbos.size(); i++) {
-                glDeleteBuffers(1, &pbos[i]);
-            }
-
-        }
-
-        pbos.resize(n);
-        pbo_data_sizes.resize(n);
-
-        for (auto i = 0; i < n; i++)
-        {
-            GLuint pbo;
-            glGenBuffers(1, &pbo);
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
-            glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * channels * sizeof(half), 0, GL_STREAM_DRAW);
-            pbos[i] = pbo;
-            pbo_data_sizes[i] = { 0,0, 0,0 };
-        }
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-    }
-
-    void init_tex(int width, int height) {
-        // init texture object
-
-        glPrintErrors();
-        glGenTextures(1, &output_tex);
-        glBindTexture(GL_TEXTURE_2D, output_tex);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-        glTexStorage2D(GL_TEXTURE_2D, 1, glinternalformat, width, height);
-        glBindTexture(GL_TEXTURE_2D, 0);
-
-        std::cout << "init tex errors:" << "\n";
-        glPrintErrors();
-    }
-
-    void stream_data(int x, int y, int data_width, int data_height, int data_channels, GLenum format, GLenum type, void* pixels)
-    {
-        if (pbos.empty())
-        {
-            ZoneScopedN("pixels to texture");
-            // pixels to texture
-            glInvalidateTexImage(output_tex, 1);
-            glBindTexture(GL_TEXTURE_2D, output_tex);
-            //glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, data_width, data_height, glformat, GL_HALF_FLOAT, pixels);
-            glBindTexture(GL_TEXTURE_2D, 0);
-        }
-        else
-        {
-            ZoneScopedN("pixels to texture");
-            static int index{ 0 };
-            static int nextIndex;
-
-            index = (index + 1) % pbos.size();
-            nextIndex = (index + 1) % pbos.size();
-
-            //ImGui::Text("using PBOs, update:%d  display: %d", index, nextIndex);
-
-            // pbo to texture
-            glBindTexture(GL_TEXTURE_2D, output_tex);
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[index]);
-            if (orphaning) glTexSubImage2D(GL_TEXTURE_2D, 0, std::get<0>(pbo_data_sizes[index]), std::get<1>(pbo_data_sizes[index]), std::get<2>(pbo_data_sizes[index]), std::get<3>(pbo_data_sizes[index]), glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
-
-            //glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
-
-            //// pixels to other PBO
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[nextIndex]);
-            pbo_data_sizes[nextIndex] = { 0,0, data_width, data_height };
-            glBufferData(GL_PIXEL_UNPACK_BUFFER, data_width * data_height * data_channels * sizeof(half), 0, GL_STREAM_DRAW);
-            // map the buffer object into client's memory
-            GLubyte* ptr = (GLubyte*)glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
-            if (ptr)
+        // Control Camera
+        bool changed{ false };
+        ImGui::InvisibleButton("##camera control", item_size);
+        if (ImGui::IsItemActive()) {
+            if (ImGui::IsMouseDragging(0) && (ImGui::GetIO().KeyMods == (ImGuiKeyModFlags_Ctrl | ImGuiKeyModFlags_Alt)))
             {
-                ZoneScopedN("pixels to pbo");
-                // update data directly on the mapped buffer
-                memcpy(ptr, pixels, data_width * data_height * data_channels * sizeof(half));
-                glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
+                camera->orbit(-ImGui::GetIO().MouseDelta.x * 0.006, -ImGui::GetIO().MouseDelta.y * 0.006);
+                changed = true;
             }
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-            glBindTexture(GL_TEXTURE_2D, 0);
+            else if (ImGui::IsMouseDragging(0))// && !ImGui::GetIO().KeyMods)
+            {
+                camera->pan(-ImGui::GetIO().MouseDelta.x / item_size.x, -ImGui::GetIO().MouseDelta.y / item_size.y);
+                changed = true;
+            }
         }
+
+        if (ImGui::IsItemHovered()) {
+            if (ImGui::GetIO().MouseWheel != 0 && !ImGui::GetIO().KeyMods) {
+                const auto target_distance = camera->get_target_distance();
+                camera->dolly(-ImGui::GetIO().MouseWheel * target_distance * 0.2);
+                changed = true;
+            }
+        }
+        return true;
     }
 
-    void render()
+    struct GLViewerState {
+        GLuint viewport_fbo;
+        GLuint viewport_color_attachment;
+        Camera camera{ { 0,0,5000 }, { 0,0,0 }, { 0,1,0 } };
+    };
+
+    void BeginGLViewer(GLuint* fbo, GLuint* color_attachment, Camera* camera, const ImVec2& size_arg = ImVec2(0, 0))
     {
+        ImGui::BeginGroup();
 
+        // get item rect
+        auto item_pos = ImGui::GetCursorPos(); // if child window has no border this is: 0,0
+        auto item_size = CalcItemSize(size_arg, 540, 360);
+
+        // add camera control widget
+        ImGui::CameraControl(camera, { item_size });
+
+        // add image widget with tecture
+        ImGui::SetCursorPos(item_pos);
+        ImGui::SetItemAllowOverlap();
+        ImGui::Image((ImTextureID)*color_attachment, item_size, ImVec2(0, 1), ImVec2(1, 0));
+
+        // draw border
+        auto draw_list = ImGui::GetWindowDrawList();
+        draw_list->AddRect(ImGui::GetWindowPos() + item_pos, ImGui::GetWindowPos() + item_pos + item_size, ImColor(ImGui::GetStyle().Colors[ImGuiCol_Border]), ImGui::GetStyle().FrameRounding);
+
+        // Resize texture to viewport size
+        int tex_width, tex_height;
+        { // get current texture size
+            ZoneScopedN("get viewer texture size");
+            GLint current_tex;
+            glGetIntegerv(GL_TEXTURE_BINDING_2D, &current_tex); // TODO: getting fbo is fairly harmful to performance.
+            glBindTexture(GL_TEXTURE_2D, *color_attachment);
+
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &tex_width);
+            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &tex_height);
+            glBindTexture(GL_TEXTURE_2D, current_tex);
+        }
+
+        if (tex_width != item_size.x || tex_height != item_size.y)
+        { // update fbo size if necessary
+            ZoneScopedN("resize viewport fbo");
+            //std::cout << "update viewport fbo: " << item_size.x << ", " << item_size.y << "\n";
+            if (glIsFramebuffer(*fbo))
+                glDeleteFramebuffers(1, fbo);
+            if (glIsTexture(*color_attachment))
+                glDeleteTextures(1, color_attachment);
+            *color_attachment = imdraw::make_texture_float(item_size.x, item_size.y, NULL, GL_RGBA);
+            *fbo = imdraw::make_fbo(*color_attachment);
+
+            camera->aspect = (float)item_size.x / item_size.y;
+        }
+
+        // begin rendering to texture
+        BeginRenderToTexture(*fbo, 0, 0, item_size.x, item_size.y);
     }
-};
+
+    void EndGLViewer() {
+        EndRenderToTexture();
+        ImGui::EndGroup();
+    }
+}
 
 
-//void* alloc_memory(int width, int height, int nchannels, size_t typesize)
-//{
-//    return (void*)malloc((size_t)width * height * nchannels * sizeof(half));
-//}
-//
-//void alloc_pbos(int width, int height, int nchannels, size_t typesize, intN)
-//{
-//
-//}
-//
-//void alloc_tex(int width, int height, GLenum glinternalformat)
-//{
-//
-//}
 
 /// Read pixels to memory
 void exr_to_memory(Imf::InputPart& inputpart, int x, int y, int width, int height, std::vector<std::string> channels, void* memory)
@@ -435,8 +381,6 @@ void pbo_to_tex()
 
 }
 
-
-
 class SequenceRenderer
 {
 public:
@@ -449,7 +393,10 @@ public:
     int data_x, data_y, data_width, data_height; // data window
     int display_x, display_y, display_width, display_height; // display_window
 
-    GLuint output_tex{ 0 };
+    
+    GLuint output_tex{ 0 }; // datatexture
+    GLuint fbo{0};
+    GLuint color_attachment{0};
 
     /// set channels for display. 
     /// proces channels arg: keep maximum 4 channels. reorder alpha etc.
@@ -477,14 +424,11 @@ private:
     GLenum glformat = GL_BGR; // from channels
     GLenum gltype = GL_HALF_FLOAT; // from datatype
 
-    std::unique_ptr<PixelsRenderer> pixels_renderer;
-
-
     /// Match glformat and swizzle to data
     /// this is a very important step. It depends on the framebuffer channel order.
     /// exr order channel names in aplhebetic order. So by default, ABGR is the read order.
     /// upstream this can be changed, therefore we must handle various channel orders eg.: RGBA, BGRA, and alphebetically sorted eg.: ABGR channel orders.
-    
+
 
     static int alpha_index(std::vector<std::string> channels) {
         /// find alpha channel index
@@ -595,6 +539,13 @@ private:
         std::cout << "init tex errors:" << "\n";
         glPrintErrors();
     }
+
+    void init_fbo(int width, int height)
+    {
+        color_attachment = imdraw::make_texture_float(width, height, 0, glinternalformat, glformat, gltype);
+        fbo = imdraw::make_fbo(color_attachment);
+    }
+
 public:
 
     SequenceRenderer(const FileSequence& seq)
@@ -634,6 +585,9 @@ public:
 
         // init texture object
         init_tex(display_width, display_height);
+
+        //
+        init_fbo(display_width, display_height);
     }
 
     void onGUI()
@@ -768,9 +722,19 @@ public:
             {
                 glBindTexture(GL_TEXTURE_2D, output_tex);
                 glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[index]);
-                if (orphaning) glTexSubImage2D(GL_TEXTURE_2D, 0, std::get<0>(pbo_data_sizes[index]), std::get<1>(pbo_data_sizes[index]), std::get<2>(pbo_data_sizes[index]), std::get<3>(pbo_data_sizes[index]), glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0,0, std::get<2>(pbo_data_sizes[index]), std::get<3>(pbo_data_sizes[index]), glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
                 glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
                 glBindTexture(GL_TEXTURE_2D, 0);
+            }
+
+            /// texture with image to FBO
+            {
+                BeginRenderToTexture(fbo, 0, 0, display_width, display_height);
+                glClearColor(1, 0, 0, 1);
+                glClear(GL_COLOR_BUFFER_BIT);
+                auto [x, y, w, h] = pbo_data_sizes[index];
+                imdraw::quad(output_tex, {x,y},{x+display_width,y+display_height});
+                EndRenderToTexture();
             }
 
             /// pixels to other PBO
@@ -838,6 +802,7 @@ public:
 class CorrectionPlate
 {
 private:
+    bool autoreload{ true };
     GLuint mInputtex;
     GLuint fbo;
     GLuint color_attachment;
@@ -848,7 +813,10 @@ private:
     int selected_device{ 1 };
     float gain{ 0 };
     float gamma{ 1.0 };
+
+
 public:
+    /// FBO size, and input texture id
     CorrectionPlate(int width, int height, GLuint inputtex)
     {
         mInputtex = inputtex;
@@ -856,6 +824,11 @@ public:
         compile_program();
     }
 
+    void set_uniforms(std::map<std::string, imdraw::UniformVariant> uniforms) {
+        imdraw::set_uniforms(mProgram, uniforms);
+    }
+
+    /// resize FBO
     void resize(int width, int height)
     {
         ZoneScopedN("update correction fbo");
@@ -863,6 +836,7 @@ public:
             glDeleteFramebuffers(1, &fbo);
         if (glIsTexture(color_attachment))
             glDeleteTextures(1, &color_attachment);
+
         color_attachment = imdraw::make_texture_float(width, height, NULL, GL_RGBA);
         fbo = imdraw::make_fbo(color_attachment);
 
@@ -999,6 +973,7 @@ public:
         mProgram = imdraw::make_program_from_source(PASS_THROUGH_VERTEX_CODE, display_correction_fragment_code);
     }
 
+
     void update()
     {
         // update result texture
@@ -1012,7 +987,7 @@ public:
         static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
         static auto vao = imdraw::make_vao(mProgram, { {"aPos", {vbo, 3}} });
 
-        imdraw::set_uniforms(mProgram, {
+        set_uniforms({
             {"inputTexture", 0},
             {"resolution", glm::vec2(mWidth, mHeight)},
             {"gain_correction", gain},
@@ -1028,7 +1003,7 @@ public:
         EndRenderToTexture();
     }
 
-    void draw()
+    void render()
     {
         // draw result texture
         imdraw::quad(color_attachment, { 0,0 }, { mWidth, mHeight });
@@ -1036,97 +1011,7 @@ public:
 };
 
 
-namespace ImGui {
-    bool CameraControl(Camera* camera, ImVec2 item_size)
-    {
-        // Control Camera
-        bool changed{ false };
-        ImGui::InvisibleButton("##camera control", item_size);
-        if (ImGui::IsItemActive()) {
-            if (ImGui::IsMouseDragging(0) && (ImGui::GetIO().KeyMods == (ImGuiKeyModFlags_Ctrl | ImGuiKeyModFlags_Alt)))
-            {
-                camera->orbit(-ImGui::GetIO().MouseDelta.x * 0.006, -ImGui::GetIO().MouseDelta.y * 0.006);
-                changed = true;
-            }
-            else if (ImGui::IsMouseDragging(0))// && !ImGui::GetIO().KeyMods)
-            {
-                camera->pan(-ImGui::GetIO().MouseDelta.x / item_size.x, -ImGui::GetIO().MouseDelta.y / item_size.y);
-                changed = true;
-            }
-        }
 
-        if (ImGui::IsItemHovered()) {
-            if (ImGui::GetIO().MouseWheel != 0 && !ImGui::GetIO().KeyMods) {
-                const auto target_distance = camera->get_target_distance();
-                camera->dolly(-ImGui::GetIO().MouseWheel * target_distance * 0.2);
-                changed = true;
-            }
-        }
-        return true;
-    }
-
-    struct GLViewerState {
-        GLuint viewport_fbo;
-        GLuint viewport_color_attachment;
-        Camera camera{ { 0,0,5000 }, { 0,0,0 }, { 0,1,0 } };
-    };
-
-    void BeginGLViewer(GLuint* fbo, GLuint *color_attachment, Camera*camera, const ImVec2& size_arg=ImVec2(0,0))
-    {
-        ImGui::BeginGroup();
-        
-        // get item rect
-        auto item_pos = ImGui::GetCursorPos(); // if child window has no border this is: 0,0
-        auto item_size = CalcItemSize(size_arg, 540, 360);
-
-        // add camera control widget
-        ImGui::CameraControl(camera, { item_size });
-
-        // add image widget with tecture
-        ImGui::SetCursorPos(item_pos);
-        ImGui::SetItemAllowOverlap();
-        ImGui::Image((ImTextureID)*color_attachment, item_size, ImVec2(0, 1), ImVec2(1, 0));
-
-        // draw border
-        auto draw_list = ImGui::GetWindowDrawList();
-        draw_list->AddRect(ImGui::GetWindowPos() + item_pos, ImGui::GetWindowPos() + item_pos + item_size,ImColor(ImGui::GetStyle().Colors[ImGuiCol_Border]), ImGui::GetStyle().FrameRounding);
-
-        // Resize texture to viewport size
-        int tex_width, tex_height;
-        { // get current texture size
-            ZoneScopedN("get viewer texture size");
-            GLint current_tex;
-            glGetIntegerv(GL_TEXTURE_BINDING_2D, &current_tex); // TODO: getting fbo is fairly harmful to performance.
-            glBindTexture(GL_TEXTURE_2D, *color_attachment);
-
-            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &tex_width);
-            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &tex_height);
-            glBindTexture(GL_TEXTURE_2D, current_tex);
-        }
-
-        if (tex_width != item_size.x || tex_height != item_size.y)
-        { // update fbo size if necessary
-            ZoneScopedN("resize viewport fbo");
-            //std::cout << "update viewport fbo: " << item_size.x << ", " << item_size.y << "\n";
-            if (glIsFramebuffer(*fbo))
-                glDeleteFramebuffers(1, fbo);
-            if (glIsTexture(*color_attachment))
-                glDeleteTextures(1, color_attachment);
-            *color_attachment = imdraw::make_texture_float(item_size.x, item_size.y, NULL, GL_RGBA);
-            *fbo = imdraw::make_fbo(*color_attachment);
-
-            camera->aspect = (float)item_size.x / item_size.y;
-        }
-
-        // begin rendering to texture
-        BeginRenderToTexture(*fbo, 0, 0, item_size.x, item_size.y);
-    }
-
-    void EndGLViewer() {
-        EndRenderToTexture();
-        ImGui::EndGroup();
-    }
-}
 
 bool run_tests()
 {
@@ -1176,7 +1061,8 @@ void drop_callback(GLFWwindow* window, int argc, const char** argv)
 void update() {
     seq_renderer->update();
     //seq_renderer.draw();
-    correction_plate->set_input_tex(seq_renderer->output_tex);
+    //correction_plate->set_input_tex(seq_renderer->output_tex);
+    correction_plate->set_input_tex(seq_renderer->color_attachment);
     correction_plate->update();
 }
 
@@ -1367,7 +1253,7 @@ int main(int argc, char* argv[])
                 //});
                 //polka_plate->render();
                 //correction_plate->update();
-                correction_plate->draw();
+                correction_plate->render();
             }
             ImGui::EndGLViewer();
         }
