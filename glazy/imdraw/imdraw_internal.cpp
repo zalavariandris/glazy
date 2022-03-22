@@ -361,11 +361,23 @@ void imdraw::set_uniforms(GLuint program, std::map<GLint, UniformVariant> unifor
 		else if (auto value = std::get_if<glm::vec3>(&data)) {
 			glUniform3f(location, value->x, value->y, value->z);
 		}
+		else if (auto value = std::get_if<glm::vec4>(&data)) {
+			glUniform4f(location, value->x, value->y, value->z, value->w);
+		}
+		else if (auto value = std::get_if<glm::ivec2>(&data)) {
+			glUniform2i(location, value->x, value->y);
+		}
+		else if (auto value = std::get_if<glm::ivec3>(&data)) {
+			glUniform3i(location, value->x, value->y, value->z);
+		}
+		else if (auto value = std::get_if<glm::ivec4>(&data)) {
+			glUniform4i(location, value->x, value->y, value->z, value->w);
+		}
 		else if (auto value = std::get_if<glm::mat4>(&data)) {
 			glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(*value));
 		}
 		else {
-			//std::cout << "WARNING:GLAZY: '" << location << "' type is not handled" << std::endl;
+			std::cout << "WARNING:GLAZY: '" << location << "' type is not handled" << std::endl;
 		}
 	}
 	pop_program();
@@ -393,20 +405,30 @@ void imdraw::set_uniforms(GLuint program, std::map<std::string, UniformVariant> 
 		else if (auto value = std::get_if<GLuint>(&data)) {
 			glUniform1i(location, *value);
 		}
+		else if (auto value = std::get_if<glm::vec2>(&data)) {
+			//std::cout << "set uniform at " << location << ": " << value->x << "," << value->y << "\n";
+			glUniform2f(location, value->x, value->y);
+		}
 		else if (auto value = std::get_if<glm::vec3>(&data)) {
 			glUniform3f(location, value->x, value->y, value->z);
 		}
-		else if (auto value = std::get_if<glm::vec2>(&data)) {
-			glUniform2f(location, value->x, value->y);
+		else if (auto value = std::get_if<glm::vec4>(&data)) {
+			glUniform4f(location, value->x, value->y, value->z, value->w);
 		}
 		else if (auto value = std::get_if<glm::ivec2>(&data)) {
 			glUniform2i(location, value->x, value->y);
+		}
+		else if (auto value = std::get_if<glm::ivec3>(&data)) {
+			glUniform3i(location, value->x, value->y, value->z);
+		}
+		else if (auto value = std::get_if<glm::ivec4>(&data)) {
+			glUniform4i(location, value->x, value->y, value->z, value->w);
 		}
 		else if (auto value = std::get_if<glm::mat4>(&data)) {
 			glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(*value));
 		}
 		else {
-			std::cout << "WARNING:GLAZY: '" << name << "' type is not handled" << std::endl;
+			std::cout << "WARNING:GLAZY: '" << location << "' type is not handled" << std::endl;
 		}
 	}
 	pop_program();

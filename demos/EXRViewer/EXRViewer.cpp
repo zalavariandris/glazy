@@ -39,80 +39,16 @@
 #include <OpenEXR/ImfFrameBuffer.h>
 #include <OpenEXR/ImfHeader.h>
 
-int pixelTypeSize(Imf::PixelType type)
-{
-    int size;
 
-    switch (type)
-    {
-    case OPENEXR_IMF_INTERNAL_NAMESPACE::UINT:
-
-        size = sizeof(unsigned int);
-        break;
-
-    case OPENEXR_IMF_INTERNAL_NAMESPACE::HALF:
-
-        size = sizeof(half);
-        break;
-
-    case OPENEXR_IMF_INTERNAL_NAMESPACE::FLOAT:
-
-        size = sizeof(float);
-        break;
-
-    default: throw IEX_NAMESPACE::ArgExc("Unknown pixel type.");
-    }
-
-    return size;
-}
 //
 #include "FileSequence.h"
 #include "Layer.h"
 #include "LayerManager.h"
 #include "helpers.h"
 
-#include "RenderPlates/RenderPlate.h"
-
-const char* PASS_CAMERA_VERTEX_CODE = R"(
-    #version 330 core
-    layout (location = 0) in vec3 aPos;
-
-    uniform mat4 projection;
-    uniform mat4 view;
-    uniform mat4 model;
-
-    out vec3 nearPoint;
-    out vec3 farPoint;
-
-    uniform bool use_geometry;
-
-    vec3 UnprojectPoint(float x, float y, float z, mat4 view, mat4 projection) {
-        mat4 viewInv = inverse(view);
-        mat4 projInv = inverse(projection);
-        vec4 unprojectedPoint =  viewInv * projInv * vec4(x, y, z, 1.0);
-        return unprojectedPoint.xyz / unprojectedPoint.w;
-    }
-				
-    void main()
-    {
-        nearPoint = UnprojectPoint(aPos.x, aPos.y, 0.0, view, projection).xyz;
-        farPoint = UnprojectPoint(aPos.x, aPos.y, 1.0, view, projection).xyz;
-        gl_Position = use_geometry ? (projection * view * model * vec4(aPos, 1.0)) : vec4(aPos, 1.0);
-    }
-)";
-
-const char* PASS_THROUGH_VERTEX_CODE = R"(
-                    #version 330 core
-                    layout (location = 0) in vec3 aPos;
-                    void main()
-                    {
-                        gl_Position = vec4(aPos, 1.0);
-                    }
-                    )";
-
 namespace ImGui
 {
-    bool Frameslider(const char* label, bool *is_playing, int* v, int v_min, int v_max, const char* format = "%d", ImGuiSliderFlags flags = 0)
+    bool Frameslider(const char* label, bool* is_playing, int* v, int v_min, int v_max, const char* format = "%d", ImGuiSliderFlags flags = 0)
     {
         bool changed = false;
         ImGui::BeginGroup();
@@ -277,6 +213,9 @@ namespace ImGui
 
         // begin rendering to texture
         BeginRenderToTexture(*fbo, 0, 0, item_size.x, item_size.y);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
     }
 
     void EndGLViewer() {
@@ -286,36 +225,11 @@ namespace ImGui
 }
 
 
+#include "RenderPlates/RenderPlate.h"
+#include "RenderPlates/CorrectionPlate.h"
 
-/// Read pixels to memory
-void exr_to_memory(Imf::InputPart& inputpart, int x, int y, int width, int height, std::vector<std::string> channels, void* memory)
-{
-    ZoneScoped;
-    Imf::FrameBuffer frameBuffer;
-    //size_t chanoffset = 0;
-    unsigned long long xstride = sizeof(half) * channels.size();
-    char* buf = (char*)memory;
-    buf -= (x * xstride + y * width * xstride);
 
-    size_t chanoffset = 0;
-    for (auto name : channels)
-    {
-        size_t chanbytes = sizeof(half);
-        frameBuffer.insert(name,   // name
-            Imf::Slice(Imf::PixelType::HALF, // type
-                buf + chanoffset,           // base
-                xstride,
-                (size_t)width * xstride
-            )
-        );
-        chanoffset += chanbytes;
-    }
-
-    inputpart.setFrameBuffer(frameBuffer);
-    inputpart.readPixels(y, y + height - 1);
-};
-
-static GLenum glformat_from_channels(std::vector<std::string> channels, std::array<GLint, 4>& swizzle_mask) {
+GLenum glformat_from_channels(std::vector<std::string> channels, std::array<GLint, 4>& swizzle_mask) {
     GLenum glformat;
     if (channels == std::vector<std::string>({ "B", "G", "R", "A" }))
     {
@@ -365,6 +279,34 @@ static GLenum glformat_from_channels(std::vector<std::string> channels, std::arr
     return glformat;
 }
 
+/// Read pixels to memory
+void exr_to_memory(Imf::InputPart& inputpart, int x, int y, int width, int height, std::vector<std::string> channels, void* memory)
+{
+    ZoneScoped;
+    Imf::FrameBuffer frameBuffer;
+    //size_t chanoffset = 0;
+    unsigned long long xstride = sizeof(half) * channels.size();
+    char* buf = (char*)memory;
+    buf -= (x * xstride + y * width * xstride);
+
+    size_t chanoffset = 0;
+    for (auto name : channels)
+    {
+        size_t chanbytes = sizeof(half);
+        frameBuffer.insert(name,   // name
+            Imf::Slice(Imf::PixelType::HALF, // type
+                buf + chanoffset,           // base
+                xstride,
+                (size_t)width * xstride
+            )
+        );
+        chanoffset += chanbytes;
+    }
+
+    inputpart.setFrameBuffer(frameBuffer);
+    inputpart.readPixels(y, y + height - 1);
+};
+
 void memory_to_texture(void* memory, int x, int y, int width, int height, std::vector<std::string> channels, GLenum data_gltype, GLuint output_tex)
 {
     std::array<GLint, 4> swizzle_mask{ GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA };
@@ -381,6 +323,7 @@ void pbo_to_tex()
 
 }
 
+
 class SequenceRenderer
 {
 public:
@@ -394,9 +337,12 @@ public:
     int display_x, display_y, display_width, display_height; // display_window
 
     
-    GLuint output_tex{ 0 }; // datatexture
+    GLuint data_tex{ 0 }; // datatexture
     GLuint fbo{0};
     GLuint color_attachment{0};
+    std::filesystem::path mVertexPath;
+    std::filesystem::path mFragmentPath;
+    GLuint mProgram;
 
     /// set channels for display. 
     /// proces channels arg: keep maximum 4 channels. reorder alpha etc.
@@ -527,12 +473,14 @@ private:
         // init texture object
 
         glPrintErrors();
-        glGenTextures(1, &output_tex);
-        glBindTexture(GL_TEXTURE_2D, output_tex);
+        glGenTextures(1, &data_tex);
+        glBindTexture(GL_TEXTURE_2D, data_tex);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexStorage2D(GL_TEXTURE_2D, 1, glinternalformat, width, height);
         glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -544,6 +492,49 @@ private:
     {
         color_attachment = imdraw::make_texture_float(width, height, 0, glinternalformat, glformat, gltype);
         fbo = imdraw::make_fbo(color_attachment);
+    }
+
+    void init_program() {
+        ZoneScoped;
+        std::cout << "recompile checker shader" << "\n";
+
+        // reload shader code
+        auto vertex_code = R"(
+            #version 330 core
+            layout (location = 0) in vec3 aPos;
+            void main()
+            {
+                gl_Position = vec4(aPos, 1.0);
+            }
+        )";
+
+        auto fragment_code = R"(
+            #version 330 core
+            out vec4 FragColor;
+            uniform mediump sampler2D inputTexture;
+            uniform vec2 resolution;
+            uniform ivec4 bbox;
+
+            void main()
+            {
+                vec2 uv = (gl_FragCoord.xy)/resolution; // normalize fragcoord
+                uv=vec2(uv.x, 1.0-uv.y); // flip y
+                uv-=vec2(bbox.x/resolution.x, bbox.y/resolution); // position image
+                vec3 color = texture(inputTexture, uv).rgb;
+                float alpha = texture(inputTexture, uv).a;
+                FragColor = vec4(color, alpha);
+            }
+        )";
+
+        // link new program
+        GLuint program = imdraw::make_program_from_source(
+            vertex_code,
+            fragment_code
+        );
+
+        // swap programs
+        if (glIsProgram(mProgram)) glDeleteProgram(mProgram);
+        mProgram = program;
     }
 
 public:
@@ -588,6 +579,13 @@ public:
 
         //
         init_fbo(display_width, display_height);
+
+        //
+        init_program();
+    }
+
+    void set_uniforms(std::map<std::string, imdraw::UniformVariant> uniforms) {
+        imdraw::set_uniforms(mProgram, uniforms);
     }
 
     void onGUI()
@@ -698,7 +696,7 @@ public:
 
             ZoneScopedN("pixels to texture");
             // pixels to texture
-            memory_to_texture(pixels, 0, 0, data_width, data_height, mSelectedChannels, GL_HALF_FLOAT, output_tex);
+            memory_to_texture(pixels, 0, 0, data_width, data_height, mSelectedChannels, GL_HALF_FLOAT, data_tex);
 
             //glInvalidateTexImage(output_tex, 1);
             //glBindTexture(GL_TEXTURE_2D, output_tex);
@@ -720,7 +718,7 @@ public:
 
             /// pbo to texture
             {
-                glBindTexture(GL_TEXTURE_2D, output_tex);
+                glBindTexture(GL_TEXTURE_2D, data_tex);
                 glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[index]);
                 glTexSubImage2D(GL_TEXTURE_2D, 0, 0,0, std::get<2>(pbo_data_sizes[index]), std::get<3>(pbo_data_sizes[index]), glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
                 glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
@@ -730,10 +728,30 @@ public:
             /// texture with image to FBO
             {
                 BeginRenderToTexture(fbo, 0, 0, display_width, display_height);
-                glClearColor(1, 0, 0, 1);
+                glClearColor(0, 0, 0, 0);
                 glClear(GL_COLOR_BUFFER_BIT);
-                auto [x, y, w, h] = pbo_data_sizes[index];
-                imdraw::quad(output_tex, {x,y},{x+display_width,y+display_height});
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+                auto [x,y,w,h] = pbo_data_sizes[index];
+                set_uniforms({
+                    {"inputTexture", 0},
+                    {"resolution", glm::vec2(display_width, display_height)},
+                    {"bbox", glm::ivec4(x,y,w,h)}
+                });
+
+                /// Create geometry
+                static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
+                static auto vao = imdraw::make_vao(mProgram, { {"aPos", {vbo, 3}} });
+
+                /// Draw quad with fragment shader
+                imdraw::push_program(mProgram);
+                glBindTexture(GL_TEXTURE_2D, data_tex);
+                glBindVertexArray(vao);
+                glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+                glBindVertexArray(0);
+                glBindTexture(GL_TEXTURE_2D, 0);
+                imdraw::pop_program();
                 EndRenderToTexture();
             }
 
@@ -786,229 +804,18 @@ public:
     {
         if (mSelectedChannels.empty()) return;
         ZoneScoped;
-        imdraw::quad(output_tex, {0,0},{ display_width, display_height});
+        imdraw::quad(data_tex, {0,0},{ display_width, display_height});
     }
 
     ~SequenceRenderer() {
         for (auto i = 0; i < pbos.size(); i++) {
             glDeleteBuffers(1, &pbos[i]);
         }
-        glDeleteTextures(1, &output_tex);
+        glDeleteTextures(1, &data_tex);
     }
 };
 
 
-
-class CorrectionPlate
-{
-private:
-    bool autoreload{ true };
-    GLuint mInputtex;
-    GLuint fbo;
-    GLuint color_attachment;
-    int mWidth;
-    int mHeight;
-    GLuint mProgram;
-
-    int selected_device{ 1 };
-    float gain{ 0 };
-    float gamma{ 1.0 };
-
-
-public:
-    /// FBO size, and input texture id
-    CorrectionPlate(int width, int height, GLuint inputtex)
-    {
-        mInputtex = inputtex;
-        resize(width, height);
-        compile_program();
-    }
-
-    void set_uniforms(std::map<std::string, imdraw::UniformVariant> uniforms) {
-        imdraw::set_uniforms(mProgram, uniforms);
-    }
-
-    /// resize FBO
-    void resize(int width, int height)
-    {
-        ZoneScopedN("update correction fbo");
-        if (glIsFramebuffer(fbo))
-            glDeleteFramebuffers(1, &fbo);
-        if (glIsTexture(color_attachment))
-            glDeleteTextures(1, &color_attachment);
-
-        color_attachment = imdraw::make_texture_float(width, height, NULL, GL_RGBA);
-        fbo = imdraw::make_fbo(color_attachment);
-
-        mWidth = width;
-        mHeight = height;
-    }
-
-    void onGui()
-    {
-        ImGui::BeginGroup(); // display correction
-        {
-            static const std::vector<std::string> devices{ "linear", "sRGB", "Rec.709" };
-            int devices_combo_width = ImGui::CalcComboWidth(devices);
-            ImGui::SetNextItemWidth(ImGui::GetTextLineHeight() * 6);
-            ImGui::SliderFloat(ICON_FA_ADJUST "##gain", &gain, -6.0f, 6.0f);
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("gain");
-            if (ImGui::IsItemClicked(1)) gain = 0.0;
-
-            ImGui::SetNextItemWidth(ImGui::GetTextLineHeight() * 6);
-            ImGui::SliderFloat("##gamma", &gamma, 0, 4);
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("gamma");
-            if (ImGui::IsItemClicked(1)) gamma = 1.0;
-
-
-            ImGui::SetNextItemWidth(devices_combo_width);
-            ImGui::Combo("##device", &selected_device, "linear\0sRGB\0Rec.709\0");
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("device");
-
-        }
-        ImGui::EndGroup();
-    }
-
-    void set_input_tex(GLuint tex) {
-        mInputtex = tex;
-    }
-
-    void compile_program()
-    {
-        const char* display_correction_fragment_code = R"(
-            #version 330 core
-            out vec4 FragColor;
-            uniform mediump sampler2D inputTexture;
-            uniform vec2 resolution;
-
-            uniform float gamma_correction;
-            uniform float gain_correction;
-            uniform int convert_to_device; // 0:linear | 1:sRGB | 2:Rec709
-
-            float sRGB_to_linear(float channel){
-                return channel <= 0.04045
-                    ? channel / 12.92
-                    : pow((channel + 0.055) / 1.055, 2.4);
-            }
-
-            vec3 sRGB_to_linear(vec3 color){
-                return vec3(
-                    sRGB_to_linear(color.r),
-                    sRGB_to_linear(color.g),
-                    sRGB_to_linear(color.b)
-                    );
-            }
-
-            float linear_to_sRGB(float channel){
-                    return channel <= 0.0031308f
-                    ? channel * 12.92
-                    : pow(channel, 1.0f/2.4) * 1.055f - 0.055f;
-            }
-
-            vec3 linear_to_sRGB(vec3 color){
-                return vec3(
-                    linear_to_sRGB(color.r),
-                    linear_to_sRGB(color.g),
-                    linear_to_sRGB(color.b)
-                );
-            }
-
-            const float REC709_ALPHA = 0.099f;
-            float linear_to_rec709(float channel) {
-                if(channel <= 0.018f)
-                    return 4.5f * channel;
-                else
-                    return (1.0 + REC709_ALPHA) * pow(channel, 0.45f) - REC709_ALPHA;
-            }
-
-            vec3 linear_to_rec709(vec3 rgb) {
-                return vec3(
-                    linear_to_rec709(rgb.r),
-                    linear_to_rec709(rgb.g),
-                    linear_to_rec709(rgb.b)
-                );
-            }
-
-
-            vec3 reinhart_tonemap(vec3 hdrColor){
-                return vec3(1.0) - exp(-hdrColor);
-            }
-
-            void main(){
-                vec2 uv = gl_FragCoord.xy/resolution;
-                vec3 rawColor = texture(inputTexture, uv).rgb;
-                
-                // apply corrections
-                vec3 color = rawColor;
-
-                // apply exposure correction
-                color = color * pow(2, gain_correction);
-
-                // exposure tone mapping
-                //mapped = reinhart_tonemap(mapped);
-
-                // apply gamma correction
-                color = pow(color, vec3(gamma_correction));
-
-                // convert color to device
-                if(convert_to_device==0) // linear, no conversion
-                {
-
-                }
-                else if(convert_to_device==1) // sRGB
-                {
-                    color = linear_to_sRGB(color);
-                }
-                if(convert_to_device==2) // Rec.709
-                {
-                    color = linear_to_rec709(color);
-                }
-
-                FragColor = vec4(color, texture(inputTexture, uv).a);
-            }
-            )";
-
-        ZoneScopedN("recompile display correction shader");
-        if (glIsProgram(mProgram)) glDeleteProgram(mProgram);
-        mProgram = imdraw::make_program_from_source(PASS_THROUGH_VERTEX_CODE, display_correction_fragment_code);
-    }
-
-
-    void update()
-    {
-        // update result texture
-        BeginRenderToTexture(fbo, 0, 0, mWidth, mHeight);
-        glClearColor(0, 0, 0, 0);
-        glClear(GL_COLOR_BUFFER_BIT);
-
-        imdraw::push_program(mProgram);
-        /// Draw quad with fragment shader
-        imgeo::quad();
-        static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
-        static auto vao = imdraw::make_vao(mProgram, { {"aPos", {vbo, 3}} });
-
-        set_uniforms({
-            {"inputTexture", 0},
-            {"resolution", glm::vec2(mWidth, mHeight)},
-            {"gain_correction", gain},
-            {"gamma_correction", 1.0f / gamma},
-            {"convert_to_device", selected_device},
-            });
-        glBindTexture(GL_TEXTURE_2D, mInputtex);
-        glBindVertexArray(vao);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        glBindVertexArray(0);
-        glBindTexture(GL_TEXTURE_2D, 0);
-        imdraw::pop_program();
-        EndRenderToTexture();
-    }
-
-    void render()
-    {
-        // draw result texture
-        imdraw::quad(color_attachment, { 0,0 }, { mWidth, mHeight });
-    }
-};
 
 
 
@@ -1042,7 +849,7 @@ void open(std::filesystem::path filename)
 
     seq_renderer = std::make_unique<SequenceRenderer>(sequence);
     layer_manager = std::make_unique<LayerManager>(sequence.item(sequence.first_frame));
-    correction_plate = std::make_unique<CorrectionPlate>(seq_renderer->display_width, seq_renderer->display_height, seq_renderer->output_tex);
+    correction_plate = std::make_unique<CorrectionPlate>(seq_renderer->display_width, seq_renderer->display_height, seq_renderer->data_tex);
 
     viewer_state.camera.fit(seq_renderer->display_width, seq_renderer->display_height);
 }
@@ -1076,7 +883,8 @@ int main(int argc, char* argv[])
     glazy::set_vsync(false);
     glfwSetDropCallback(glazy::window, drop_callback);
 
-    if (argc == 2) {
+    if (argc == 2)
+    {
         open(argv[1]);
     }
     else
@@ -1084,7 +892,8 @@ int main(int argc, char* argv[])
         open("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr");
         //sequence = FileSequence("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr");
         //sequence = FileSequence("C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr" );
-        //sequence = FileSequence("C:/Users/andris/Desktop/52_EXAM_v51-raw/52_01_EXAM_v51.0001.exr" );
+        //open("C:/Users/andris/Desktop/52_EXAM_v51-raw/52_01_EXAM_v51.0001.exr" );
+        //open("C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr");
     }
     polka_plate = std::make_unique<RenderPlate>("./shaders/PASS_THROUGH_CAMERA.vert", "./shaders/polka.frag");
     checker_plate = std::make_unique<RenderPlate>("./shaders/checker.vert", "./shaders/checker.frag");

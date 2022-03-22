@@ -11,7 +11,12 @@
 #include <glad/glad.h>
 
 namespace imdraw {
-	using UniformVariant = std::variant<bool, int, float, glm::vec3, glm::vec2, glm::ivec2, glm::mat4, GLuint>;
+	using UniformVariant = std::variant<
+		bool, int, float, 
+		glm::vec2, glm::vec3, glm::vec4, 
+		glm::ivec2, glm::ivec3, glm::ivec4, 
+		glm::mat4, 
+		GLuint>;
 	//using Texture = std::tuple<GLenum, GLuint>;
 	//using Attribute = std::tuple<GLuint, GLint, GLenum, GLsizei>;
 	//using Elements = std::tuple<GLuint, GLsizei, GLenum>;

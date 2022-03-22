@@ -81,3 +81,30 @@ std::string to_string(Imf::PixelType pt)
     default: return "type " + std::to_string(int(pt)); break;
     }
 }
+
+int pixelTypeSize(Imf::PixelType type)
+{
+    int size;
+
+    switch (type)
+    {
+    case OPENEXR_IMF_INTERNAL_NAMESPACE::UINT:
+
+        size = sizeof(unsigned int);
+        break;
+
+    case OPENEXR_IMF_INTERNAL_NAMESPACE::HALF:
+
+        size = sizeof(half);
+        break;
+
+    case OPENEXR_IMF_INTERNAL_NAMESPACE::FLOAT:
+
+        size = sizeof(float);
+        break;
+
+    default: throw IEX_NAMESPACE::ArgExc("Unknown pixel type.");
+    }
+
+    return size;
+}
