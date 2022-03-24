@@ -1227,15 +1227,46 @@ public:
         imdraw::set_uniforms(mProgram, uniforms);
     }
 
-    void update_from_data(void* pixels, std::tuple<int,int,int,int> bbox, std::vector<std::string> channels, std::array<GLint, 4> swizzle_mask, GLenum gltype=GL_HALF_FLOAT)
+    void render_texture_to_fbo(int x, int y, int w, int h)
     {
-        glformat = 
+        ZoneScopedN("datatext to fbo");
+
+        BeginRenderToTexture(fbo, 0, 0, width, height);
+        glClearColor(0, 0, 0, 0);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        set_uniforms({
+            {"inputTexture", 0},
+            {"resolution", glm::vec2(width, height)},
+            {"bbox", glm::ivec4(x,y,w,h)}
+            });
+
+        /// Create geometry
+        static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
+        static auto vao = imdraw::make_vao(mProgram, { {"aPos", {vbo, 3}} });
+
+        /// Draw quad with fragment shader
+        imdraw::push_program(mProgram);
+        glBindTexture(GL_TEXTURE_2D, data_tex);
+        glBindVertexArray(vao);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        glBindVertexArray(0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        imdraw::pop_program();
+        EndRenderToTexture();
+    }
+
+    void update_from_data(void* pixels, std::tuple<int,int,int,int> bbox, std::vector<std::string> channels, GLenum gltype=GL_HALF_FLOAT)
+    {
+        std::array<GLint, 4> swizzle_mask;
+        auto glformat = glformat_from_channels(channels, swizzle_mask);
 
         if (pbos.empty())
         {
             auto [x, y, w, h] = bbox;
             ZoneScopedN("pixels to texture");
-            glInvalidateTexImage(data_tex, 1);
+
             glBindTexture(GL_TEXTURE_2D, data_tex);
             glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, glformat, GL_HALF_FLOAT, pixels);
@@ -1243,133 +1274,64 @@ public:
 
             // draw data_texture to bounding box
             {
-                ZoneScopedN("datatext to fbo");
-
-                BeginRenderToTexture(fbo, 0, 0, width, height);
-                glClearColor(0, 0, 0, 0);
-                glClear(GL_COLOR_BUFFER_BIT);
-                glEnable(GL_BLEND);
-                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
                 auto [x, y, w, h] = bbox;
-                set_uniforms({
-                    {"inputTexture", 0},
-                    {"resolution", glm::vec2(width, height)},
-                    {"bbox", glm::ivec4(x,y,w,h)}
-                    });
-
-                /// Create geometry
-                static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
-                static auto vao = imdraw::make_vao(mProgram, { {"aPos", {vbo, 3}} });
-
-                /// Draw quad with fragment shader
-                imdraw::push_program(mProgram);
-                glBindTexture(GL_TEXTURE_2D, data_tex);
-                glBindVertexArray(vao);
-                glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-                glBindVertexArray(0);
-                glBindTexture(GL_TEXTURE_2D, 0);
-                imdraw::pop_program();
-                EndRenderToTexture();
+                render_texture_to_fbo(x,y,w,h);
             }
         }
         else
         {
             ZoneScopedN("pixels to texture");
-            static int index{ 0 };
-            static int nextIndex;
+            static int display_index{ 0 };
+            static int write_index;
 
-            index = (index + 1) % pbos.size();
-            nextIndex = (index + 1) % pbos.size();
+            display_index = (display_index + 1) % pbos.size();
+            write_index = (display_index + 1) % pbos.size();
 
             /// pbo to texture
             {
                 glBindTexture(GL_TEXTURE_2D, data_tex);
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[index]);
-                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, std::get<2>(pbo_data_sizes[index]), std::get<3>(pbo_data_sizes[index]), glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
                 glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[display_index]);
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, std::get<2>(pbo_data_sizes[display_index]), std::get<3>(pbo_data_sizes[display_index]), glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
                 glBindTexture(GL_TEXTURE_2D, 0);
             }
 
             /// texture with image to FBO
             {
-                auto [display_width, display_height] = reader->size();
-                BeginRenderToTexture(fbo, 0, 0, display_width, display_height);
-                glClearColor(0, 0, 0, 0);
-                glClear(GL_COLOR_BUFFER_BIT);
-                glEnable(GL_BLEND);
-                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-                auto [x, y, w, h] = pbo_data_sizes[index];
-                set_uniforms({
-                    {"inputTexture", 0},
-                    {"resolution", glm::vec2(display_width, display_height)},
-                    {"bbox", glm::ivec4(x,y,w,h)}
-                    });
-
-                /// Create geometry
-                static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
-                static auto vao = imdraw::make_vao(mProgram, { {"aPos", {vbo, 3}} });
-
-                /// Draw quad with fragment shader
-                imdraw::push_program(mProgram);
-                glBindTexture(GL_TEXTURE_2D, data_tex);
-                glBindVertexArray(vao);
-                glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-                glBindVertexArray(0);
-                glBindTexture(GL_TEXTURE_2D, 0);
-                imdraw::pop_program();
-                EndRenderToTexture();
+                auto [x, y, w, h] = pbo_data_sizes[display_index];
+                render_texture_to_fbo(x, y, w, h);
             }
-
+            
             ///
             /// Pixels to NEXT PBO
             ///
             {
-                auto [display_width, display_height] = reader->size();
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[nextIndex]);
-                pbo_data_sizes[nextIndex] = bbox;
-                glBufferData(GL_PIXEL_UNPACK_BUFFER, display_width * display_height * mSelectedChannels.size() * sizeof(half), 0, GL_STREAM_DRAW);
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[write_index]);
+                pbo_data_sizes[write_index] = bbox;
+                glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * channels.size() * sizeof(half), 0, GL_STREAM_DRAW);
                 glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
             }
 
             /// exr to pbo
             static bool ReadDirectlyToPBO{ true };
             //ImGui::Checkbox("ReadDirectlyToPBO", &ReadDirectlyToPBO);
-            if (ReadDirectlyToPBO)
-            {
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[nextIndex]);
-                //pbo_data_sizes[nextIndex] = { data_x, data_y, data_width, data_height };
-                //glBufferData(GL_PIXEL_UNPACK_BUFFER, data_width * data_height * mSelectedChannels.size() * sizeof(half), 0, GL_STREAM_DRAW);
-                GLubyte* ptr = (GLubyte*)glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
-                if (!ptr) std::cerr << "cannot map PBO" << "\n";
-                if (ptr != NULL)
-                {
-                    auto [x, y, w, h] = pbo_data_sizes[nextIndex];
-                    exr_to_memory(*current_inputpart, x, y, w, h, mSelectedChannels, ptr);
-                    glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
-                    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-                }
-            }
-            else {
-                auto [x, y, w, h] = pbo_data_sizes[nextIndex];
-                exr_to_memory(*current_inputpart, x, y, w, h, mSelectedChannels, pixels);
 
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[nextIndex]);
-                //pbo_data_sizes[nextIndex] = { data_x, data_y, data_width, data_height };
-                //glBufferData(GL_PIXEL_UNPACK_BUFFER, data_width* data_height* mSelectedChannels.size() * sizeof(half), 0, GL_STREAM_DRAW);
-                GLubyte* ptr = (GLubyte*)glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
-                if (!ptr) std::cerr << "cannot map PBO" << "\n";
-                if (ptr != NULL)
-                {
-                    auto [x, y, w, h] = pbo_data_sizes[nextIndex];
-                    memcpy(ptr, pixels, w * h * mSelectedChannels.size() * sizeof(half));
-                    glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
-                    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-                }
+            auto [x, y, w, h] = pbo_data_sizes[write_index];
+
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[write_index]);
+            //pbo_data_sizes[nextIndex] = { data_x, data_y, data_width, data_height };
+            //glBufferData(GL_PIXEL_UNPACK_BUFFER, data_width* data_height* mSelectedChannels.size() * sizeof(half), 0, GL_STREAM_DRAW);
+            GLubyte* ptr = (GLubyte*)glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
+            if (!ptr) std::cerr << "cannot map PBO" << "\n";
+            if (ptr != NULL)
+            {
+                auto [x, y, w, h] = pbo_data_sizes[write_index];
+                memcpy(ptr, pixels, w * h * channels.size() * sizeof(half));
+                glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
             }
         }
-
-
     }
 };
 
@@ -1427,7 +1389,7 @@ void update()
     reader->update();
     std::array<GLint, 4> swizzlemask;
     auto glformat = glformat_from_channels(reader->mSelectedChannels, swizzlemask);
-    renderer->update_from_data(reader->pixels, reader->bbox(), glformat, swizzlemask, GL_HALF_FLOAT);
+    renderer->update_from_data(reader->pixels, reader->bbox(), reader->selected_channels(), GL_HALF_FLOAT);
     //seq_renderer.draw();
     //correction_plate->set_input_tex(seq_renderer->output_tex);
     correction_plate->set_input_tex(renderer->color_attachment);
