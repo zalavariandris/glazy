@@ -176,6 +176,7 @@
     <ClInclude Include="LayerManager.h" />
     <ClInclude Include="RenderPlates\CorrectionPlate.h" />
     <ClInclude Include="RenderPlates\RenderPlate.h" />
+    <ClInclude Include="SequenceRenderer_OLD.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="checker.frag" />
