@@ -585,8 +585,8 @@ public:
 
     GLenum glinternalformat = GL_RGBA16F; // selec texture internal format
 
-    std::vector<GLuint<std::tuple<int, int, int, int>> pbos;
-    //std::vector<> pbo_data_sizes; // keep PBOs dimension
+    std::vector<GLuint> pbos;
+    std::vector<std::tuple<int,int,int,int>> pbo_data_sizes; // keep PBOs dimension
     bool orphaning{ true };
 
     PixelsRenderer(int width, int height) : x(0), y(0), width(width), height(height)
