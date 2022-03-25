@@ -521,7 +521,9 @@ public:
         return mSelectedChannels;
     }
 
-    void update()
+
+
+    void read_to_memory(void* memory)
     {
         ZoneScoped;
         if (mSelectedChannels.empty()) return;
@@ -569,12 +571,26 @@ public:
 
         // read pixels to pointer
         auto [x, y, w, h] = m_bbox;
-        exr_to_memory(*current_inputpart, x, y, w, h, mSelectedChannels, this->pixels);
+        exr_to_memory(*current_inputpart, x, y, w, h, mSelectedChannels, memory);
     }
 };
 
+class BBox {
+private:
+    int x, y, w, h;
+public:
+    BBox(int x, int y, int width, int height):x(x),y(y), w(width),h(height) {
 
-class PixelsRenderer {
+    }
+};
+
+struct PBOImage {
+    GLuint id;
+    std::tuple<int, int, int, int> bbox;
+};
+
+class PixelsRenderer
+{
 public:
     GLuint fbo{ 0 };
     GLuint color_attachment{ 0 };
@@ -583,10 +599,13 @@ public:
     GLuint data_tex;
     int x, y, width, height;
 
+    int display_index{ 0 };
+    int write_index;
+
     GLenum glinternalformat = GL_RGBA16F; // selec texture internal format
 
-    std::vector<GLuint> pbos;
-    std::vector<std::tuple<int,int,int,int>> pbo_data_sizes; // keep PBOs dimension
+    std::vector<PBOImage> pbos;
+    //std::vector<std::tuple<int,int,int,int>> pbo_data_sizes; // keep PBOs dimension
     bool orphaning{ true };
 
     PixelsRenderer(int width, int height) : x(0), y(0), width(width), height(height)
@@ -632,13 +651,13 @@ public:
         if (!pbos.empty())
         {
             for (auto i = 0; i < pbos.size(); i++) {
-                glDeleteBuffers(1, &pbos[i]);
+                glDeleteBuffers(1, &pbos[i].id);
             }
 
         }
 
         pbos.resize(n);
-        pbo_data_sizes.resize(n);
+        //pbo_data_sizes.resize(n);
 
         for (auto i = 0; i < n; i++)
         {
@@ -646,8 +665,8 @@ public:
             glGenBuffers(1, &pbo);
             glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
             glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * channels * sizeof(half), 0, GL_STREAM_DRAW);
-            pbos[i] = pbo;
-            pbo_data_sizes[i] = { 0,0, 0,0 };
+            pbos[i].id = pbo;
+            pbos[i].bbox = { 0,0, 0,0 };
         }
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
     }
@@ -781,8 +800,7 @@ public:
         else
         {
             ZoneScopedN("pixels to texture");
-            static int display_index{ 0 };
-            static int write_index;
+
 
             display_index = (display_index + 1) % pbos.size();
             write_index = (display_index + 1) % pbos.size();
@@ -791,15 +809,15 @@ public:
             {
                 glBindTexture(GL_TEXTURE_2D, data_tex);
                 glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[display_index]);
-                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, std::get<2>(pbo_data_sizes[display_index]), std::get<3>(pbo_data_sizes[display_index]), glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[display_index].id);
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, std::get<2>(pbos[display_index].bbox), std::get<3>(pbos[display_index].bbox), glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
                 glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
                 glBindTexture(GL_TEXTURE_2D, 0);
             }
 
             /// texture with image to FBO
             {
-                auto [x, y, w, h] = pbo_data_sizes[display_index];
+                auto [x, y, w, h] = pbos[display_index].bbox;
                 render_texture_to_fbo(x, y, w, h);
             }
             
@@ -807,8 +825,8 @@ public:
             /// Pixels to NEXT PBO
             ///
             {
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[write_index]);
-                pbo_data_sizes[write_index] = bbox;
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[write_index].id);
+                pbos[write_index].bbox = bbox;
                 glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * channels.size() * sizeof(half), 0, GL_STREAM_DRAW);
                 glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
             }
@@ -817,16 +835,16 @@ public:
             static bool ReadDirectlyToPBO{ true };
             //ImGui::Checkbox("ReadDirectlyToPBO", &ReadDirectlyToPBO);
 
-            auto [x, y, w, h] = pbo_data_sizes[write_index];
+            auto [x, y, w, h] = pbos[write_index].bbox;
 
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[write_index]);
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[write_index].id);
             //pbo_data_sizes[nextIndex] = { data_x, data_y, data_width, data_height };
             //glBufferData(GL_PIXEL_UNPACK_BUFFER, data_width* data_height* mSelectedChannels.size() * sizeof(half), 0, GL_STREAM_DRAW);
             GLubyte* ptr = (GLubyte*)glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
             if (!ptr) std::cerr << "cannot map PBO" << "\n";
             if (ptr != NULL)
             {
-                auto [x, y, w, h] = pbo_data_sizes[write_index];
+                auto [x, y, w, h] = pbos[write_index].bbox;
                 memcpy(ptr, pixels, w * h * channels.size() * sizeof(half));
                 glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
                 glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
@@ -884,9 +902,14 @@ void drop_callback(GLFWwindow* window, int argc, const char** argv)
 
 void update()
 {
-
-    reader->update();
-    renderer->update_from_data(reader->pixels, reader->bbox(), reader->selected_channels(), GL_HALF_FLOAT);
+    auto [display_width, display_height] = reader->size();
+    static void* pixels = malloc((size_t)display_width* display_height * 4 * sizeof(half));
+    if (pixels == NULL) {
+        std::cerr << "NULL allocation" << "\n";
+    }
+    
+    reader->read_to_memory(pixels);
+    renderer->update_from_data(pixels, reader->bbox(), reader->selected_channels(), GL_HALF_FLOAT);
     correction_plate->set_input_tex(renderer->color_attachment);
     correction_plate->update();
 }
