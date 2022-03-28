@@ -782,30 +782,28 @@ public:
         auto glformat = glformat_from_channels(channels, swizzle_mask);
 
         if (pbos.empty())
-        {
-            auto [x, y, w, h] = bbox;
+        { // MEMORY TO TEXTURE
             ZoneScopedN("pixels to texture");
-
-            glBindTexture(GL_TEXTURE_2D, data_tex);
-            glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, glformat, GL_HALF_FLOAT, pixels);
-            glBindTexture(GL_TEXTURE_2D, 0);
-
-            // draw data_texture to bounding box
+            { // Memory to texture
+                auto [x, y, w, h] = bbox;
+                glBindTexture(GL_TEXTURE_2D, data_tex);
+                glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, glformat, GL_HALF_FLOAT, pixels);
+                glBindTexture(GL_TEXTURE_2D, 0);
+            }
+            // Draw data_texture to bounding box
             {
                 auto [x, y, w, h] = bbox;
                 render_texture_to_fbo(x,y,w,h);
             }
-        }
+        }  
         else
-        {
+        { // STREAM THROUGH PBO
             ZoneScopedN("pixels to texture");
-
-
             display_index = (display_index + 1) % pbos.size();
             write_index = (display_index + 1) % pbos.size();
 
-            /// pbo to texture
+            /// PBO to texture
             {
                 glBindTexture(GL_TEXTURE_2D, data_tex);
                 glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
@@ -815,38 +813,28 @@ public:
                 glBindTexture(GL_TEXTURE_2D, 0);
             }
 
-            /// texture with image to FBO
+            // Draw data_texture to bounding box
             {
                 auto [x, y, w, h] = pbos[display_index].bbox;
                 render_texture_to_fbo(x, y, w, h);
             }
-            
-            ///
-            /// Pixels to NEXT PBO
-            ///
-            {
+
+            // Write PBO
+            { 
+                static bool ReadDirectlyToPBO{ true };
+                //ImGui::Checkbox("ReadDirectlyToPBO", &ReadDirectlyToPBO);
+
                 glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[write_index].id);
-                pbos[write_index].bbox = bbox;
-                glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * channels.size() * sizeof(half), 0, GL_STREAM_DRAW);
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-            }
+                void* ptr = glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
+                if (!ptr) std::cerr << "cannot map PBO" << "\n";
+                if (ptr != NULL)
+                {
+                    auto [x, y, w, h] = bbox;
+                    memcpy(ptr, pixels, w * h * channels.size() * sizeof(half));
+                    pbos[write_index].bbox = bbox;
+                    glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
 
-            /// exr to pbo
-            static bool ReadDirectlyToPBO{ true };
-            //ImGui::Checkbox("ReadDirectlyToPBO", &ReadDirectlyToPBO);
-
-            auto [x, y, w, h] = pbos[write_index].bbox;
-
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[write_index].id);
-            //pbo_data_sizes[nextIndex] = { data_x, data_y, data_width, data_height };
-            //glBufferData(GL_PIXEL_UNPACK_BUFFER, data_width* data_height* mSelectedChannels.size() * sizeof(half), 0, GL_STREAM_DRAW);
-            GLubyte* ptr = (GLubyte*)glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
-            if (!ptr) std::cerr << "cannot map PBO" << "\n";
-            if (ptr != NULL)
-            {
-                auto [x, y, w, h] = pbos[write_index].bbox;
-                memcpy(ptr, pixels, w * h * channels.size() * sizeof(half));
-                glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
+                }
                 glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
             }
         }
