@@ -823,63 +823,71 @@ public:
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 
-    // from pbo
-    static void write_texture(PBOImage* pbo, const std::vector<std::string>& channels, GLuint tex)
-    {
-        std::array<GLint, 4> swizzle_mask;
-        auto glformat = glformat_from_channels(channels, swizzle_mask);
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo->id);
-
-        glBindTexture(GL_TEXTURE_2D, tex);
-        glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, std::get<2>(pbo->bbox), std::get<3>(pbo->bbox), glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
-        glBindTexture(GL_TEXTURE_2D, 0);
-
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-    }
-
     void update_from_data(void* pixels, std::tuple<int,int,int,int> bbox, std::vector<std::string> channels, GLenum gltype=GL_HALF_FLOAT)
     {
         display_index = pbos.size()>0 ? (display_index + 1) % pbos.size() : 0;
         write_index = pbos.size() > 0 ? (display_index + 1) % pbos.size() : display_index;
 
-        // write pbo
-        if (pbos.size() > 0)
-        {
-            PixelsRenderer::write_pbo(&pbos[write_index], pixels, bbox, channels, sizeof(half));
-        }
-
-        // UPDATE TEXTURE DURECTLY FROM MEMORY or PIXEL BUFFER
+        // upload memo
+        // upload PBO to texture
+        // stream pixels to PBO
+        std::array<GLint, 4> swizzle_mask;
+        auto glformat = glformat_from_channels(channels, swizzle_mask);
 
         if (pbos.empty())
-        {
+        { // MEMORY TO TEXTURE
             ZoneScopedN("pixels to texture");
-            { // memory to texture
-                PixelsRenderer::write_texture(pixels, bbox, channels, data_tex);
+            { // Memory to texture
+                auto [x, y, w, h] = bbox;
+                glBindTexture(GL_TEXTURE_2D, data_tex);
+                glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, glformat, GL_HALF_FLOAT, pixels);
+                glBindTexture(GL_TEXTURE_2D, 0);
             }
-            // draw data_texture to bounding box
+            // Draw data_texture to bounding box
             {
                 auto [x, y, w, h] = bbox;
-                render_texture_to_fbo(x,y,w,h);
+                render_texture_to_fbo(x, y, w, h);
             }
         }
         else
-        {
+        { // STREAM THROUGH PBO
             ZoneScopedN("pixels to texture");
-            { /// pbo to texture
-                write_texture(&pbos[display_index], channels, data_tex);
+            display_index = (display_index + 1) % pbos.size();
+            write_index = (display_index + 1) % pbos.size();
+
+            /// PBO to texture
+            {
+                glBindTexture(GL_TEXTURE_2D, data_tex);
+                glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[display_index].id);
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, std::get<2>(pbos[display_index].bbox), std::get<3>(pbos[display_index].bbox), glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+                glBindTexture(GL_TEXTURE_2D, 0);
             }
 
-            // draw data_texture to bounding box
+            // Draw data_texture to bounding box
             {
                 auto [x, y, w, h] = pbos[display_index].bbox;
                 render_texture_to_fbo(x, y, w, h);
             }
 
-            if(orphaning) // orphan pbo ??? does not effect performance. What iam doing wrong?
-            { 
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[display_index].id);
-                glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * channels.size() * sizeof(half), 0, GL_STREAM_DRAW);
+            // Write PBORender
+            {
+                static bool ReadDirectlyToPBO{ true };
+                //ImGui::Checkbox("ReadDirectlyToPBO", &ReadDirectlyToPBO);
+
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[write_index].id);
+                void* ptr = glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
+                if (!ptr) std::cerr << "cannot map PBO" << "\n";
+                if (ptr != NULL)
+                {
+                    auto [x, y, w, h] = bbox;
+                    memcpy(ptr, pixels, w * h * channels.size() * sizeof(half));
+                    pbos[write_index].bbox = bbox;
+                    glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
+
+                }
                 glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
             }
         }
@@ -929,8 +937,6 @@ void open(std::filesystem::path filename)
     
 
     viewer_state.camera.fit(renderer->width, renderer->height);
-
-    std::cin.get();
 }
 
 void drop_callback(GLFWwindow* window, int argc, const char** argv)
