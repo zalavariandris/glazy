@@ -773,14 +773,16 @@ public:
         EndRenderToTexture();
     }
 
+    void update_texture()
+    {
+
+    }
+
     void update_from_data(void* pixels, std::tuple<int,int,int,int> bbox, std::vector<std::string> channels, GLenum gltype=GL_HALF_FLOAT)
     {
-        // upload memo
-        // upload PBO to texture
-        // stream pixels to PBO
+        // UPDATE TEXTURE DURECTLY FROM MEMORY or PIXEL BUFFER
         std::array<GLint, 4> swizzle_mask;
         auto glformat = glformat_from_channels(channels, swizzle_mask);
-
         if (pbos.empty())
         {
             auto [x, y, w, h] = bbox;
@@ -807,20 +809,26 @@ public:
 
             /// pbo to texture
             {
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[display_index].id);
+
                 glBindTexture(GL_TEXTURE_2D, data_tex);
                 glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[display_index].id);
                 glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, std::get<2>(pbos[display_index].bbox), std::get<3>(pbos[display_index].bbox), glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
                 glBindTexture(GL_TEXTURE_2D, 0);
+
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
             }
 
-            /// texture with image to FBO
+            // draw data_texture to bounding box
             {
                 auto [x, y, w, h] = pbos[display_index].bbox;
                 render_texture_to_fbo(x, y, w, h);
             }
-            
+        }
+
+        // STREAM PIXELS TO PBO
+        if(pbos.size()>0)
+        {
             ///
             /// Pixels to NEXT PBO
             ///
@@ -841,14 +849,16 @@ public:
             //pbo_data_sizes[nextIndex] = { data_x, data_y, data_width, data_height };
             //glBufferData(GL_PIXEL_UNPACK_BUFFER, data_width* data_height* mSelectedChannels.size() * sizeof(half), 0, GL_STREAM_DRAW);
             GLubyte* ptr = (GLubyte*)glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
-            if (!ptr) std::cerr << "cannot map PBO" << "\n";
-            if (ptr != NULL)
+            if (ptr)
             {
                 auto [x, y, w, h] = pbos[write_index].bbox;
                 memcpy(ptr, pixels, w * h * channels.size() * sizeof(half));
                 glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
             }
+            else {
+                std::cerr << "cannot map PBO" << "\n";
+            }
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
         }
     }
 };
@@ -857,8 +867,6 @@ bool is_playing = false;
 int F, first_frame, last_frame;
 
 int selected_viewport_background{ 1 };//0: transparent 1: checkerboard 2:black
-
-
 
 FileSequence sequence;
 std::unique_ptr<SequenceReader> reader;
