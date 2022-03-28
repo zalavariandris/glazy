@@ -52,6 +52,12 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="checker.frag" />
+    <CopyFileToFolders Include="PASS_THROUGH_CAMERA.vert" />
+    <CopyFileToFolders Include="constant.frag" />
+    <CopyFileToFolders Include="checker.frag" />
+    <CopyFileToFolders Include="checker.vert" />
+    <CopyFileToFolders Include="polka.frag" />
+    <CopyFileToFolders Include="PASS_THROUGH.vert" />
+    <CopyFileToFolders Include="imgui.ini" />
   </ItemGroup>
 </Project>

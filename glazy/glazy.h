@@ -149,7 +149,6 @@ void control_camera(Camera& camera, int scree_width, int screen_height) {
 namespace glazy {
 	GLFWwindow* window;
 	Camera camera;
-	GLuint checkerboard_tex;
 
 	std::chrono::steady_clock::time_point g_Time;
 	float DeltaTime; // in seconds
@@ -304,19 +303,6 @@ namespace glazy {
 		camera.eye = glm::vec3(0, 1, -5);
 		camera.target = glm::vec3(0, 0, 0);
 
-		/// Generate builtin textures
-		
-		checkerboard_tex = imdraw::make_texture_float(64, 64, NULL, GL_RGBA);
-		GLuint fbo = imdraw::make_fbo(checkerboard_tex);
-		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-		glClearColor(1.0,1.0,1.0, 1);
-		glClear(GL_COLOR_BUFFER_BIT);
-		glViewport(0, 0, 64, 64);
-		imdraw::set_projection(glm::ortho(-1, 1, -1, 1));
-		imdraw::set_view(glm::mat4(1));
-		imdraw::quad(0, { -1,-1 }, { 0,0 });
-		imdraw::quad(0, { 0,0 }, { 1,1 });
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 		// set dark style
 		//ApplyPhotoshopTheme();
@@ -329,6 +315,7 @@ namespace glazy {
 		std::cout << "<glazy init errors> " << "\n";
 		glPrintErrors();
 		std::cout << "</end of glazy errors>" << "\n";
+
 		return EXIT_SUCCESS;
 	}
 

@@ -584,9 +584,25 @@ public:
     }
 };
 
+struct PixelsImage {
+    void* data;
+    std::vector<std::string> channels;
+    std::tuple<int, int, int, int> bbox;
+    Imf::PixelType pixeltype;
+};
+
 struct PBOImage {
     GLuint id;
+    std::vector<std::string> channels;
     std::tuple<int, int, int, int> bbox;
+    Imf::PixelType pixeltype;
+};
+
+struct TextureImage {
+    GLuint id;
+    std::vector<std::string> channels;
+    std::tuple<int, int, int, int> bbox;
+    Imf::PixelType pixeltype;
 };
 
 class PixelsRenderer
@@ -773,26 +789,74 @@ public:
         EndRenderToTexture();
     }
 
-    void update_texture()
-    {
 
+    static void write_pbo(PBOImage* pbo, void* pixels, std::tuple<int, int, int, int> bbox, std::vector<std::string> channels, unsigned long long typesize)
+    {
+        /// exr to pbo
+        static bool ReadDirectlyToPBO{ true };
+        //ImGui::Checkbox("ReadDirectlyToPBO", &ReadDirectlyToPBO);
+
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo->id);
+        GLubyte* ptr = (GLubyte*)glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
+        if (ptr)
+        {
+            auto [x, y, w, h] = bbox;
+            memcpy(ptr, pixels, w * h * channels.size() * typesize);
+            pbo->bbox = bbox;
+            glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
+        }
+        else {
+            std::cerr << "cannot map PBO" << "\n";
+        }
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    }
+
+    // from memory
+    static void write_texture(void* pixels, const std::tuple<int,int,int,int>& bbox, const std::vector<std::string>& channels, GLuint tex)
+    {
+        std::array<GLint, 4> swizzle_mask;
+        auto glformat = glformat_from_channels(channels, swizzle_mask);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
+        auto [x, y, w, h] = bbox;
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, glformat, GL_HALF_FLOAT, pixels);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+    // from pbo
+    static void write_texture(PBOImage* pbo, const std::vector<std::string>& channels, GLuint tex)
+    {
+        std::array<GLint, 4> swizzle_mask;
+        auto glformat = glformat_from_channels(channels, swizzle_mask);
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo->id);
+
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, std::get<2>(pbo->bbox), std::get<3>(pbo->bbox), glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
     }
 
     void update_from_data(void* pixels, std::tuple<int,int,int,int> bbox, std::vector<std::string> channels, GLenum gltype=GL_HALF_FLOAT)
     {
+        display_index = pbos.size()>0 ? (display_index + 1) % pbos.size() : 0;
+        write_index = pbos.size() > 0 ? (display_index + 1) % pbos.size() : display_index;
+
+        // write pbo
+        if (pbos.size() > 0)
+        {
+            PixelsRenderer::write_pbo(&pbos[write_index], pixels, bbox, channels, sizeof(half));
+        }
+
         // UPDATE TEXTURE DURECTLY FROM MEMORY or PIXEL BUFFER
-        std::array<GLint, 4> swizzle_mask;
-        auto glformat = glformat_from_channels(channels, swizzle_mask);
+
         if (pbos.empty())
         {
-            auto [x, y, w, h] = bbox;
             ZoneScopedN("pixels to texture");
-
-            glBindTexture(GL_TEXTURE_2D, data_tex);
-            glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, glformat, GL_HALF_FLOAT, pixels);
-            glBindTexture(GL_TEXTURE_2D, 0);
-
+            { // memory to texture
+                PixelsRenderer::write_texture(pixels, bbox, channels, data_tex);
+            }
             // draw data_texture to bounding box
             {
                 auto [x, y, w, h] = bbox;
@@ -802,21 +866,8 @@ public:
         else
         {
             ZoneScopedN("pixels to texture");
-
-
-            display_index = (display_index + 1) % pbos.size();
-            write_index = (display_index + 1) % pbos.size();
-
-            /// pbo to texture
-            {
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[display_index].id);
-
-                glBindTexture(GL_TEXTURE_2D, data_tex);
-                glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
-                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, std::get<2>(pbos[display_index].bbox), std::get<3>(pbos[display_index].bbox), glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
-                glBindTexture(GL_TEXTURE_2D, 0);
-
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+            { /// pbo to texture
+                write_texture(&pbos[display_index], channels, data_tex);
             }
 
             // draw data_texture to bounding box
@@ -824,41 +875,13 @@ public:
                 auto [x, y, w, h] = pbos[display_index].bbox;
                 render_texture_to_fbo(x, y, w, h);
             }
-        }
 
-        // STREAM PIXELS TO PBO
-        if(pbos.size()>0)
-        {
-            ///
-            /// Pixels to NEXT PBO
-            ///
-            {
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[write_index].id);
-                pbos[write_index].bbox = bbox;
+            if(orphaning) // orphan pbo ??? does not effect performance. What iam doing wrong?
+            { 
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[display_index].id);
                 glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * channels.size() * sizeof(half), 0, GL_STREAM_DRAW);
                 glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
             }
-
-            /// exr to pbo
-            static bool ReadDirectlyToPBO{ true };
-            //ImGui::Checkbox("ReadDirectlyToPBO", &ReadDirectlyToPBO);
-
-            auto [x, y, w, h] = pbos[write_index].bbox;
-
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[write_index].id);
-            //pbo_data_sizes[nextIndex] = { data_x, data_y, data_width, data_height };
-            //glBufferData(GL_PIXEL_UNPACK_BUFFER, data_width* data_height* mSelectedChannels.size() * sizeof(half), 0, GL_STREAM_DRAW);
-            GLubyte* ptr = (GLubyte*)glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
-            if (ptr)
-            {
-                auto [x, y, w, h] = pbos[write_index].bbox;
-                memcpy(ptr, pixels, w * h * channels.size() * sizeof(half));
-                glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
-            }
-            else {
-                std::cerr << "cannot map PBO" << "\n";
-            }
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
         }
     }
 };
@@ -882,10 +905,19 @@ std::unique_ptr<RenderPlate> black_plate;
 
 void open(std::filesystem::path filename)
 {
+
+
+
+    std::cout << "opening: " << filename << "\n";
+    if (!std::filesystem::exists(filename)) {
+        std::cout << "file does not exist! " << filename << "\n";
+    }
     sequence = FileSequence(filename);
     first_frame = sequence.first_frame;
     last_frame = sequence.last_frame;
     F = sequence.first_frame;
+
+    
 
     reader = std::make_unique<SequenceReader>(sequence);
     auto [display_width, display_height] = reader->size();
@@ -893,8 +925,12 @@ void open(std::filesystem::path filename)
     layer_manager = std::make_unique<LayerManager>(sequence.item(sequence.first_frame));
     
     correction_plate = std::make_unique<CorrectionPlate>(renderer->width, renderer->height, renderer->color_attachment);
+ 
+    
 
     viewer_state.camera.fit(renderer->width, renderer->height);
+
+    std::cin.get();
 }
 
 void drop_callback(GLFWwindow* window, int argc, const char** argv)
@@ -928,13 +964,27 @@ int main(int argc, char* argv[])
         std::cout << i << ": " << argv[i] << "\n";
     }
 
+    
+
     glazy::init();
+
+    
+
     glazy::set_vsync(false);
     glfwSetDropCallback(glazy::window, drop_callback);
 
+    
+
+    std::cout << "current working directory: " << std::filesystem::current_path() << "\n";
+
+    
+
     if (argc == 2)
     {
+        
         open(argv[1]);
+        
+        std::filesystem::current_path(argv[0]); // set working directory to exe
     }
     else
     {
@@ -944,270 +994,294 @@ int main(int argc, char* argv[])
         //open("C:/Users/andris/Desktop/52_EXAM_v51-raw/52_01_EXAM_v51.0001.exr" );
         //open("C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr");
     }
-    polka_plate = std::make_unique<RenderPlate>("./shaders/PASS_THROUGH_CAMERA.vert", "./shaders/polka.frag");
-    checker_plate = std::make_unique<RenderPlate>("./shaders/checker.vert", "./shaders/checker.frag");
-    black_plate = std::make_unique<RenderPlate>("./shaders/checker.vert", "./shaders/constant.frag");
+
+    
+
+    polka_plate = std::make_unique<RenderPlate>("./PASS_THROUGH_CAMERA.vert", "polka.frag");
+    checker_plate = std::make_unique<RenderPlate>("./checker.vert", "checker.frag");
+    black_plate = std::make_unique<RenderPlate>("./checker.vert", "constant.frag");
+
+    std::cout << "current working directory: " << std::filesystem::current_path() << "\n";
+
+    
 
     while (glazy::is_running())
     {
         glazy::new_frame();
-        if (is_playing)
-        {
-            F++;
-            if (F > last_frame) F = first_frame;
-            reader->current_frame = F;
-        }
 
-        if (ImGui::IsKeyPressed('F')) {
-            viewer_state.camera.fit(renderer->width, renderer->height);
-        }
+        try {
 
-        if (ImGui::BeginMainMenuBar())
-        {
-            if (ImGui::BeginMenu("File"))
+            if (is_playing)
             {
-                if (ImGui::MenuItem("Open", "")) {
-                    auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0JPEG images\0*.jpg");
-                    open(filepath);
-                }
-                ImGui::EndMenu();
+                F++;
+                if (F > last_frame) F = first_frame;
+                reader->current_frame = F;
             }
 
-            if (ImGui::BeginMenu("View")) {
-                if (ImGui::MenuItem("fit", "f"))
-                {
-                    viewer_state.camera.fit(renderer->width, renderer->height);
-                }
-                ImGui::EndMenu();
+            if (ImGui::IsKeyPressed('F')) {
+                viewer_state.camera.fit(renderer->width, renderer->height);
             }
 
-            ImGui::EndMainMenuBar();
-        }
-
-        if (ImGui::Begin("Viewer", (bool*)0, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_MenuBar))
-        {
-            if (ImGui::BeginMenuBar())
+            if (ImGui::BeginMainMenuBar())
             {
-                ImGui::SetNextItemWidth(ImGui::CalcComboWidth(layer_manager->names()));
-                if (ImGui::BeginCombo("##layers", layer_manager->current_name().c_str()))\
+                if (ImGui::BeginMenu("File"))
                 {
-                    auto layer_names = layer_manager->names();
-                    for (auto i = 0; i < layer_names.size(); i++) {
-                        ImGui::PushID(i);
-                        bool is_selected = i == layer_manager->current();
-                        if (ImGui::Selectable(layer_names.at(i).c_str(), is_selected, ImGuiSelectableFlags_SpanAllColumns)) {
-                            layer_manager->set_current(i);
-                            reader->selected_part_idx = layer_manager->current_part_idx();
-                            reader->set_selected_channels(layer_manager->current_channel_ids());
-                        }
-                        ImGui::PopID();
+                    if (ImGui::MenuItem("Open", "")) {
+                        auto filepath = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0JPEG images\0*.jpg");
+                        open(filepath);
                     }
-                    ImGui::EndCombo();
+                    ImGui::EndMenu();
                 }
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("layers");
 
-                ImGui::Separator();
-
-                ImGui::BeginGroup();
-                {
-                    if (ImGui::Button("fit"))
+                if (ImGui::BeginMenu("View")) {
+                    if (ImGui::MenuItem("fit", "f"))
                     {
                         viewer_state.camera.fit(renderer->width, renderer->height);
                     }
-                    if (ImGui::Button("flip y")) {
-                        viewer_state.camera = Camera(
-                            viewer_state.camera.eye * glm::vec3(1, 1, -1),
-                            viewer_state.camera.target * glm::vec3(1, 1, -1),
-                            viewer_state.camera.up * glm::vec3(1, -1, 1),
-                            viewer_state.camera.ortho,
-                            viewer_state.camera.aspect,
-                            viewer_state.camera.fovy,
-                            viewer_state.camera.tiltshift,
-                            viewer_state.camera.near_plane,
-                            viewer_state.camera.far_plane
-                        );
-                    }
-                    //ImGui::MenuItem(ICON_FA_CHESS_BOARD, "", &display_checkerboard);
-                    ImGui::SetNextItemWidth(ImGui::GetFrameHeightWithSpacing());
-                    std::vector<std::string> preview_texts{ ICON_FA_SQUARE_FULL, ICON_FA_CHESS_BOARD ," " };
-                    if (selected_viewport_background == 0) {
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 0, 0, 1));
-                    }
-                    else {
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
-                    }
-                    if (ImGui::BeginCombo("##background", preview_texts[selected_viewport_background].c_str(), ImGuiComboFlags_NoArrowButton))
-                    {
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 0, 0, 1));
-                        if (ImGui::Selectable(ICON_FA_SQUARE_FULL, selected_viewport_background == 0)) {
-                            selected_viewport_background = 0;
-                        }
-                        ImGui::PopStyleColor();
-
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1,1,1, 1));
-                        if (ImGui::Selectable(ICON_FA_CHESS_BOARD, selected_viewport_background ==1)) {
-                            selected_viewport_background = 1;
-                        };
-
-                        if (ImGui::Selectable(" ", selected_viewport_background ==2)) {
-                            selected_viewport_background = 2;
-                        };
-                        ImGui::PopStyleColor();
-                        ImGui::EndCombo();
-                    }
-                    ImGui::PopStyleColor();
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("background");
-                    }
+                    ImGui::EndMenu();
                 }
-                ImGui::EndGroup();
 
-                ImGui::Separator();
-                correction_plate->onGui();
-
-                ImGui::EndMenuBar();
+                ImGui::EndMainMenuBar();
             }
 
-            ImGui::BeginGLViewer(&viewer_state.viewport_fbo, &viewer_state.viewport_color_attachment, &viewer_state.camera, {-1,-1});
+            if (ImGui::Begin("Viewer", (bool*)0, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_MenuBar))
             {
-                glClearColor(0, 0, 0, 0);
-                glClear(GL_COLOR_BUFFER_BIT);
-                imdraw::set_projection(viewer_state.camera.getProjection());
-                imdraw::set_view(viewer_state.camera.getView());
-                glm::mat4 M{ 1 };
-                M = glm::scale(M, { renderer->width/2, renderer->height/2, 1 });
-                M = glm::translate(M, { 1,1, 0 });
-
-                if (selected_viewport_background == 1)
+                if (ImGui::BeginMenuBar())
                 {
-                    checker_plate->set_uniforms({
-                        {"projection", viewer_state.camera.getProjection()},
-                        {"view", viewer_state.camera.getView()},
-                        {"model", M},
-                        {"tile_size", 8}
-                    });
-                    checker_plate->render();
-                }
-
-                if (selected_viewport_background == 0)
-                {
-                    black_plate->set_uniforms({
-                        {"projection", viewer_state.camera.getProjection()},
-                        {"view", viewer_state.camera.getView()},
-                        {"model", M},
-                        {"uColor", glm::vec3(0,0,0)}
-                        });
-                    black_plate->render();
-                }
-
-                //polka_plate->set_uniforms({
-                //    {"projection", viewer_state.camera.getProjection()},
-                //    {"view", viewer_state.camera.getView()},
-                //    {"model", glm::mat4(1)},
-                //    {"radius", 0.01f}
-                //});
-                //polka_plate->render();
-                correction_plate->render();
-            }
-            ImGui::EndGLViewer();
-        }
-        ImGui::End();
-
-        {
-            auto viewsize = ImGui::GetMainViewport()->WorkSize;
-            ImGui::SetNextWindowSize({ 300, viewsize.y * 2 / 3 });
-            ImGui::SetNextWindowPos({ viewsize.x - 320, viewsize.y * 1 / 3 / 2 });
-            if (ImGui::Begin("Options", (bool*)0, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoNav))
-            {
-                if (ImGui::BeginTabBar("info"))
-                {
-                    if (ImGui::BeginTabItem("info (current file)"))
+                    ImGui::SetNextItemWidth(ImGui::CalcComboWidth(layer_manager->names()));
+                    if (ImGui::BeginCombo("##layers", layer_manager->current_name().c_str()))\
                     {
-                        auto file = Imf::MultiPartInputFile(sequence.item(reader->current_frame).string().c_str());
-                        ImGui::TextWrapped(get_infostring(file).c_str());
-                        ImGui::EndTabItem();
-                    }
-
-                    if (ImGui::BeginTabItem("channels"))
-                    {
-                        auto file = Imf::MultiPartInputFile(sequence.item(sequence.first_frame).string().c_str());
-                        auto parts = file.parts();
-                        for (auto p = 0; p < parts; p++)
-                        {
-                            ImGui::PushID(p);
-                            auto in = Imf::InputPart(file, p);
-                            auto header = in.header();
-                            auto cl = header.channels();
-                            ImGui::LabelText("Part", "%d", p);
-                            ImGui::LabelText("Name", "%s", header.hasName() ? header.name().c_str() : "");
-                            ImGui::LabelText("View", "%s", header.hasView() ? header.view().c_str() : "");
-                            if (ImGui::BeginTable("channels table", 4, ImGuiTableFlags_NoBordersInBody))
-                            {
-                                ImGui::TableSetupColumn("name");
-                                ImGui::TableSetupColumn("type");
-                                ImGui::TableSetupColumn("sampling");
-                                ImGui::TableSetupColumn("linear");
-                                ImGui::TableHeadersRow();
-                                auto channels = reader->selected_channels();
-                                for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
-                                {
-                                    //ImGui::TableNextRow();
-                                    ImGui::TableNextColumn();
-                                    bool is_selected = (reader->selected_part_idx == p) && std::find(channels.begin(), channels.end(), std::string(i.name())) != channels.end();
-                                    if (ImGui::Selectable(i.name(), is_selected, ImGuiSelectableFlags_SpanAllColumns))
-                                    {
-                                        reader->selected_part_idx = p;
-                                        auto channel_name = std::string(i.name());
-                                        reader->set_selected_channels( { channel_name } );
-                                    }
-
-                                    ImGui::TableNextColumn();
-                                    ImGui::Text("%s", to_string(i.channel().type).c_str());
-
-                                    ImGui::TableNextColumn();
-                                    ImGui::Text("%d %d", i.channel().xSampling, i.channel().ySampling);
-
-                                    ImGui::TableNextColumn();
-                                    ImGui::Text("%s", i.channel().pLinear ? "true" : "false");
-                                }
-                                ImGui::EndTable();
+                        auto layer_names = layer_manager->names();
+                        for (auto i = 0; i < layer_names.size(); i++) {
+                            ImGui::PushID(i);
+                            bool is_selected = i == layer_manager->current();
+                            if (ImGui::Selectable(layer_names.at(i).c_str(), is_selected, ImGuiSelectableFlags_SpanAllColumns)) {
+                                layer_manager->set_current(i);
+                                reader->selected_part_idx = layer_manager->current_part_idx();
+                                reader->set_selected_channels(layer_manager->current_channel_ids());
                             }
                             ImGui::PopID();
                         }
-
-                        ImGui::EndTabItem();
+                        ImGui::EndCombo();
                     }
-                    if (ImGui::BeginTabItem("Settings"))
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("layers");
+
+                    ImGui::Separator();
+
+                    ImGui::BeginGroup();
                     {
-                        if (ImGui::CollapsingHeader("reader", ImGuiTreeNodeFlags_DefaultOpen)) {
-                            reader->onGUI();
+                        if (ImGui::Button("fit"))
+                        {
+                            viewer_state.camera.fit(renderer->width, renderer->height);
                         }
-                        if (ImGui::CollapsingHeader("renderer", ImGuiTreeNodeFlags_DefaultOpen)) {
-                            renderer->onGUI();
+                        if (ImGui::Button("flip y")) {
+                            viewer_state.camera = Camera(
+                                viewer_state.camera.eye * glm::vec3(1, 1, -1),
+                                viewer_state.camera.target * glm::vec3(1, 1, -1),
+                                viewer_state.camera.up * glm::vec3(1, -1, 1),
+                                viewer_state.camera.ortho,
+                                viewer_state.camera.aspect,
+                                viewer_state.camera.fovy,
+                                viewer_state.camera.tiltshift,
+                                viewer_state.camera.near_plane,
+                                viewer_state.camera.far_plane
+                            );
                         }
-                        ImGui::EndTabItem();
+                        //ImGui::MenuItem(ICON_FA_CHESS_BOARD, "", &display_checkerboard);
+                        ImGui::SetNextItemWidth(ImGui::GetFrameHeightWithSpacing());
+                        std::vector<std::string> preview_texts{ ICON_FA_SQUARE_FULL, ICON_FA_CHESS_BOARD ," " };
+                        if (selected_viewport_background == 0) {
+                            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 0, 0, 1));
+                        }
+                        else {
+                            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
+                        }
+                        if (ImGui::BeginCombo("##background", preview_texts[selected_viewport_background].c_str(), ImGuiComboFlags_NoArrowButton))
+                        {
+                            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 0, 0, 1));
+                            if (ImGui::Selectable(ICON_FA_SQUARE_FULL, selected_viewport_background == 0)) {
+                                selected_viewport_background = 0;
+                            }
+                            ImGui::PopStyleColor();
+
+                            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
+                            if (ImGui::Selectable(ICON_FA_CHESS_BOARD, selected_viewport_background == 1)) {
+                                selected_viewport_background = 1;
+                            };
+
+                            if (ImGui::Selectable(" ", selected_viewport_background == 2)) {
+                                selected_viewport_background = 2;
+                            };
+                            ImGui::PopStyleColor();
+                            ImGui::EndCombo();
+                        }
+                        ImGui::PopStyleColor();
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("background");
+                        }
                     }
-                    ImGui::EndTabBar();
+                    ImGui::EndGroup();
+
+                    ImGui::Separator();
+                    correction_plate->onGui();
+
+                    ImGui::EndMenuBar();
                 }
+
+                ImGui::BeginGLViewer(&viewer_state.viewport_fbo, &viewer_state.viewport_color_attachment, &viewer_state.camera, { -1,-1 });
+                {
+                    glClearColor(0, 0, 0, 0);
+                    glClear(GL_COLOR_BUFFER_BIT);
+                    imdraw::set_projection(viewer_state.camera.getProjection());
+                    imdraw::set_view(viewer_state.camera.getView());
+                    glm::mat4 M{ 1 };
+                    M = glm::scale(M, { renderer->width / 2, renderer->height / 2, 1 });
+                    M = glm::translate(M, { 1,1, 0 });
+
+                    if (selected_viewport_background == 1)
+                    {
+                        checker_plate->set_uniforms({
+                            {"projection", viewer_state.camera.getProjection()},
+                            {"view", viewer_state.camera.getView()},
+                            {"model", M},
+                            {"tile_size", 8}
+                            });
+                        checker_plate->render();
+                    }
+
+                    if (selected_viewport_background == 0)
+                    {
+                        black_plate->set_uniforms({
+                            {"projection", viewer_state.camera.getProjection()},
+                            {"view", viewer_state.camera.getView()},
+                            {"model", M},
+                            {"uColor", glm::vec3(0,0,0)}
+                            });
+                        black_plate->render();
+                    }
+
+                    //polka_plate->set_uniforms({
+                    //    {"projection", viewer_state.camera.getProjection()},
+                    //    {"view", viewer_state.camera.getView()},
+                    //    {"model", glm::mat4(1)},
+                    //    {"radius", 0.01f}
+                    //});
+                    //polka_plate->render();
+                    correction_plate->render();
+                }
+                ImGui::EndGLViewer();
             }
             ImGui::End();
+
+            {
+                auto viewsize = ImGui::GetMainViewport()->WorkSize;
+                ImGui::SetNextWindowSize({ 300, viewsize.y * 2 / 3 });
+                ImGui::SetNextWindowPos({ viewsize.x - 320, viewsize.y * 1 / 3 / 2 });
+                if (ImGui::Begin("Options", (bool*)0, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoNav))
+                {
+                    if (ImGui::BeginTabBar("info"))
+                    {
+                        if (ImGui::BeginTabItem("info (current file)"))
+                        {
+                            auto file = Imf::MultiPartInputFile(sequence.item(reader->current_frame).string().c_str());
+                            ImGui::TextWrapped(get_infostring(file).c_str());
+                            ImGui::EndTabItem();
+                        }
+
+                        if (ImGui::BeginTabItem("channels"))
+                        {
+                            auto file = Imf::MultiPartInputFile(sequence.item(sequence.first_frame).string().c_str());
+                            auto parts = file.parts();
+                            for (auto p = 0; p < parts; p++)
+                            {
+                                ImGui::PushID(p);
+                                auto in = Imf::InputPart(file, p);
+                                auto header = in.header();
+                                auto cl = header.channels();
+                                ImGui::LabelText("Part", "%d", p);
+                                ImGui::LabelText("Name", "%s", header.hasName() ? header.name().c_str() : "");
+                                ImGui::LabelText("View", "%s", header.hasView() ? header.view().c_str() : "");
+                                if (ImGui::BeginTable("channels table", 4, ImGuiTableFlags_NoBordersInBody))
+                                {
+                                    ImGui::TableSetupColumn("name");
+                                    ImGui::TableSetupColumn("type");
+                                    ImGui::TableSetupColumn("sampling");
+                                    ImGui::TableSetupColumn("linear");
+                                    ImGui::TableHeadersRow();
+                                    auto channels = reader->selected_channels();
+                                    for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
+                                    {
+                                        //ImGui::TableNextRow();
+                                        ImGui::TableNextColumn();
+                                        bool is_selected = (reader->selected_part_idx == p) && std::find(channels.begin(), channels.end(), std::string(i.name())) != channels.end();
+                                        if (ImGui::Selectable(i.name(), is_selected, ImGuiSelectableFlags_SpanAllColumns))
+                                        {
+                                            reader->selected_part_idx = p;
+                                            auto channel_name = std::string(i.name());
+                                            reader->set_selected_channels({ channel_name });
+                                        }
+
+                                        ImGui::TableNextColumn();
+                                        ImGui::Text("%s", to_string(i.channel().type).c_str());
+
+                                        ImGui::TableNextColumn();
+                                        ImGui::Text("%d %d", i.channel().xSampling, i.channel().ySampling);
+
+                                        ImGui::TableNextColumn();
+                                        ImGui::Text("%s", i.channel().pLinear ? "true" : "false");
+                                    }
+                                    ImGui::EndTable();
+                                }
+                                ImGui::PopID();
+                            }
+
+                            ImGui::EndTabItem();
+                        }
+                        if (ImGui::BeginTabItem("Settings"))
+                        {
+                            if (ImGui::CollapsingHeader("reader", ImGuiTreeNodeFlags_DefaultOpen)) {
+                                reader->onGUI();
+                            }
+                            if (ImGui::CollapsingHeader("renderer", ImGuiTreeNodeFlags_DefaultOpen)) {
+                                renderer->onGUI();
+                            }
+                            ImGui::EndTabItem();
+                        }
+                        ImGui::EndTabBar();
+                    }
+                }
+                ImGui::End();
+            }
+
+            {
+                auto viewsize = ImGui::GetMainViewport()->WorkSize;
+                ImGui::SetNextWindowSize({ viewsize.x * 2 / 3,0 });
+                ImGui::SetNextWindowPos({ viewsize.x * 1 / 3 / 2, viewsize.y - 80 });
+                if (ImGui::Begin("Timeline", (bool*)0, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoDecoration))
+                {
+                    if (ImGui::Frameslider("timeslider", &is_playing, &F, first_frame, last_frame)) {
+                        reader->current_frame = F;
+                    }
+                }
+                ImGui::End();
+            }
+            update();
+            glazy::end_frame();
+            FrameMark;
         }
 
-        {
-            auto viewsize = ImGui::GetMainViewport()->WorkSize;
-            ImGui::SetNextWindowSize({ viewsize.x * 2 / 3,0 });
-            ImGui::SetNextWindowPos({ viewsize.x * 1 / 3 / 2, viewsize.y - 80 });
-            if (ImGui::Begin("Timeline", (bool*)0, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoDecoration))
-            {
-                if (ImGui::Frameslider("timeslider", &is_playing, &F, first_frame, last_frame)) {
-                    reader->current_frame = F;
-                }
-            }
-            ImGui::End();
+        catch (const std::exception& ex) {
+            std::cout << ex.what() << "\n";
+            std::cin.get();
+            // ...
         }
-        update();
-        glazy::end_frame();
-        FrameMark;
+        catch (const std::string& ex) {
+            std::cout << ex << "\n";
+            std::cin.get();
+        }
+        catch (...) {
+            std::cin.get();
+        }
     }
     glazy::destroy();
 }
