@@ -135,12 +135,8 @@ namespace ImGui
         // Control Camera
         bool changed{ false };
         ImGui::InvisibleButton("##camera control", item_size);
-        if (ImGui::IsMouseClicked(2)) {
-            std::cout << "clicked" << "\n";
-        }
 
         if (ImGui::IsItemActive()) {
-            std::cout << "active" << "\n";
             if (ImGui::IsMouseDragging(0) && (ImGui::GetIO().KeyMods == (ImGuiKeyModFlags_Ctrl | ImGuiKeyModFlags_Alt)))
             {
                 camera->orbit(-ImGui::GetIO().MouseDelta.x * 0.006, -ImGui::GetIO().MouseDelta.y * 0.006);
@@ -148,7 +144,6 @@ namespace ImGui
             }
             else if (ImGui::IsMouseDragging(0) || ImGui::IsMouseDragging(2))// && !ImGui::GetIO().KeyMods)
             {
-                std::cout << "pan" << "\n";
                 camera->pan(-ImGui::GetIO().MouseDelta.x / item_size.x, -ImGui::GetIO().MouseDelta.y / item_size.y);
                 changed = true;
             }
@@ -1294,6 +1289,7 @@ int main(int argc, char* argv[])
                         auto item_pos = ImGui::GetItemRectMin() - ImGui::GetWindowPos(); // window space
                         auto item_size = ImGui::GetItemRectSize();
                         auto store_cursor = ImGui::GetCursorPos();
+
                         {
                             
                             glm::vec2 pos = { width, height };
@@ -1301,7 +1297,7 @@ int main(int argc, char* argv[])
                             glm::vec3 screen_pos = glm::project(glm::vec3(pos, 0.0), viewer_state.camera.getView(), viewer_state.camera.getProjection(), glm::vec4(0, 0, item_size.x, item_size.y));
                             screen_pos.y = item_size.y - screen_pos.y; // invert y
 
-                            ImGui::SetCursorPos(ImVec2(screen_pos.x + item_pos.x, screen_pos.y + item_pos.y));
+                            ImGui::SetCursorPos({ screen_pos.x + item_pos.x, screen_pos.y + item_pos.y });
                             if (width == 1920 && height == 1080)
                             {
                                 ImGui::Text("HD");
@@ -1326,7 +1322,7 @@ int main(int argc, char* argv[])
                             glm::vec3 screen_pos = glm::project(glm::vec3(pos, 0.0), viewer_state.camera.getView(), viewer_state.camera.getProjection(), glm::vec4(0, 0, item_size.x, item_size.y));
                             screen_pos.y = item_size.y - screen_pos.y; // invert y
 
-                            ImGui::SetCursorPos(ImVec2(screen_pos.x + item_pos.x, screen_pos.y + item_pos.y));
+                            ImGui::SetCursorPos({ screen_pos.x + item_pos.x, screen_pos.y + item_pos.y });
                             ImGui::Text("%dx%d", x, y);
                         }
 
@@ -1337,7 +1333,7 @@ int main(int argc, char* argv[])
                             glm::vec3 screen_pos = glm::project(glm::vec3(pos, 0.0), viewer_state.camera.getView(), viewer_state.camera.getProjection(), glm::vec4(0, 0, item_size.x, item_size.y));
                             screen_pos.y = item_size.y - screen_pos.y; // invert y
 
-                            ImGui::SetCursorPos(ImVec2(screen_pos.x + item_pos.x, screen_pos.y + item_pos.y));
+                            ImGui::SetCursorPos({ screen_pos.x + item_pos.x, screen_pos.y + item_pos.y });
                             ImGui::Text("%dx%d", x, y);
                         }
                         ImGui::SetCursorPos(store_cursor); //restore cursor
