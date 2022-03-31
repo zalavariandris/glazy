@@ -161,4 +161,8 @@
     <None Include="README.md" />
     <None Include="vcpkg.json" />
   </ItemGroup>
+  <ItemGroup>
+    <CopyFileToFolders Include="glazy\fa-solid-900.ttf" />
+    <CopyFileToFolders Include="glazy\fa-regular-400.ttf" />
+  </ItemGroup>
 </Project>

@@ -135,14 +135,20 @@ namespace ImGui
         // Control Camera
         bool changed{ false };
         ImGui::InvisibleButton("##camera control", item_size);
+        if (ImGui::IsMouseClicked(2)) {
+            std::cout << "clicked" << "\n";
+        }
+
         if (ImGui::IsItemActive()) {
+            std::cout << "active" << "\n";
             if (ImGui::IsMouseDragging(0) && (ImGui::GetIO().KeyMods == (ImGuiKeyModFlags_Ctrl | ImGuiKeyModFlags_Alt)))
             {
                 camera->orbit(-ImGui::GetIO().MouseDelta.x * 0.006, -ImGui::GetIO().MouseDelta.y * 0.006);
                 changed = true;
             }
-            else if (ImGui::IsMouseDragging(0))// && !ImGui::GetIO().KeyMods)
+            else if (ImGui::IsMouseDragging(0) || ImGui::IsMouseDragging(2))// && !ImGui::GetIO().KeyMods)
             {
+                std::cout << "pan" << "\n";
                 camera->pan(-ImGui::GetIO().MouseDelta.x / item_size.x, -ImGui::GetIO().MouseDelta.y / item_size.y);
                 changed = true;
             }
@@ -187,7 +193,7 @@ namespace ImGui
         // Resize texture to viewport size
         int tex_width, tex_height;
         { // get current texture size
-            ZoneScopedN("get viewer texture size");
+            //ZoneScopedN("get viewer texture size");
             GLint current_tex;
             glGetIntegerv(GL_TEXTURE_BINDING_2D, &current_tex); // TODO: getting fbo is fairly harmful to performance.
             glBindTexture(GL_TEXTURE_2D, *color_attachment);
@@ -199,7 +205,7 @@ namespace ImGui
 
         if (tex_width != item_size.x || tex_height != item_size.y)
         { // update fbo size if necessary
-            ZoneScopedN("resize viewport fbo");
+            //ZoneScopedN("resize viewport fbo");
             //std::cout << "update viewport fbo: " << item_size.x << ", " << item_size.y << "\n";
             if (glIsFramebuffer(*fbo))
                 glDeleteFramebuffers(1, fbo);
@@ -280,15 +286,21 @@ GLenum glformat_from_channels(std::vector<std::string> channels, std::array<GLin
         else swizzle_mask = { GL_RED, GL_RED, GL_RED, GL_ONE };
     }
     else {
-        throw "cannot match selected channels to glformat";
+        std::cout << "cannot match selected channels to glformat: ";
+        for (auto channel : channels) {
+            std::cout << channel << " ";
+        }
+        std::cout << "\n";
+        return -1;
     }
     return glformat;
 }
 
+
 /// Read pixels to memory
 void exr_to_memory(Imf::InputPart& inputpart, int x, int y, int width, int height, std::vector<std::string> channels, void* memory)
 {
-    ZoneScoped;
+    //ZoneScoped;
     Imf::FrameBuffer frameBuffer;
     //size_t chanoffset = 0;
     unsigned long long xstride = sizeof(half) * channels.size();
@@ -317,7 +329,7 @@ void get_bbox(Imf::InputPart& inputpart, std::tuple<int, int, int, int>* bbox)
 {
     /// Update datawindow
     {
-        ZoneScopedN("Update datawindow");
+        //ZoneScopedN("Update datawindow");
         Imath::Box2i dataWindow = inputpart.header().dataWindow();
         *bbox = std::tuple<int, int, int, int>(dataWindow.min.x, dataWindow.min.y, dataWindow.max.x - dataWindow.min.x + 1, dataWindow.max.y - dataWindow.min.y + 1);
     }
@@ -333,11 +345,11 @@ void exr_to_memory(std::filesystem::path filename, int part, std::vector<std::st
     std::unique_ptr<Imf::MultiPartInputFile> inputfile;
     std::unique_ptr<Imf::InputPart> inputpart;
     {
-        ZoneScopedN("Open Curren InputPart");
+        //ZoneScopedN("Open Curren InputPart");
         
         try
         {
-            ZoneScopedN("Open Current File");
+            //ZoneScopedN("Open Current File");
             inputfile = std::make_unique<Imf::MultiPartInputFile>(filename.string().c_str());
 
         }
@@ -348,7 +360,7 @@ void exr_to_memory(std::filesystem::path filename, int part, std::vector<std::st
         }
 
         {
-            ZoneScopedN("seek part");
+            //ZoneScopedN("seek part");
             inputpart = std::make_unique<Imf::InputPart>(*inputfile, part);
         }
     }
@@ -521,8 +533,6 @@ public:
         return mSelectedChannels;
     }
 
-
-
     void read_to_memory(void* memory)
     {
         ZoneScoped;
@@ -535,18 +545,18 @@ public:
             ZoneScopedN("Open Curren InputPart");
 
             auto filename = sequence.item(current_frame);
-            //if (!std::filesystem::exists(filename)) {
-            //    std::cerr << "file does not exist: " << filename << "\n";
-            //    return;
-            //}
+            if (!std::filesystem::exists(filename)) {
+                std::cerr << "file does not exist: " << filename << "\n";
+                return;
+            }
 
             try
             {
                 ZoneScopedN("Open Current File");
                 current_file = std::make_unique<Imf::MultiPartInputFile>(filename.string().c_str());
-
             }
-            catch (const Iex::InputExc& ex) {
+            catch (const Iex::InputExc& ex)
+            {
                 std::cerr << "file doesn't appear to really be an EXR file" << "\n";
                 std::cerr << "  " << ex.what() << "\n";
                 return;
@@ -584,12 +594,21 @@ public:
     }
 };
 
-struct PixelsImage {
-    void* data;
-    std::vector<std::string> channels;
-    std::tuple<int, int, int, int> bbox;
-    Imf::PixelType pixeltype;
-};
+//struct PixelsImage {
+//    void* data;
+//    std::vector<std::string> channels;
+//    std::tuple<int, int, int, int> bbox;
+//    Imf::PixelType pixeltype;
+//};
+
+
+
+//struct TextureImage {
+//    GLuint id;
+//    std::vector<std::string> channels;
+//    std::tuple<int, int, int, int> bbox;
+//    Imf::PixelType pixeltype;
+//};
 
 struct PBOImage {
     GLuint id;
@@ -598,11 +617,126 @@ struct PBOImage {
     Imf::PixelType pixeltype;
 };
 
-struct TextureImage {
-    GLuint id;
-    std::vector<std::string> channels;
-    std::tuple<int, int, int, int> bbox;
-    Imf::PixelType pixeltype;
+class PBOImageStream {
+public:
+
+
+    std::vector<PBOImage> pbos;
+    int display_index;
+    int write_index;
+
+    int m_width, m_height;
+
+public:
+    PBOImageStream(int width, int height, int channels, int n)
+    {
+        ZoneScoped;
+        pbos.resize(n);
+
+        for (auto i = 0; i < n; i++)
+        {
+            GLuint pbo;
+            glGenBuffers(1, &pbo);
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
+            glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * channels * sizeof(half), 0, GL_STREAM_DRAW);
+            pbos[i].id = pbo;
+            pbos[i].bbox = { 0,0, 0,0 };
+        }
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+        display_index = 0;
+        write_index = (display_index + 1) % pbos.size();
+
+        m_width = width;
+        m_height = height;
+    }
+
+    void onGUI()
+    {
+        int buffer_size = pbos.size();
+        if (ImGui::InputInt("buffer size", &buffer_size)) {
+            reformat(m_width, m_height, 4, buffer_size);
+        }
+
+        for (auto i=0; i<pbos.size(); i++)
+        {
+            
+            if (write_index == i) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0, 0, 1));
+            }
+            if (display_index == i) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 1, 0, 1));
+            }
+            ImGui::Text("%d", pbos[i].id); ImGui::SameLine();
+
+            if (i == write_index || i == display_index) {
+                ImGui::PopStyleColor();
+            }
+        }
+        ImGui::NewLine();
+    }
+
+    void reformat(int width, int height, int channels, int n)
+    {
+        m_width = width;
+        m_height = height;
+        for (auto i = 0; i < pbos.size(); i++) {
+            glDeleteBuffers(1, &pbos[i].id);
+        }
+
+        pbos.resize(n);
+
+        for (auto i = 0; i < n; i++)
+        {
+            GLuint pbo;
+            glGenBuffers(1, &pbo);
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
+            glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * channels * sizeof(half), 0, GL_STREAM_DRAW);
+            pbos[i].id = pbo;
+            pbos[i].bbox = { 0,0, 0,0 };
+        }
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+        display_index = 0;
+        write_index = (display_index + 1) % pbos.size();
+    }
+
+    ~PBOImageStream()
+    {
+        for (auto i = 0; i < pbos.size(); i++) {
+            glDeleteBuffers(1, &pbos[i].id);
+        }
+    }
+
+    // display PBO bbox
+    std::tuple<int,int,int,int> bbox() const
+    {
+        return pbos.at(display_index).bbox;
+    }
+
+    void write(void* pixels, const std::tuple<int, int, int, int>& bbox, const std::vector<std::string>& channels, unsigned long long typesize)
+    {
+        display_index = (display_index + 1) % pbos.size();
+        write_index = (display_index + 1) % pbos.size();
+
+        auto& write_pbo = pbos[write_index];
+
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, write_pbo.id);
+        void* ptr = (void*)glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
+        if (ptr)
+        {
+            auto [x, y, w, h] = bbox;
+            memcpy(ptr, pixels, w * h * channels.size() * typesize);
+            write_pbo.bbox = bbox;
+            write_pbo.channels = channels;
+            glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+        }
+        else {
+            std::cerr << "cannot map PBO" << "\n";
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+        }
+    }
 };
 
 class PixelsRenderer
@@ -613,35 +747,24 @@ public:
     GLuint mProgram;
 
     GLuint data_tex;
-    int x, y, width, height;
+    int width, height;
+    std::tuple<int, int, int, int> m_bbox;
 
-    int display_index{ 0 };
-    int write_index;
+    //int display_index{ 0 };
+    //int write_index;
 
     GLenum glinternalformat = GL_RGBA16F; // selec texture internal format
+    //bool orphaning{ true };
 
-    std::vector<PBOImage> pbos;
-    //std::vector<std::tuple<int,int,int,int>> pbo_data_sizes; // keep PBOs dimension
-    bool orphaning{ true };
-
-    PixelsRenderer(int width, int height) : x(0), y(0), width(width), height(height)
+    PixelsRenderer(int width, int height) : width(width), height(height)
     {
-        init_pbos(width, height, 4, 3);
         init_tex(width, height);
         init_fbo(width, height);
         init_program();
     }
 
-    void onGUI() {
-        /// PBOS
-        static int npbos = pbos.size();
-        if (ImGui::InputInt("pbos", &npbos))
-        {
-            init_pbos(width, height, 4, npbos);
-        }
-
-        ImGui::Checkbox("orphaning", &orphaning);
-
+    void onGUI()
+    {
         /// Internalformat
         if (ImGui::BeginListBox("texture internal format"))
         {
@@ -659,37 +782,9 @@ public:
         }
     }
 
-    void init_pbos(int width, int height, int channels, int n)
+    void init_tex(int width, int height)
     {
-        ZoneScoped;
-
-        TracyMessage(("set pbo count to: " + std::to_string(n)).c_str(), 9);
-        if (!pbos.empty())
-        {
-            for (auto i = 0; i < pbos.size(); i++) {
-                glDeleteBuffers(1, &pbos[i].id);
-            }
-
-        }
-
-        pbos.resize(n);
-        //pbo_data_sizes.resize(n);
-
-        for (auto i = 0; i < n; i++)
-        {
-            GLuint pbo;
-            glGenBuffers(1, &pbo);
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
-            glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * channels * sizeof(half), 0, GL_STREAM_DRAW);
-            pbos[i].id = pbo;
-            pbos[i].bbox = { 0,0, 0,0 };
-        }
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-    }
-
-    void init_tex(int width, int height) {
         // init texture object
-
         glPrintErrors();
         glGenTextures(1, &data_tex);
         glBindTexture(GL_TEXTURE_2D, data_tex);
@@ -759,146 +854,101 @@ public:
         imdraw::set_uniforms(mProgram, uniforms);
     }
 
-    void render_texture_to_fbo(int x, int y, int w, int h)
+    void render_texture_to_fbo()
     {
         ZoneScopedN("datatext to fbo");
-
         BeginRenderToTexture(fbo, 0, 0, width, height);
-        glClearColor(0, 0, 0, 0);
-        glClear(GL_COLOR_BUFFER_BIT);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        set_uniforms({
-            {"inputTexture", 0},
-            {"resolution", glm::vec2(width, height)},
-            {"bbox", glm::ivec4(x,y,w,h)}
-            });
+        {
+            glClearColor(0, 0, 0, 0);
+            glClear(GL_COLOR_BUFFER_BIT);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            auto [x, y, w, h] = m_bbox;
+            set_uniforms({
+                {"inputTexture", 0},
+                {"resolution", glm::vec2(width, height)},
+                {"bbox", glm::ivec4(x,y,w,h)}
+                });
 
-        /// Create geometry
-        static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
-        static auto vao = imdraw::make_vao(mProgram, { {"aPos", {vbo, 3}} });
+            /// Create geometry
+            static GLuint vbo = imdraw::make_vbo(std::vector<glm::vec3>({ {-1,-1,0}, {1,-1,0}, {-1,1,0}, {1,1,0} }));
+            static auto vao = imdraw::make_vao(mProgram, { {"aPos", {vbo, 3}} });
 
-        /// Draw quad with fragment shader
-        imdraw::push_program(mProgram);
-        glBindTexture(GL_TEXTURE_2D, data_tex);
-        glBindVertexArray(vao);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        glBindVertexArray(0);
-        glBindTexture(GL_TEXTURE_2D, 0);
-        imdraw::pop_program();
+            /// Draw quad with fragment shader
+            imdraw::push_program(mProgram);
+            glBindTexture(GL_TEXTURE_2D, data_tex);
+            glBindVertexArray(vao);
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+            glBindVertexArray(0);
+            glBindTexture(GL_TEXTURE_2D, 0);
+            imdraw::pop_program();
+        }
         EndRenderToTexture();
     }
 
-
-    static void write_pbo(PBOImage* pbo, void* pixels, std::tuple<int, int, int, int> bbox, std::vector<std::string> channels, unsigned long long typesize)
-    {
-        /// exr to pbo
-        static bool ReadDirectlyToPBO{ true };
-        //ImGui::Checkbox("ReadDirectlyToPBO", &ReadDirectlyToPBO);
-
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo->id);
-        GLubyte* ptr = (GLubyte*)glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
-        if (ptr)
-        {
-            auto [x, y, w, h] = bbox;
-            memcpy(ptr, pixels, w * h * channels.size() * typesize);
-            pbo->bbox = bbox;
-            glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
-        }
-        else {
-            std::cerr << "cannot map PBO" << "\n";
-        }
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-    }
-
     // from memory
-    static void write_texture(void* pixels, const std::tuple<int,int,int,int>& bbox, const std::vector<std::string>& channels, GLuint tex)
-    {
-        std::array<GLint, 4> swizzle_mask;
-        auto glformat = glformat_from_channels(channels, swizzle_mask);
-        glBindTexture(GL_TEXTURE_2D, tex);
-        glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
-        auto [x, y, w, h] = bbox;
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, glformat, GL_HALF_FLOAT, pixels);
-        glBindTexture(GL_TEXTURE_2D, 0);
-    }
+    //static void write_texture(void* pixels, const std::tuple<int,int,int,int>& bbox, const std::vector<std::string>& channels, GLuint tex)
+    //{
+    //    std::array<GLint, 4> swizzle_mask;
+    //    auto glformat = glformat_from_channels(channels, swizzle_mask);
+    //    glBindTexture(GL_TEXTURE_2D, tex);
+    //    glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
+    //    auto [x, y, w, h] = bbox;
+    //    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, glformat, GL_HALF_FLOAT, pixels);
+    //    glBindTexture(GL_TEXTURE_2D, 0);
+    //}
 
+    // write texture from memory
     void update_from_data(void* pixels, std::tuple<int,int,int,int> bbox, std::vector<std::string> channels, GLenum gltype=GL_HALF_FLOAT)
     {
-        display_index = pbos.size()>0 ? (display_index + 1) % pbos.size() : 0;
-        write_index = pbos.size() > 0 ? (display_index + 1) % pbos.size() : display_index;
 
-        // upload memo
-        // upload PBO to texture
-        // stream pixels to PBO
-        std::array<GLint, 4> swizzle_mask;
-        auto glformat = glformat_from_channels(channels, swizzle_mask);
+        
+        ZoneScopedN("pixels to texture");
+        { // Upload from memory
+            std::array<GLint, 4> swizzle_mask;
+            auto glformat = glformat_from_channels(channels, swizzle_mask);
+            if (glformat == -1) return;
 
-        if (pbos.empty())
-        { // MEMORY TO TEXTURE
-            ZoneScopedN("pixels to texture");
-            { // Memory to texture
-                auto [x, y, w, h] = bbox;
-                glBindTexture(GL_TEXTURE_2D, data_tex);
-                glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
-                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, glformat, GL_HALF_FLOAT, pixels);
-                glBindTexture(GL_TEXTURE_2D, 0);
-            }
+            // update bounding box
+            m_bbox = bbox;
+
+            // transfer pixels to texture
+            auto [x, y, w, h] = m_bbox; 
+            glBindTexture(GL_TEXTURE_2D, data_tex);
+            glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, glformat, GL_HALF_FLOAT, pixels);
+            glBindTexture(GL_TEXTURE_2D, 0);
+        }
+        
+        {
             // Draw data_texture to bounding box
-            {
-                auto [x, y, w, h] = bbox;
-                render_texture_to_fbo(x, y, w, h);
-            }
-        }  
-        else
-        { // STREAM THROUGH PBO
-            ZoneScopedN("pixels to texture");
-            display_index = (display_index + 1) % pbos.size();
-            write_index = (display_index + 1) % pbos.size();
+            render_texture_to_fbo();
+        }
+    }
 
-            /// PBO to texture
-            {
-                glBindTexture(GL_TEXTURE_2D, data_tex);
-                glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[display_index].id);
-                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, std::get<2>(pbos[display_index].bbox), std::get<3>(pbos[display_index].bbox), glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-                glBindTexture(GL_TEXTURE_2D, 0);
-            }
+    // write texture from pbo
+    void update_from_pbo(GLuint pbo, const std::tuple<int, int, int, int>& bbox, const std::vector<std::string>& channels, GLenum gltype = GL_HALF_FLOAT)
+    {
+        { // upload from PBO
+            std::array<GLint, 4> swizzle_mask;
+            auto glformat = glformat_from_channels(channels, swizzle_mask);
+            if (glformat == -1) return;
 
-            // Draw data_texture to bounding box
-            {
-                auto [x, y, w, h] = pbos[display_index].bbox;
-                render_texture_to_fbo(x, y, w, h);
-            }
-            
-            ///
-            /// Pixels to NEXT PBO
-            ///
-            {
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[write_index].id);
-                pbos[write_index].bbox = bbox;
-                glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * channels.size() * sizeof(half), 0, GL_STREAM_DRAW);
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-            }
+            // update bounding box
+            m_bbox = bbox;
 
-            /// exr to pbo
-            static bool ReadDirectlyToPBO{ true };
-            //ImGui::Checkbox("ReadDirectlyToPBO", &ReadDirectlyToPBO);
-
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbos[write_index].id);
-                void* ptr = glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
-                if (!ptr) std::cerr << "cannot map PBO" << "\n";
-                if (ptr != NULL)
-                {
-                    auto [x, y, w, h] = bbox;
-                    memcpy(ptr, pixels, w * h * channels.size() * sizeof(half));
-                    pbos[write_index].bbox = bbox;
-                    glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
-
-                }
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-            }
+            // transfer PBO to texture
+            glBindTexture(GL_TEXTURE_2D, data_tex);
+            glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
+            auto [x, y, w, h] = m_bbox;
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, glformat, GL_HALF_FLOAT, 0/*NULL offset*/); // orphaning
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+            glBindTexture(GL_TEXTURE_2D, 0);
+        }
+        // Draw data_texture to bounding box
+        {
+            render_texture_to_fbo();
         }
     }
 };
@@ -910,6 +960,8 @@ int selected_viewport_background{ 1 };//0: transparent 1: checkerboard 2:black
 
 FileSequence sequence;
 std::unique_ptr<SequenceReader> reader;
+bool use_pbostream{true};
+std::unique_ptr<PBOImageStream> pbostream;
 std::unique_ptr<LayerManager> layer_manager;
 std::unique_ptr<PixelsRenderer> renderer;
 
@@ -919,12 +971,12 @@ std::unique_ptr<CorrectionPlate> correction_plate;
 std::unique_ptr<RenderPlate> polka_plate;
 std::unique_ptr<RenderPlate> checker_plate;
 std::unique_ptr<RenderPlate> black_plate;
+bool READ_DIRECTLY_TO_PBO{ true };
+
+bool sidebar_visible{true};
 
 void open(std::filesystem::path filename)
 {
-
-
-
     std::cout << "opening: " << filename << "\n";
     if (!std::filesystem::exists(filename)) {
         std::cout << "file does not exist! " << filename << "\n";
@@ -933,17 +985,14 @@ void open(std::filesystem::path filename)
     first_frame = sequence.first_frame;
     last_frame = sequence.last_frame;
     F = sequence.first_frame;
-
-    
+    F = sequence.first_frame;
 
     reader = std::make_unique<SequenceReader>(sequence);
     auto [display_width, display_height] = reader->size();
+    pbostream = std::make_unique<PBOImageStream>(display_width, display_height, 4, 3);
     renderer = std::make_unique<PixelsRenderer>(display_width, display_height);
     layer_manager = std::make_unique<LayerManager>(sequence.item(sequence.first_frame));
-    
     correction_plate = std::make_unique<CorrectionPlate>(renderer->width, renderer->height, renderer->color_attachment);
- 
-    
 
     viewer_state.camera.fit(renderer->width, renderer->height);
 }
@@ -962,16 +1011,64 @@ void drop_callback(GLFWwindow* window, int argc, const char** argv)
 void update()
 {
     auto [display_width, display_height] = reader->size();
-    static void* pixels = malloc((size_t)display_width* display_height * 4 * sizeof(half));
-    if (pixels == NULL) {
-        std::cerr << "NULL allocation" << "\n";
+
+    if (use_pbostream)
+    {
+        if (!READ_DIRECTLY_TO_PBO)
+        {
+            // read to memory
+            static void* pixels = malloc((size_t)display_width * display_height * 4 * sizeof(half));
+            if (pixels == NULL) std::cerr << "NULL allocation" << "\n";
+            reader->read_to_memory(pixels);
+
+            // memory to pbo
+            pbostream->write(pixels, reader->bbox(), reader->selected_channels(), sizeof(half));
+
+            // pbo to texture
+            auto& pbo = pbostream->pbos[pbostream->display_index];
+            renderer->update_from_pbo(pbo.id, pbo.bbox, pbo.channels, GL_HALF_FLOAT);
+        }
+        else {
+            // read to pbo
+            pbostream->display_index = (pbostream->display_index + 1) % pbostream->pbos.size();
+            pbostream->write_index = (pbostream->display_index + 1) % pbostream->pbos.size();
+
+            auto& write_pbo = pbostream->pbos[pbostream->write_index];
+
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, write_pbo.id);
+            void* ptr = (void*)glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
+            if (ptr)
+            {
+
+                reader->read_to_memory(ptr);
+
+                write_pbo.bbox = reader->bbox();
+                write_pbo.channels = reader->selected_channels();
+                glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+            }
+            else {
+                std::cerr << "cannot map PBO" << "\n";
+                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+            }
+
+            auto& display_pbo = pbostream->pbos[pbostream->display_index];
+            renderer->update_from_pbo(display_pbo.id, display_pbo.bbox, display_pbo.channels, GL_HALF_FLOAT);
+        }
+        
     }
-    
-    reader->read_to_memory(pixels);
-    renderer->update_from_data(pixels, reader->bbox(), reader->selected_channels(), GL_HALF_FLOAT);
+    else
+    {
+        static void* pixels = malloc((size_t)display_width * display_height * 4 * sizeof(half));
+        if (pixels == NULL) std::cerr << "NULL allocation" << "\n";
+        reader->read_to_memory(pixels);
+        renderer->update_from_data(pixels, reader->bbox(), reader->selected_channels(), GL_HALF_FLOAT);
+    }
     correction_plate->set_input_tex(renderer->color_attachment);
     correction_plate->update();
 }
+
+namespace fs = std::filesystem;
 
 int main(int argc, char* argv[])
 {
@@ -979,47 +1076,47 @@ int main(int argc, char* argv[])
         std::cout << i << ": " << argv[i] << "\n";
     }
 
-    
+    // Fix Current Working Directory
+    if (argc > 0) {
+        try {
 
+            fs::current_path(fs::path(argv[0]).parent_path()); // set working directory to exe
+        }
+        catch (std::filesystem::filesystem_error const& ex) {
+            std::cout
+                << "what():  " << ex.what() << '\n'
+                << "path1(): " << ex.path1() << '\n'
+                << "path2(): " << ex.path2() << '\n'
+                << "code().value():    " << ex.code().value() << '\n'
+                << "code().message():  " << ex.code().message() << '\n'
+                << "code().category(): " << ex.code().category().name() << '\n';
+        }
+    }
+    std::cout << "current working directory: " << fs::current_path() << "\n";
+    
+    // setup glazy
     glazy::init();
-
-    
-
     glazy::set_vsync(false);
     glfwSetDropCallback(glazy::window, drop_callback);
 
-    
-
-    std::cout << "current working directory: " << std::filesystem::current_path() << "\n";
-
-    
-
+    // Open file
     if (argc == 2)
     {
-        
+        // open dropped file
         open(argv[1]);
-        
-        std::filesystem::current_path(argv[0]); // set working directory to exe
     }
     else
     {
+        // open default sequence
         open("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr");
-        //sequence = FileSequence("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr");
-        //sequence = FileSequence("C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr" );
-        //open("C:/Users/andris/Desktop/52_EXAM_v51-raw/52_01_EXAM_v51.0001.exr" );
-        //open("C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr");
     }
 
-    
+    /// Setup render plates
+    polka_plate = std::make_unique<RenderPlate>("PASS_THROUGH_CAMERA.vert", "polka.frag");
+    checker_plate = std::make_unique<RenderPlate>("checker.vert", "checker.frag");
+    black_plate = std::make_unique<RenderPlate>("checker.vert","constant.frag");
 
-    polka_plate = std::make_unique<RenderPlate>("./PASS_THROUGH_CAMERA.vert", "polka.frag");
-    checker_plate = std::make_unique<RenderPlate>("./checker.vert", "checker.frag");
-    black_plate = std::make_unique<RenderPlate>("./checker.vert", "constant.frag");
-
-    std::cout << "current working directory: " << std::filesystem::current_path() << "\n";
-
-    
-
+    /// Run main loop
     while (glazy::is_running())
     {
         glazy::new_frame();
@@ -1053,6 +1150,11 @@ int main(int argc, char* argv[])
                     {
                         viewer_state.camera.fit(renderer->width, renderer->height);
                     }
+                    ImGui::EndMenu();
+                }
+
+                if (ImGui::BeginMenu("Windows")) {
+                    ImGui::MenuItem("sidebar", "", &sidebar_visible);
                     ImGui::EndMenu();
                 }
 
@@ -1192,80 +1294,94 @@ int main(int argc, char* argv[])
                 auto viewsize = ImGui::GetMainViewport()->WorkSize;
                 ImGui::SetNextWindowSize({ 300, viewsize.y * 2 / 3 });
                 ImGui::SetNextWindowPos({ viewsize.x - 320, viewsize.y * 1 / 3 / 2 });
-                if (ImGui::Begin("Options", (bool*)0, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoNav))
+
+                if (sidebar_visible)
                 {
-                    if (ImGui::BeginTabBar("info"))
+                    if (ImGui::Begin("##Sidebar", &sidebar_visible, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse))
                     {
-                        if (ImGui::BeginTabItem("info (current file)"))
+                        if (ImGui::BeginTabBar("info"))
                         {
-                            auto file = Imf::MultiPartInputFile(sequence.item(reader->current_frame).string().c_str());
-                            ImGui::TextWrapped(get_infostring(file).c_str());
-                            ImGui::EndTabItem();
-                        }
-
-                        if (ImGui::BeginTabItem("channels"))
-                        {
-                            auto file = Imf::MultiPartInputFile(sequence.item(sequence.first_frame).string().c_str());
-                            auto parts = file.parts();
-                            for (auto p = 0; p < parts; p++)
+                            if (ImGui::BeginTabItem("info (current file)"))
                             {
-                                ImGui::PushID(p);
-                                auto in = Imf::InputPart(file, p);
-                                auto header = in.header();
-                                auto cl = header.channels();
-                                ImGui::LabelText("Part", "%d", p);
-                                ImGui::LabelText("Name", "%s", header.hasName() ? header.name().c_str() : "");
-                                ImGui::LabelText("View", "%s", header.hasView() ? header.view().c_str() : "");
-                                if (ImGui::BeginTable("channels table", 4, ImGuiTableFlags_NoBordersInBody))
+                                auto file = Imf::MultiPartInputFile(sequence.item(reader->current_frame).string().c_str());
+                                ImGui::TextWrapped(get_infostring(file).c_str());
+                                ImGui::EndTabItem();
+                            }
+
+                            if (ImGui::BeginTabItem("channels"))
+                            {
+                                auto file = Imf::MultiPartInputFile(sequence.item(sequence.first_frame).string().c_str());
+                                auto parts = file.parts();
+                                for (auto p = 0; p < parts; p++)
                                 {
-                                    ImGui::TableSetupColumn("name");
-                                    ImGui::TableSetupColumn("type");
-                                    ImGui::TableSetupColumn("sampling");
-                                    ImGui::TableSetupColumn("linear");
-                                    ImGui::TableHeadersRow();
-                                    auto channels = reader->selected_channels();
-                                    for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
+                                    ImGui::PushID(p);
+                                    auto in = Imf::InputPart(file, p);
+                                    auto header = in.header();
+                                    auto cl = header.channels();
+                                    ImGui::LabelText("Part", "%d", p);
+                                    ImGui::LabelText("Name", "%s", header.hasName() ? header.name().c_str() : "");
+                                    ImGui::LabelText("View", "%s", header.hasView() ? header.view().c_str() : "");
+                                    if (ImGui::BeginTable("channels table", 4, ImGuiTableFlags_NoBordersInBody))
                                     {
-                                        //ImGui::TableNextRow();
-                                        ImGui::TableNextColumn();
-                                        bool is_selected = (reader->selected_part_idx == p) && std::find(channels.begin(), channels.end(), std::string(i.name())) != channels.end();
-                                        if (ImGui::Selectable(i.name(), is_selected, ImGuiSelectableFlags_SpanAllColumns))
+                                        ImGui::TableSetupColumn("name");
+                                        ImGui::TableSetupColumn("type");
+                                        ImGui::TableSetupColumn("sampling");
+                                        ImGui::TableSetupColumn("linear");
+                                        ImGui::TableHeadersRow();
+                                        auto channels = reader->selected_channels();
+                                        for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
                                         {
-                                            reader->selected_part_idx = p;
-                                            auto channel_name = std::string(i.name());
-                                            reader->set_selected_channels({ channel_name });
+                                            //ImGui::TableNextRow();
+                                            ImGui::TableNextColumn();
+                                            bool is_selected = (reader->selected_part_idx == p) && std::find(channels.begin(), channels.end(), std::string(i.name())) != channels.end();
+                                            if (ImGui::Selectable(i.name(), is_selected, ImGuiSelectableFlags_SpanAllColumns))
+                                            {
+                                                reader->selected_part_idx = p;
+                                                auto channel_name = std::string(i.name());
+                                                reader->set_selected_channels({ channel_name });
+                                            }
+
+                                            ImGui::TableNextColumn();
+                                            ImGui::Text("%s", to_string(i.channel().type).c_str());
+
+                                            ImGui::TableNextColumn();
+                                            ImGui::Text("%d %d", i.channel().xSampling, i.channel().ySampling);
+
+                                            ImGui::TableNextColumn();
+                                            ImGui::Text("%s", i.channel().pLinear ? "true" : "false");
                                         }
-
-                                        ImGui::TableNextColumn();
-                                        ImGui::Text("%s", to_string(i.channel().type).c_str());
-
-                                        ImGui::TableNextColumn();
-                                        ImGui::Text("%d %d", i.channel().xSampling, i.channel().ySampling);
-
-                                        ImGui::TableNextColumn();
-                                        ImGui::Text("%s", i.channel().pLinear ? "true" : "false");
+                                        ImGui::EndTable();
                                     }
-                                    ImGui::EndTable();
+                                    ImGui::PopID();
                                 }
-                                ImGui::PopID();
-                            }
 
-                            ImGui::EndTabItem();
-                        }
-                        if (ImGui::BeginTabItem("Settings"))
-                        {
-                            if (ImGui::CollapsingHeader("reader", ImGuiTreeNodeFlags_DefaultOpen)) {
-                                reader->onGUI();
+                                ImGui::EndTabItem();
                             }
-                            if (ImGui::CollapsingHeader("renderer", ImGuiTreeNodeFlags_DefaultOpen)) {
-                                renderer->onGUI();
+                            if (ImGui::BeginTabItem("Settings"))
+                            {
+                                ImGui::TextWrapped("%s", fs::current_path().string().c_str());
+
+                                if (ImGui::CollapsingHeader("reader", ImGuiTreeNodeFlags_DefaultOpen)) {
+                                    reader->onGUI();
+                                }
+                                if (ImGui::CollapsingHeader("pbostream", ImGuiTreeNodeFlags_DefaultOpen))
+                                {
+                                    ImGui::Checkbox("READ_DIRECTLY_TO_PBO", &READ_DIRECTLY_TO_PBO);
+                                    ImGui::Checkbox("use pbostream", &use_pbostream);
+                                    if (use_pbostream) {
+                                        pbostream->onGUI();
+                                    }
+                                }
+                                if (ImGui::CollapsingHeader("renderer", ImGuiTreeNodeFlags_DefaultOpen)) {
+                                    renderer->onGUI();
+                                }
+                                ImGui::EndTabItem();
                             }
-                            ImGui::EndTabItem();
+                            ImGui::EndTabBar();
                         }
-                        ImGui::EndTabBar();
                     }
+                    ImGui::End();
                 }
-                ImGui::End();
             }
 
             {

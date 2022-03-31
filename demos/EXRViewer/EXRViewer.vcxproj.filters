@@ -59,5 +59,7 @@
     <CopyFileToFolders Include="polka.frag" />
     <CopyFileToFolders Include="PASS_THROUGH.vert" />
     <CopyFileToFolders Include="imgui.ini" />
+    <CopyFileToFolders Include="fa-solid-900.ttf" />
+    <CopyFileToFolders Include="fa-regular-400.ttf" />
   </ItemGroup>
 </Project>
