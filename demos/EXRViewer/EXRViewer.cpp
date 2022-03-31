@@ -514,6 +514,7 @@ public:
 
     }
 
+    /// display size
     std::tuple<int, int> size()
     {
         return { display_width, display_height };
@@ -750,11 +751,8 @@ public:
     int width, height;
     std::tuple<int, int, int, int> m_bbox;
 
-    //int display_index{ 0 };
-    //int write_index;
 
-    GLenum glinternalformat = GL_RGBA16F; // selec texture internal format
-    //bool orphaning{ true };
+    GLenum glinternalformat = GL_RGBA16F; // select texture internal format
 
     PixelsRenderer(int width, int height) : width(width), height(height)
     {
@@ -1161,7 +1159,7 @@ int main(int argc, char* argv[])
                 ImGui::EndMainMenuBar();
             }
 
-            if (ImGui::Begin("Viewer", (bool*)0, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_MenuBar))
+            if (ImGui::Begin("Viewer", (bool*)0, ImGuiWindowFlags_MenuBar))
             {
                 if (ImGui::BeginMenuBar())
                 {
@@ -1285,7 +1283,66 @@ int main(int argc, char* argv[])
                     //});
                     //polka_plate->render();
                     correction_plate->render();
-                }
+
+                    // display spec
+                    
+                    {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(.5,.5,.5, 0.5));
+                        auto width = renderer->width;
+                        auto height = renderer->height;
+                        
+                        auto item_pos = ImGui::GetItemRectMin() - ImGui::GetWindowPos(); // window space
+                        auto item_size = ImGui::GetItemRectSize();
+                        auto store_cursor = ImGui::GetCursorPos();
+                        {
+                            
+                            glm::vec2 pos = { width, height };
+
+                            glm::vec3 screen_pos = glm::project(glm::vec3(pos, 0.0), viewer_state.camera.getView(), viewer_state.camera.getProjection(), glm::vec4(0, 0, item_size.x, item_size.y));
+                            screen_pos.y = item_size.y - screen_pos.y; // invert y
+
+                            ImGui::SetCursorPos(ImVec2(screen_pos.x + item_pos.x, screen_pos.y + item_pos.y));
+                            if (width == 1920 && height == 1080)
+                            {
+                                ImGui::Text("HD");
+                            }
+                            else if (width == 3840 && height == 2160)
+                            {
+                                ImGui::Text("UHD 4K");
+                            }
+                            else if (width == height)
+                            {
+                                ImGui::Text("Square %d", width);
+                            }
+                            else
+                            {
+                                ImGui::Text("%dx%d", width, height);
+                            }
+                        }
+                        {
+                            auto [x, y, w, h] = renderer->m_bbox;
+                            glm::vec2 pos = { x, height-y };
+
+                            glm::vec3 screen_pos = glm::project(glm::vec3(pos, 0.0), viewer_state.camera.getView(), viewer_state.camera.getProjection(), glm::vec4(0, 0, item_size.x, item_size.y));
+                            screen_pos.y = item_size.y - screen_pos.y; // invert y
+
+                            ImGui::SetCursorPos(ImVec2(screen_pos.x + item_pos.x, screen_pos.y + item_pos.y));
+                            ImGui::Text("%dx%d", x, y);
+                        }
+
+                        {
+                            auto [x, y, w, h] = renderer->m_bbox;
+                            glm::vec2 pos = { x+w, height- (y+h) };
+                            
+                            glm::vec3 screen_pos = glm::project(glm::vec3(pos, 0.0), viewer_state.camera.getView(), viewer_state.camera.getProjection(), glm::vec4(0, 0, item_size.x, item_size.y));
+                            screen_pos.y = item_size.y - screen_pos.y; // invert y
+
+                            ImGui::SetCursorPos(ImVec2(screen_pos.x + item_pos.x, screen_pos.y + item_pos.y));
+                            ImGui::Text("%dx%d", x, y);
+                        }
+                        ImGui::SetCursorPos(store_cursor); //restore cursor
+                        ImGui::PopStyleColor();
+                    }                }
                 ImGui::EndGLViewer();
             }
             ImGui::End();
@@ -1366,9 +1423,12 @@ int main(int argc, char* argv[])
                                 }
                                 if (ImGui::CollapsingHeader("pbostream", ImGuiTreeNodeFlags_DefaultOpen))
                                 {
-                                    ImGui::Checkbox("READ_DIRECTLY_TO_PBO", &READ_DIRECTLY_TO_PBO);
                                     ImGui::Checkbox("use pbostream", &use_pbostream);
-                                    if (use_pbostream) {
+                                    
+                                    
+                                    if (use_pbostream)
+                                    {
+                                        ImGui::Checkbox("READ DIRECTLY TO PBO", &READ_DIRECTLY_TO_PBO);
                                         pbostream->onGUI();
                                     }
                                 }
