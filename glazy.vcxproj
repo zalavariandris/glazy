@@ -186,6 +186,7 @@
     <ClInclude Include="glazy\ImGuiColorTextEdit.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="glazy\glazy.cpp" />
     <ClCompile Include="glazy\imageio.cpp" />
     <ClCompile Include="glazy\OOGL\Framebuffer.cpp" />
     <ClCompile Include="glazy\OOGL\ElementBuffer.cpp" />

@@ -3,6 +3,8 @@
 // Logging
 #include <iostream>
 
+#include <algorithm>
+
 // FileSystem
 #include <fstream>
 #include <sstream>
@@ -55,9 +57,7 @@
 // Icon Fonts
 #include "IconsFontAwesome5.h"
 
-#include "../tracy/Tracy.hpp"
-
-void glPrintErrors()
+inline void glPrintErrors()
 {
 	GLenum err(glGetError());
 
@@ -193,12 +193,10 @@ namespace glazy {
 		//glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 		glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_FALSE);
 
-		
-
 		glfwSetErrorCallback(glfw_error_callback);
 
+		
 		// create main window
-		//glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
 
 		window = glfwCreateWindow(1024, 768, "MiniViewer", nullptr, nullptr);
 
@@ -220,6 +218,10 @@ namespace glazy {
 		glfwSetWindowPos(window, (mode->width-width)/2, (mode->height-height)/2);
 
 		glfwMakeContextCurrent(window);
+
+		auto hwnd = glfwGetWin32Window(window);
+
+
 
 		/***************************
 		  GLAD GL extension library
@@ -529,16 +531,14 @@ namespace glazy {
 					x_data.push_back(i);
 				}
 
-				static float low_limit = 0;
-				static float high_limit = 200;
-				high_limit = std::max(high_limit, framerate);
+				//float low_limit = 0;
+				//static float high_limit = 200;
+				//high_limit = std::max(high_limit, framerate);
 
-				ImGui::Text("%.1f fps", fps_history[0]);
-				ImGui::PlotLines("fps", fps_history.data(), fps_history.size(), 0, "", 0, 120);
+				//ImGui::Text("%.1f fps", fps_history[0]);
+				//ImGui::PlotLines("fps", fps_history.data(), fps_history.size(), 0, "", 0, 120);
 
 				ImGui::End();
-
-
 			}
 
 			// Show themes window

@@ -26,7 +26,7 @@ public:
 
     void reload(bool force=false)
     {
-        ZoneScoped;
+        //ZoneScoped;
         bool HasChanged = glazy::is_file_modified(mFragmentPath) || glazy::is_file_modified(mVertexPath);
         if (!force && !HasChanged) return;
 
@@ -49,7 +49,7 @@ public:
 
     void render()
     {
-        ZoneScopedN("draw polka");
+        //ZoneScopedN("draw polka");
 
         // Auto reload shaders
         if(autoreload) reload();

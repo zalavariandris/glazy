@@ -152,6 +152,9 @@
     <ClCompile Include="glazy\themes.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="glazy\glazy.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include=".gitignore" />

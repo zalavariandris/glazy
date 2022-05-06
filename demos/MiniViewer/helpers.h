@@ -1,6 +1,6 @@
 #pragma once
 
-#include <../tracy/Tracy.hpp>
+//#include <../tracy/Tracy.hpp>
 
 #pragma region RenderToTexture
 std::vector<GLuint> fbo_stack;

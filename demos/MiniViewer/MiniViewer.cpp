@@ -44,7 +44,7 @@
 
 
 #define TRACY_CALLSTACK 5
-#include <../tracy/Tracy.hpp>
+//#include <../tracy/Tracy.hpp>
 
 // GUI State variables
 struct State {

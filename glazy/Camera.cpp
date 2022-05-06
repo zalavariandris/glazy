@@ -140,3 +140,9 @@ void Camera::to_program(unsigned int shader_program, std::string projection_name
 	int viewLocation = glGetUniformLocation(shader_program, "view");
 	glUniformMatrix4fv(viewLocation, 1, GL_FALSE, glm::value_ptr(getView()));
 }
+
+void Camera::fit(float width, float height) {
+	float camDistance = std::max(width / 2 / tan(this->fovx() / 2), height / 2 / tan(this->fovy / 2));
+	this->eye = { width / 2.0, height / 2.0, camDistance };
+	this->target = { width / 2.0, height / 2.0, 0.0 };
+}

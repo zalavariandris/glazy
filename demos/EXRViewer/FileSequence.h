@@ -18,4 +18,7 @@ public:
     std::filesystem::path pattern;
     int first_frame;
     int last_frame;
+    int length() {
+        return last_frame - first_frame + 1;
+    }
 };

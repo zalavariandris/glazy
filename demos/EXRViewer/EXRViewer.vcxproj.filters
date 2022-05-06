@@ -27,18 +27,33 @@
     <ClCompile Include="FileSequence.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="EXRSequenceReader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PixelsRenderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PBOImageStream.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="RenderPlates\CorectionPlate.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ImGuiWidgets.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="EXRLayerManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="helpers.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Layer.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="FileSequence.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="LayerManager.h">
+    <ClInclude Include="EXRLayerManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="RenderPlates\RenderPlate.h">
@@ -47,19 +62,41 @@
     <ClInclude Include="RenderPlates\CorrectionPlate.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="SequenceRenderer_OLD.h">
+    <ClInclude Include="Snipetts.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="EXRSequenceReader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="PixelsRenderer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="PBOImageStream.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ImGuiWidgets.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="PASS_THROUGH_CAMERA.vert" />
-    <CopyFileToFolders Include="constant.frag" />
-    <CopyFileToFolders Include="checker.frag" />
-    <CopyFileToFolders Include="checker.vert" />
     <CopyFileToFolders Include="polka.frag" />
     <CopyFileToFolders Include="PASS_THROUGH.vert" />
     <CopyFileToFolders Include="imgui.ini" />
-    <CopyFileToFolders Include="fa-solid-900.ttf" />
-    <CopyFileToFolders Include="fa-regular-400.ttf" />
+    <CopyFileToFolders Include="checker.frag">
+      <Filter>Resource Files</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="checker.vert">
+      <Filter>Resource Files</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="constant.frag">
+      <Filter>Resource Files</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="fa-regular-400.ttf">
+      <Filter>Resource Files</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="fa-solid-900.ttf">
+      <Filter>Resource Files</Filter>
+    </CopyFileToFolders>
   </ItemGroup>
 </Project>

@@ -160,9 +160,15 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\..\tracy\TracyClient.cpp" />
+    <ClCompile Include="EXRSequenceReader.cpp" />
     <ClCompile Include="EXRViewer.cpp" />
     <ClCompile Include="FileSequence.cpp" />
     <ClCompile Include="helpers.cpp" />
+    <ClCompile Include="PBOImageStream.cpp" />
+    <ClCompile Include="PixelsRenderer.cpp" />
+    <ClCompile Include="RenderPlates\CorectionPlate.cpp" />
+    <ClCompile Include="ImGuiWidgets.cpp" />
+    <ClCompile Include="EXRLayerManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\glazy.vcxproj">
@@ -172,11 +178,14 @@
   <ItemGroup>
     <ClInclude Include="FileSequence.h" />
     <ClInclude Include="helpers.h" />
-    <ClInclude Include="Layer.h" />
-    <ClInclude Include="LayerManager.h" />
+    <ClInclude Include="ImGuiWidgets.h" />
+    <ClInclude Include="EXRLayerManager.h" />
+    <ClInclude Include="EXRSequenceReader.h" />
+    <ClInclude Include="PBOImageStream.h" />
+    <ClInclude Include="PixelsRenderer.h" />
     <ClInclude Include="RenderPlates\CorrectionPlate.h" />
     <ClInclude Include="RenderPlates\RenderPlate.h" />
-    <ClInclude Include="SequenceRenderer_OLD.h" />
+    <ClInclude Include="Snipetts.h" />
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="polka.frag">
