@@ -19,6 +19,9 @@
 #include <vector>
 #include <array>
 
+#include "glad/glad.h"
+
+
 #pragma region RenderToTexture
 static std::vector<GLuint> fbo_stack;
 static std::vector<std::array<GLint, 4>> viewport_stack;

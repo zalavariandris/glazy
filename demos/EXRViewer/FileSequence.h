@@ -21,4 +21,6 @@ public:
     int length() {
         return last_frame - first_frame + 1;
     }
+
+    std::vector<int> missing_frames();
 };

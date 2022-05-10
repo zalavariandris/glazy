@@ -33,39 +33,18 @@ int alpha_channel(const std::vector<std::string>& channels) {
     return AlphaIndex;
 }
 
-std::vector<std::string> get_display_channels(const std::vector<std::string>& channels)
-{
-    // Reorder Alpha
-    // EXR sort layer names in alphabetically order, therefore the alpha channel comes before RGB
-    // if exr contains alpha move this channel to the 4th position or the last position.
-    auto AlphaIndex = alpha_channel(channels);
-
-    // move alpha channel to 4th idx
-    std::vector<std::string> reordered_channels{ channels };
-    if (AlphaIndex >= 0) {
-        reordered_channels.erase(reordered_channels.begin() + AlphaIndex);
-        reordered_channels.insert(reordered_channels.begin() + std::min((size_t)3, reordered_channels.size()), channels[AlphaIndex]);
-    }
-
-    // keep first 4 channels only
-    if (reordered_channels.size() > 4) {
-        reordered_channels = std::vector<std::string>(reordered_channels.begin(), reordered_channels.begin() + 4);
-    }
-    return reordered_channels;
-};
-
 EXRSequenceReader::EXRSequenceReader(const FileSequence& seq)
 {
     //ZoneScoped;
+    m_sequence = seq;
 
-    sequence = seq;
-    current_frame = sequence.first_frame;
+    m_current_frame = m_sequence.first_frame;
     Imf::setGlobalThreadCount(24);
 
     ///
     /// Open file
     /// 
-    auto filename = sequence.item(sequence.first_frame);
+    auto filename = m_sequence.item(m_sequence.first_frame);
 
     auto first_file = std::make_unique<Imf::MultiPartInputFile>(filename.string().c_str());
 
@@ -77,7 +56,7 @@ EXRSequenceReader::EXRSequenceReader(const FileSequence& seq)
         if (!first_file->partComplete(i)) fileComplete = false;
 
     /// read header 
-    Imath::Box2i display_window = first_file->header(selected_part_idx).displayWindow();
+    Imath::Box2i display_window = first_file->header(m_selected_part_idx).displayWindow();
     display_x = display_window.min.x;
     display_y = display_window.min.y;
     display_width = display_window.max.x - display_window.min.x + 1;
@@ -91,7 +70,7 @@ void EXRSequenceReader::onGUI() {
         Imf::setGlobalThreadCount(thread_count);
     }
 
-    ImGui::DragInt("current frame", &current_frame);
+    ImGui::DragInt("current frame", &m_current_frame);
 
 }
 
@@ -108,7 +87,27 @@ std::tuple<int, int, int, int> EXRSequenceReader::bbox()
 
 void EXRSequenceReader::set_selected_channels(std::vector<std::string> channels)
 {
-    mSelectedChannels = get_display_channels(channels);
+    // filter provided channels to channels that actually exist
+    
+
+    // Reorder Alpha
+    // EXR sort layer names in alphabetically order, therefore the alpha channel comes before RGB
+    // if exr contains alpha move this channel to the 4th position or the last position.
+    auto AlphaIndex = alpha_channel(channels);
+
+    // move alpha channel to 4th idx
+    std::vector<std::string> reordered_channels{ channels };
+    if (AlphaIndex >= 0) {
+        reordered_channels.erase(reordered_channels.begin() + AlphaIndex);
+        reordered_channels.insert(reordered_channels.begin() + std::min((size_t)3, reordered_channels.size()), channels[AlphaIndex]);
+    }
+
+    // keep first 4 channels only
+    if (reordered_channels.size() > 4) {
+        reordered_channels = std::vector<std::string>(reordered_channels.begin(), reordered_channels.begin() + 4);
+    }
+
+    mSelectedChannels = reordered_channels;
 }
 
 std::vector<std::string> EXRSequenceReader::selected_channels() {
@@ -126,7 +125,7 @@ void EXRSequenceReader::read_to_memory(void* memory)
     {
         //ZoneScopedN("Open Curren InputPart");
 
-        auto filename = sequence.item(current_frame);
+        auto filename = m_sequence.item(m_current_frame);
         if (!std::filesystem::exists(filename)) {
             std::cerr << "file does not exist: " << filename << "\n";
             return;
@@ -146,7 +145,7 @@ void EXRSequenceReader::read_to_memory(void* memory)
 
         {
             //ZoneScopedN("seek part");
-            current_inputpart = std::make_unique<Imf::InputPart>(*current_file, selected_part_idx);
+            current_inputpart = std::make_unique<Imf::InputPart>(*current_file, m_selected_part_idx);
         }
     }
 

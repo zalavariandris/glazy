@@ -21,6 +21,10 @@
 
 #include <algorithm>
 
+#include "imgui.h"
+
+#include "../helpers.h"
+
 std::vector<std::tuple<int, int>> group_stringvector_by_patterns(const std::vector<std::string>& statement, const std::vector<std::vector<std::string>>& patterns)
 {
     std::vector<std::tuple<int, int>> groups;
@@ -120,8 +124,9 @@ std::vector<std::string> Layer::channels() const {
 Layer Layer::sublayer(std::vector<std::string> subchannels, std::string sublayer_name, bool compose) const
 {
     // filter requested subchannels to this layer channels.
+    auto current_channels = this->channels();
     std::erase_if(subchannels, [&](std::string c) {
-        return std::find(this->channels().begin(), this->channels().end(), c) == this->channels().end();
+        return std::find(current_channels.begin(), current_channels.end(), c) == current_channels.end();
     });
 
     //// compose part and layer name
@@ -139,8 +144,6 @@ std::vector<Layer> Layer::split_by_delimiter() const {
 
     for (std::string channel_id : mChannels) {
         auto [viewlayer, channel] = Layer::split_channel_id(channel_id);
-
-
 
         if (sublayers.empty())
         {
@@ -160,8 +163,6 @@ std::vector<Layer> Layer::split_by_delimiter() const {
 
     return sublayers;
 }
-
-
 
 /// nice name
 std::string Layer::display_name() const {
@@ -245,11 +246,98 @@ std::vector<Layer> get_all_part_layers(const Imf::MultiPartInputFile& file)
 
 EXRLayerManager::EXRLayerManager(const std::filesystem::path& filename)
 {
-    auto file = Imf::MultiPartInputFile(filename.string().c_str());
-    mLayers = get_all_part_layers(file);
+    file = std::make_unique<Imf::MultiPartInputFile>(filename.string().c_str());
+    mLayers = get_all_part_layers(*file);
 }
 
-std::vector<std::string> EXRLayerManager::names()
+bool EXRLayerManager::onGUI()
+{
+    ImGui::Text("CURRENT");
+    ImGui::LabelText("current", "%d", this->current());
+
+    bool changed = false;
+
+    if (ImGui::BeginTabBar("LayerManager-tabs"))
+    {
+        if (ImGui::BeginTabItem("Layers")) {
+            if (ImGui::BeginTable("channels table", 4, ImGuiTableFlags_NoBordersInBody))
+            {
+                ImGui::TableSetupColumn("part name");
+                ImGui::TableSetupColumn("name");
+                ImGui::TableSetupColumn("display name");
+                ImGui::TableSetupColumn("channels");
+                ImGui::TableHeadersRow();
+
+                for (auto layer : this->layers())
+                {
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%s", layer.part_name().c_str());
+
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%s", layer.name().c_str());
+
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%s", layer.display_name().c_str());
+
+                    ImGui::TableNextRow();
+                }
+
+                ImGui::EndTable();
+            }
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Channels"))
+        {
+            auto parts = file->parts();
+            for (auto p = 0; p < parts; p++)
+            {
+                ImGui::PushID(p);
+                auto in = Imf::InputPart(*file, p);
+                auto header = in.header();
+                auto cl = header.channels();
+                //ImGui::LabelText("Part", "%d", p);
+                //ImGui::LabelText("Name", "%s", header.hasName() ? header.name().c_str() : "");
+                //ImGui::LabelText("View", "%s", header.hasView() ? header.view().c_str() : "");
+
+                if (ImGui::BeginTable("channels table", 4, ImGuiTableFlags_NoBordersInBody))
+                {
+                    ImGui::TableSetupColumn("name");
+                    ImGui::TableSetupColumn("type");
+                    ImGui::TableSetupColumn("sampling");
+                    ImGui::TableSetupColumn("linear");
+                    ImGui::TableHeadersRow();
+                    auto channels = this->current_channel_ids();
+                    //auto channels = reader->selected_channels();
+                    for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
+                    {
+                        //ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        bool is_selected = (this->current_part_idx() == p) && std::find(channels.begin(), channels.end(), std::string(i.name())) != channels.end();
+                        ImGui::Text("%s", i.name());
+
+                        ImGui::TableNextColumn();
+                        ImGui::Text("%s", to_string(i.channel().type).c_str());
+
+                        ImGui::TableNextColumn();
+                        ImGui::Text("%d %d", i.channel().xSampling, i.channel().ySampling);
+
+                        ImGui::TableNextColumn();
+                        ImGui::Text("%s", i.channel().pLinear ? "true" : "false");
+                    }
+                    ImGui::EndTable();
+                }
+                ImGui::PopID();
+            }
+
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
+
+    return changed;
+}
+
+std::vector<std::string> EXRLayerManager::layer_names()
 {
     std::vector<std::string> names;
     for (auto lyr : mLayers) {

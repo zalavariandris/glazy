@@ -27,7 +27,7 @@
     <ClCompile Include="FileSequence.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="EXRSequenceReader.cpp">
+    <ClCompile Include="Readers\EXRSequenceReader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="PixelsRenderer.cpp">
@@ -42,7 +42,13 @@
     <ClCompile Include="ImGuiWidgets.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="EXRLayerManager.cpp">
+    <ClCompile Include="Readers\EXRLayerManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Readers\OIIOSequenceReader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="OIIOLayerManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -53,7 +59,7 @@
     <ClInclude Include="FileSequence.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="EXRLayerManager.h">
+    <ClInclude Include="Readers\EXRLayerManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="RenderPlates\RenderPlate.h">
@@ -65,7 +71,7 @@
     <ClInclude Include="Snipetts.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="EXRSequenceReader.h">
+    <ClInclude Include="Readers\EXRSequenceReader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="PixelsRenderer.h">
@@ -75,6 +81,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ImGuiWidgets.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Readers\OIIOSequenceReader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="OIIOLayerManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

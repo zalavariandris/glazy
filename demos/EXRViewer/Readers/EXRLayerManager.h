@@ -3,6 +3,8 @@
 #include <vector>
 #include <filesystem>
 
+#include <OpenEXR/ImfMultiPartInputFile.h>
+
 class Layer {
 private:
     std::string mName;
@@ -13,6 +15,8 @@ private:
     std::vector<std::string> full_channel_name;
 public:
     Layer(std::string name, std::vector<std::string> channels, std::string part_name, int part_idx) : mName(name), mChannels(channels), mPart_name(part_name), mPart_idx(part_idx) {}
+
+    
 
     std::string part_name() const;
 
@@ -53,19 +57,21 @@ public:
     
     EXRLayerManager(const std::filesystem::path& filename);
 
-    std::vector<std::string> names();
+    bool onGUI();
 
-    void set_current(int i);
+    std::vector<std::string> layer_names();
 
     int current();
+    void set_current(int i);
 
     std::string current_name();
 
+    int current_part_idx();
     std::vector<std::string> current_channel_ids();
 
-    int current_part_idx();
-
-    std::vector<Layer> layers() {
+    const std::vector<Layer>& layers() {
         return mLayers;
     }
+private:
+    std::unique_ptr<Imf::MultiPartInputFile> file;
 };

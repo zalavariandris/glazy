@@ -30,28 +30,23 @@
 // OpenEXR
 #include <OpenEXR/ImfMultiPartInputFile.h>
 #include <OpenEXR/ImfInputPart.h>
-//#include <OpenEXR/ImfStdIO.h>
-//#include <OpenEXR/ImfArray.h> //Imf::Array2D
-//#include <OpenEXR/half.h> // <half> type
 #include <OpenEXR/ImfChannelList.h>
-//#include <OpenEXR/ImfPixelType.h>
-//#include <OpenEXR/ImfVersion.h> // get version
-//#include <OpenEXR/ImfFrameBuffer.h>
-//#include <OpenEXR/ImfHeader.h>
 
-
-//
+// FileSequence
 #include "FileSequence.h"
-#include "EXRSequenceReader.h"
+
+// sequence readers
+#include "Readers/EXRSequenceReader.h"
+#include "Readers/EXRLayerManager.h"
+#include "Readers/OIIOSequenceReader.h"
+
 #include "PixelsRenderer.h"
-
-#include "EXRLayerManager.h"
-#include "helpers.h"
-
 #include "RenderPlates/RenderPlate.h"
 #include "RenderPlates/CorrectionPlate.h"
 #include "PBOImageStream.h"
 #include "ImGuiWidgets.h"
+
+#include "helpers.h"
 
 bool is_playing = false;
 int F, first_frame, last_frame;
@@ -59,8 +54,9 @@ int F, first_frame, last_frame;
 int selected_viewport_background{ 1 };//0: transparent 1: checkerboard 2:black
 
 FileSequence sequence;
-std::unique_ptr<EXRSequenceReader> reader;
-bool use_pbostream{true};
+std::unique_ptr<OIIOSequenceReader>reader;
+
+bool use_pbostream{false};
 std::unique_ptr<PBOImageStream> pbostream;
 std::unique_ptr<EXRLayerManager> layer_manager;
 std::unique_ptr<PixelsRenderer> renderer;
@@ -87,7 +83,7 @@ void open(std::filesystem::path filename)
     F = sequence.first_frame;
     F = sequence.first_frame;
 
-    reader = std::make_unique<EXRSequenceReader>(sequence);
+    reader = std::make_unique<OIIOSequenceReader>(sequence);
     auto [display_width, display_height] = reader->size();
     pbostream = std::make_unique<PBOImageStream>(display_width, display_height, 4, 3);
     renderer = std::make_unique<PixelsRenderer>(display_width, display_height);
@@ -149,6 +145,7 @@ void update()
         static void* pixels = malloc((size_t)display_width * display_height * 4 * sizeof(half));
         if (pixels == NULL) std::cerr << "NULL allocation" << "\n";
         reader->read_to_memory(pixels);
+        
         renderer->update_from_data(pixels, reader->bbox(), reader->selected_channels(), GL_HALF_FLOAT);
     }
 
@@ -216,7 +213,7 @@ int main(int argc, char* argv[])
             {
                 F++;
                 if (F > last_frame) F = first_frame;
-                reader->current_frame = F;
+                reader->set_current_frame(F);
             }
 
             if (ImGui::IsKeyPressed('F')) {
@@ -254,16 +251,16 @@ int main(int argc, char* argv[])
             {
                 if (ImGui::BeginMenuBar())
                 {
-                    ImGui::SetNextItemWidth(ImGui::CalcComboWidth(layer_manager->names()));
+                    const auto& layer_names = layer_manager->layer_names();
+                    ImGui::SetNextItemWidth(ImGui::CalcComboWidth(layer_names));
                     if (ImGui::BeginCombo("##layers", layer_manager->current_name().c_str()))\
                     {
-                        auto layer_names = layer_manager->names();
                         for (auto i = 0; i < layer_names.size(); i++) {
                             ImGui::PushID(i);
                             bool is_selected = i == layer_manager->current();
                             if (ImGui::Selectable(layer_names.at(i).c_str(), is_selected, ImGuiSelectableFlags_SpanAllColumns)) {
                                 layer_manager->set_current(i);
-                                reader->selected_part_idx = layer_manager->current_part_idx();
+                                reader->set_selected_part_idx(layer_manager->current_part_idx());
                                 reader->set_selected_channels(layer_manager->current_channel_ids());
                             }
                             ImGui::PopID();
@@ -452,7 +449,7 @@ int main(int argc, char* argv[])
                         {
                             if (ImGui::BeginTabItem("Info (current file)"))
                             {
-                                auto file = Imf::MultiPartInputFile(sequence.item(reader->current_frame).string().c_str());
+                                auto file = Imf::MultiPartInputFile(sequence.item(reader->current_frame()).string().c_str());
                                 ImGui::TextWrapped(get_infostring(file).c_str());
                                 ImGui::EndTabItem();
                             }
@@ -477,15 +474,15 @@ int main(int argc, char* argv[])
                                         ImGui::TableSetupColumn("sampling");
                                         ImGui::TableSetupColumn("linear");
                                         ImGui::TableHeadersRow();
-                                        auto channels = reader->selected_channels();
+                                        auto channels =reader->selected_channels();
                                         for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
                                         {
                                             //ImGui::TableNextRow();
                                             ImGui::TableNextColumn();
-                                            bool is_selected = (reader->selected_part_idx == p) && std::find(channels.begin(), channels.end(), std::string(i.name())) != channels.end();
+                                            bool is_selected = (reader->selected_part_idx() == p) && std::find(channels.begin(), channels.end(), std::string(i.name())) != channels.end();
                                             if (ImGui::Selectable(i.name(), is_selected, ImGuiSelectableFlags_SpanAllColumns))
                                             {
-                                                if (ImGui::GetIO().KeyCtrl && reader->selected_part_idx == p)
+                                                if (ImGui::GetIO().KeyCtrl && reader->selected_part_idx() == p)
                                                 {
                                                     auto channel_name = std::string(i.name());
                                                     auto current_selected_channels = reader->selected_channels();
@@ -494,7 +491,7 @@ int main(int argc, char* argv[])
                                                 }
                                                 else
                                                 {
-                                                    reader->selected_part_idx = p;
+                                                    reader->set_selected_part_idx(p);
                                                     auto channel_name = std::string(i.name());
                                                     reader->set_selected_channels({ channel_name });
                                                 }
@@ -517,56 +514,49 @@ int main(int argc, char* argv[])
                                 ImGui::EndTabItem();
                             }
 
-                            if (ImGui::BeginTabItem("Layers"))
+                            if (ImGui::BeginTabItem("Inspector"))
                             {
-                                if (ImGui::BeginTable("channels table", 4, ImGuiTableFlags_NoBordersInBody))
+                                if (ImGui::CollapsingHeader("FileSequence", ImGuiTreeNodeFlags_DefaultOpen))
                                 {
-                                    ImGui::TableSetupColumn("part name");
-                                    ImGui::TableSetupColumn("name");
-                                    ImGui::TableSetupColumn("display name");
-                                    ImGui::TableSetupColumn("channels");
-                                    ImGui::TableHeadersRow();
-
-                                    for (auto layer : layer_manager->layers())
-                                    {
-                                        
-                                        ImGui::TableNextColumn();
-                                        ImGui::Text("%s", layer.part_name().c_str());
-
-                                        ImGui::TableNextColumn();
-                                        ImGui::Text("%s", layer.name().c_str());
-
-                                        ImGui::TableNextColumn();
-                                        ImGui::Text("%s", layer.display_name().c_str());
-
-                                        ImGui::TableNextRow();
+                                    ImGui::LabelText("pattern", "%s", sequence.pattern.string().c_str());
+                                    if (ImGui::IsItemHovered()) {
+                                        ImGui::SetTooltip("%s", sequence.pattern.string().c_str());
                                     }
+                                    ImGui::LabelText("range", "%d-%d", sequence.first_frame, sequence.last_frame);
 
-                                    ImGui::EndTable();
+                                    const auto& missing_frames = sequence.missing_frames();
+                                    if (!missing_frames.empty())
+                                    {
+                                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0, 0,1));
+                                        std::string missing_frames_string;
+                                        for (auto F : sequence.missing_frames()) {
+                                            missing_frames_string += std::to_string(F) + ", ";
+                                        }
+                                        ImGui::LabelText("missing frames", "%s", missing_frames_string.c_str());
+                                        ImGui::PopStyleColor();
+
+                                    }
+                                }
+                                if (ImGui::CollapsingHeader("LayerManager", ImGuiTreeNodeFlags_DefaultOpen))
+                                {
+                                    if (layer_manager->onGUI()) {
+                                        std::cout << "layer manager changed" << "\n";
+                                    }
                                 }
 
-                                ImGui::EndTabItem();
-                            }
-
-                            if (ImGui::BeginTabItem("Settings"))
-                            {
-                                ImGui::TextWrapped("%s", fs::current_path().string().c_str());
-
-                                if (ImGui::CollapsingHeader("reader", ImGuiTreeNodeFlags_DefaultOpen)) {
+                                if (ImGui::CollapsingHeader("Reader", ImGuiTreeNodeFlags_DefaultOpen)) {
                                     reader->onGUI();
                                 }
-                                if (ImGui::CollapsingHeader("pbostream", ImGuiTreeNodeFlags_DefaultOpen))
+                                if (ImGui::CollapsingHeader("PBO Stream", ImGuiTreeNodeFlags_DefaultOpen))
                                 {
                                     ImGui::Checkbox("use pbostream", &use_pbostream);
-                                    
-                                    
                                     if (use_pbostream)
                                     {
                                         ImGui::Checkbox("READ DIRECTLY TO PBO", &READ_DIRECTLY_TO_PBO);
                                         pbostream->onGUI();
                                     }
                                 }
-                                if (ImGui::CollapsingHeader("renderer", ImGuiTreeNodeFlags_DefaultOpen)) {
+                                if (ImGui::CollapsingHeader("PixelsRenderer", ImGuiTreeNodeFlags_DefaultOpen)) {
                                     renderer->onGUI();
                                 }
                                 ImGui::EndTabItem();
@@ -586,7 +576,7 @@ int main(int argc, char* argv[])
                 if (ImGui::Begin("Timeline", (bool*)0, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoDecoration))
                 {
                     if (ImGui::Frameslider("timeslider", &is_playing, &F, first_frame, last_frame)) {
-                        reader->current_frame = F;
+                        reader->set_current_frame(F);
                     }
                 }
                 ImGui::End();
