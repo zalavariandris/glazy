@@ -38,7 +38,9 @@
 // sequence readers
 #include "Readers/EXRSequenceReader.h"
 #include "Readers/EXRLayerManager.h"
+
 #include "Readers/OIIOSequenceReader.h"
+#include "Readers/OIIOLayerManager.h"
 
 #include "PixelsRenderer.h"
 #include "RenderPlates/RenderPlate.h"
@@ -55,6 +57,7 @@ int selected_viewport_background{ 1 };//0: transparent 1: checkerboard 2:black
 
 FileSequence sequence;
 std::unique_ptr<OIIOSequenceReader>reader;
+std::unique_ptr<OIIOLayerManager>oiio_layermanager;
 
 bool use_pbostream{false};
 std::unique_ptr<PBOImageStream> pbostream;
@@ -85,6 +88,9 @@ void open(std::filesystem::path filename)
 
     reader = std::make_unique<OIIOSequenceReader>(sequence);
     auto [display_width, display_height] = reader->size();
+    oiio_layermanager = std::make_unique<OIIOLayerManager>(sequence.item(sequence.first_frame));
+
+
     pbostream = std::make_unique<PBOImageStream>(display_width, display_height, 4, 3);
     renderer = std::make_unique<PixelsRenderer>(display_width, display_height);
     layer_manager = std::make_unique<EXRLayerManager>(sequence.item(sequence.first_frame));
@@ -433,6 +439,11 @@ int main(int argc, char* argv[])
                         ImGui::PopStyleColor();
                     }                }
                 ImGui::EndGLViewer();
+            }
+            ImGui::End();
+
+            if (ImGui::Begin("OIIOLayerManager")) {
+                oiio_layermanager->onGUI();
             }
             ImGui::End();
 

@@ -48,7 +48,7 @@
     <ClCompile Include="Readers\OIIOSequenceReader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="OIIOLayerManager.cpp">
+    <ClCompile Include="Readers\OIIOLayerManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -86,7 +86,7 @@
     <ClInclude Include="Readers\OIIOSequenceReader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="OIIOLayerManager.h">
+    <ClInclude Include="Readers\OIIOLayerManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

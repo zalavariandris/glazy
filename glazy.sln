@@ -29,6 +29,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "splitexr-test", "tests\spli
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "EXRViewer", "demos\EXRViewer\EXRViewer.vcxproj", "{F4BE66C0-C1A0-4980-B902-FD453B71DEA6}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Nodes", "glazy\Nodes\Nodes.vcxproj", "{D6A5BC2C-A577-4CB5-9015-A4CF9AE50FBE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -125,6 +127,14 @@ Global
 		{F4BE66C0-C1A0-4980-B902-FD453B71DEA6}.Release|x64.Build.0 = Release|x64
 		{F4BE66C0-C1A0-4980-B902-FD453B71DEA6}.Release|x86.ActiveCfg = Release|Win32
 		{F4BE66C0-C1A0-4980-B902-FD453B71DEA6}.Release|x86.Build.0 = Release|Win32
+		{D6A5BC2C-A577-4CB5-9015-A4CF9AE50FBE}.Debug|x64.ActiveCfg = Debug|x64
+		{D6A5BC2C-A577-4CB5-9015-A4CF9AE50FBE}.Debug|x64.Build.0 = Debug|x64
+		{D6A5BC2C-A577-4CB5-9015-A4CF9AE50FBE}.Debug|x86.ActiveCfg = Debug|Win32
+		{D6A5BC2C-A577-4CB5-9015-A4CF9AE50FBE}.Debug|x86.Build.0 = Debug|Win32
+		{D6A5BC2C-A577-4CB5-9015-A4CF9AE50FBE}.Release|x64.ActiveCfg = Release|x64
+		{D6A5BC2C-A577-4CB5-9015-A4CF9AE50FBE}.Release|x64.Build.0 = Release|x64
+		{D6A5BC2C-A577-4CB5-9015-A4CF9AE50FBE}.Release|x86.ActiveCfg = Release|Win32
+		{D6A5BC2C-A577-4CB5-9015-A4CF9AE50FBE}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -25,7 +25,7 @@
 
 #include "../helpers.h"
 
-std::vector<std::tuple<int, int>> group_stringvector_by_patterns(const std::vector<std::string>& statement, const std::vector<std::vector<std::string>>& patterns)
+inline std::vector<std::tuple<int, int>> group_stringvector_by_patterns(const std::vector<std::string>& statement, const std::vector<std::vector<std::string>>& patterns)
 {
     std::vector<std::tuple<int, int>> groups;
 
@@ -33,7 +33,7 @@ std::vector<std::tuple<int, int>> group_stringvector_by_patterns(const std::vect
     auto sorted_patterns = patterns;
     std::sort(sorted_patterns.begin(), sorted_patterns.end(), [](const std::vector<std::string>& A, const std::vector<std::string>& B) {
         return A.size() > B.size();
-        });
+    });
 
     // collect pattern matches
     int i = 0;
@@ -70,26 +70,36 @@ std::vector<std::tuple<int, int>> group_stringvector_by_patterns(const std::vect
     return groups;
 }
 
-std::vector<Layer> Layer::split_by_patterns(const std::vector<std::vector<std::string>>& patterns) const {
-    std::vector<Layer> sublayers;
-
-    for (auto span : group_stringvector_by_patterns(mChannels, patterns)) {
-        auto [begin, end] = span;
-        auto channels = std::vector<std::string>(mChannels.begin() + begin, mChannels.begin() + end);
-        sublayers.push_back(sublayer(channels));
-    }
-
-    return sublayers;
-}
-
-std::tuple<std::string, std::string> Layer::split_channel_id(const std::string& channel_id)
+/// split layer- and channelname
+/// basicly keep the last part as the channelname.
+/// if no delimiter, than the layer is an empty string.
+/// eg:
+/// "hello.boom.alpha" -> "hello.boom", "alpha"
+/// "red" -> "", "red"
+inline std::tuple<std::string, std::string> split_channel_id(const std::string& channel_id)
 {
+    // find the last delimiter positions
     size_t found = channel_id.find_last_of(".");
-    auto viewlayer = found != std::string::npos ? channel_id.substr(0, found) : "";
+    // if no delimiter, than viewlayer is an empty string
+    // othervise its the part before the last delimiter
+    auto viewlayer = (found != std::string::npos) ? channel_id.substr(0, found) : "";
+    
     auto channel = channel_id.substr(found + 1);
     return { viewlayer, channel };
 }
 
+std::vector<Layer> Layer::split_by_patterns(const std::vector<std::vector<std::string>>& patterns) const {
+    std::vector<Layer> child_layers;
+
+    for (const auto& span : group_stringvector_by_patterns(mChannels, patterns))
+    {
+        auto [begin, end] = span;
+        auto channels = std::vector<std::string>(mChannels.begin() + begin, mChannels.begin() + end);
+        child_layers.push_back(sublayer(channels));
+    }
+
+    return child_layers;
+}
 
 std::string Layer::part_name() const {
     return mPart_name;
@@ -111,7 +121,7 @@ std::string Layer::path() const {
 /// full EXR channel name
 std::vector<std::string> Layer::channel_ids() const {
     std::vector<std::string> full_names;
-    for (auto channel : mChannels) {
+    for (const auto& channel : mChannels) {
         full_names.push_back(mName.empty() ? channel : join_string({ mName, channel }, "."));
     }
     return full_names;
@@ -140,28 +150,28 @@ Layer Layer::sublayer(std::vector<std::string> subchannels, std::string sublayer
 }
 
 std::vector<Layer> Layer::split_by_delimiter() const {
-    std::vector<Layer> sublayers;
+    std::vector<Layer> child_layers;
 
-    for (std::string channel_id : mChannels) {
-        auto [viewlayer, channel] = Layer::split_channel_id(channel_id);
+    for (const std::string& channel_id : mChannels) {
+        auto [viewlayer, channel] = split_channel_id(channel_id);
 
-        if (sublayers.empty())
+        if (child_layers.empty())
         {
-            sublayers.push_back(sublayer({}, viewlayer));
+            child_layers.push_back(sublayer({}, viewlayer));
         }
 
-        if (sublayers.back().mName == viewlayer) {
+        if (child_layers.back().mName == viewlayer) {
 
         }
         else
         {
-            sublayers.push_back(sublayer({}, viewlayer));
+            child_layers.push_back(sublayer({}, viewlayer));
         }
 
-        sublayers.back().mChannels.push_back(channel);
+        child_layers.back().mChannels.push_back(channel);
     }
 
-    return sublayers;
+    return child_layers;
 }
 
 /// nice name
@@ -220,7 +230,7 @@ std::vector<Layer> get_all_part_layers(const Imf::MultiPartInputFile& file)
     /// split by channel delimiters
     {
         std::vector<Layer> sublayers;
-        for (auto lyr : layers) {
+        for (const auto& lyr : layers) {
             for (auto sublyr : lyr.split_by_delimiter()) {
                 sublayers.push_back(sublyr);
             }
@@ -233,7 +243,7 @@ std::vector<Layer> get_all_part_layers(const Imf::MultiPartInputFile& file)
     {
         const std::vector<std::vector<std::string>> patterns = { {"red", "green", "blue"},{"A", "B", "G", "R"},{"B", "G", "R"},{"x", "y"},{"u", "v"},{"u", "v", "w"} };
         std::vector<Layer> sublayers;
-        for (auto lyr : layers) {
+        for (const auto& lyr : layers) {
             for (auto sublayer : lyr.split_by_patterns(patterns)) {
                 sublayers.push_back(sublayer);
             }

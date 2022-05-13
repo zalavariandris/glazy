@@ -13,10 +13,10 @@ private:
     std::string mPart_name;
     int mPart_idx;
     std::vector<std::string> full_channel_name;
+
+    std::vector<Layer> children;
 public:
     Layer(std::string name, std::vector<std::string> channels, std::string part_name, int part_idx) : mName(name), mChannels(channels), mPart_name(part_name), mPart_idx(part_idx) {}
-
-    
 
     std::string part_name() const;
 
@@ -33,8 +33,6 @@ public:
 
     /// Create a new Layer from requested channels on this Layer
     Layer sublayer(std::vector<std::string> subchannels, std::string sublayer_name = "", bool compose = true) const;
-
-    static std::tuple<std::string, std::string> split_channel_id(const std::string& channel_id);
 
     std::vector<Layer> split_by_delimiter() const;
 

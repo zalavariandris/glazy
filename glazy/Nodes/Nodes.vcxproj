@@ -21,8 +21,8 @@
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{f4be66c0-c1a0-4980-b902-fd453b71dea6}</ProjectGuid>
-    <RootNamespace>EXRViewer</RootNamespace>
+    <ProjectGuid>{d6a5bc2c-a577-4cb5-9015-a4cf9ae50fbe}</ProjectGuid>
+    <RootNamespace>Nodes</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -70,35 +70,13 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <LinkIncremental>true</LinkIncremental>
-    <OutDir>$(SolutionDir)bin\$(ProjectName)-$(Platform)-$(Configuration)\</OutDir>
-    <IntDir>$(SolutionDir)bin\$(ProjectName)-intermediates-$(Platform)-$(Configuration)\</IntDir>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <LinkIncremental>false</LinkIncremental>
-    <OutDir>$(SolutionDir)bin\$(ProjectName)-$(Platform)-$(Configuration)\</OutDir>
-    <IntDir>$(SolutionDir)bin\$(ProjectName)-intermediates-$(Platform)-$(Configuration)\</IntDir>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <LinkIncremental>true</LinkIncremental>
-    <OutDir>$(SolutionDir)bin\$(ProjectName)-$(Platform)-$(Configuration)\</OutDir>
-    <IntDir>$(SolutionDir)bin\$(ProjectName)-intermediates-$(Platform)-$(Configuration)\</IntDir>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <LinkIncremental>false</LinkIncremental>
-    <OutDir>$(SolutionDir)bin\$(ProjectName)-$(Platform)-$(Configuration)\</OutDir>
-    <IntDir>$(SolutionDir)bin\$(ProjectName)-intermediates-$(Platform)-$(Configuration)\</IntDir>
-  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>..\..\glazy\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
-      <AdditionalOptions>-DTRACY_ENABLE %(AdditionalOptions)</AdditionalOptions>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -113,9 +91,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>..\..\glazy\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
-      <AdditionalOptions>-DTRACY_ENABLE %(AdditionalOptions)</AdditionalOptions>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -130,9 +106,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
-      <AdditionalIncludeDirectories>..\..\glazy\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <AdditionalOptions>-DTRACY_ENABLE %(AdditionalOptions)</AdditionalOptions>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -147,9 +121,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
-      <AdditionalIncludeDirectories>..\..\glazy\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <AdditionalOptions>-DTRACY_ENABLE %(AdditionalOptions)</AdditionalOptions>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -159,78 +131,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\tracy\TracyClient.cpp" />
-    <ClCompile Include="Readers\OIIOLayerManager.cpp" />
-    <ClCompile Include="Readers\EXRSequenceReader.cpp" />
-    <ClCompile Include="EXRViewer.cpp" />
-    <ClCompile Include="FileSequence.cpp" />
-    <ClCompile Include="helpers.cpp" />
-    <ClCompile Include="Readers\OIIOSequenceReader.cpp" />
-    <ClCompile Include="PBOImageStream.cpp" />
-    <ClCompile Include="PixelsRenderer.cpp" />
-    <ClCompile Include="RenderPlates\CorectionPlate.cpp" />
-    <ClCompile Include="ImGuiWidgets.cpp" />
-    <ClCompile Include="Readers\EXRLayerManager.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\..\glazy.vcxproj">
-      <Project>{f6c4bf9a-82e8-45e1-ad3c-1bc9755a3fac}</Project>
-    </ProjectReference>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="FileSequence.h" />
-    <ClInclude Include="helpers.h" />
-    <ClInclude Include="ImGuiWidgets.h" />
-    <ClInclude Include="Readers\OIIOLayerManager.h" />
-    <ClInclude Include="Readers\EXRLayerManager.h" />
-    <ClInclude Include="Readers\EXRSequenceReader.h" />
-    <ClInclude Include="Readers\OIIOSequenceReader.h" />
-    <ClInclude Include="PBOImageStream.h" />
-    <ClInclude Include="PixelsRenderer.h" />
-    <ClInclude Include="RenderPlates\CorrectionPlate.h" />
-    <ClInclude Include="RenderPlates\RenderPlate.h" />
-    <ClInclude Include="Snipetts.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <CopyFileToFolders Include="polka.frag">
-      <FileType>Document</FileType>
-      <DeploymentContent>true</DeploymentContent>
-    </CopyFileToFolders>
-    <CopyFileToFolders Include="PASS_THROUGH_CAMERA.vert">
-      <FileType>Document</FileType>
-      <DeploymentContent>true</DeploymentContent>
-    </CopyFileToFolders>
-    <CopyFileToFolders Include="checker.frag">
-      <FileType>Document</FileType>
-      <DeploymentContent>true</DeploymentContent>
-    </CopyFileToFolders>
-    <CopyFileToFolders Include="checker.vert">
-      <FileType>Document</FileType>
-      <DeploymentContent>true</DeploymentContent>
-    </CopyFileToFolders>
-    <CopyFileToFolders Include="constant.frag">
-      <FileType>Document</FileType>
-      <DeploymentContent>true</DeploymentContent>
-    </CopyFileToFolders>
-    <CopyFileToFolders Include="PASS_THROUGH.vert">
-      <DeploymentContent>true</DeploymentContent>
-      <FileType>Document</FileType>
-    </CopyFileToFolders>
-  </ItemGroup>
-  <ItemGroup>
-    <CopyFileToFolders Include="imgui.ini">
-      <FileType>Document</FileType>
-    </CopyFileToFolders>
-  </ItemGroup>
-  <ItemGroup>
-    <CopyFileToFolders Include="fa-regular-400.ttf">
-      <DeploymentContent>true</DeploymentContent>
-      <FileType>Document</FileType>
-    </CopyFileToFolders>
-    <CopyFileToFolders Include="fa-solid-900.ttf">
-      <DeploymentContent>true</DeploymentContent>
-      <FileType>Document</FileType>
-    </CopyFileToFolders>
+    <ClCompile Include="Nodes.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
