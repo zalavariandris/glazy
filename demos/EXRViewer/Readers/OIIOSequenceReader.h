@@ -5,6 +5,10 @@
 class OIIOSequenceReader
 {
 public:
+	struct Channel {
+		int part;
+		std::string channel;
+	};
 	OIIOSequenceReader(const FileSequence& seq);
 	void onGUI();
 

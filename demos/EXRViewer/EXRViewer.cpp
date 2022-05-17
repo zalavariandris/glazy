@@ -443,7 +443,11 @@ int main(int argc, char* argv[])
             ImGui::End();
 
             if (ImGui::Begin("OIIOLayerManager")) {
-                oiio_layermanager->onGUI();
+                if (oiio_layermanager->onGUI())
+                {
+                    reader->set_selected_part_idx(oiio_layermanager->selected_part());
+                    reader->set_selected_channels(oiio_layermanager->selected_channels());
+                }
             }
             ImGui::End();
 

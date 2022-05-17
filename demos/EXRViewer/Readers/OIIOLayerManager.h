@@ -32,23 +32,36 @@ public:
 	OIIOLayerManager(const std::filesystem::path& filename);
 	bool onGUI();
 
-	void set_layer(int idx) {
-		current_layer_idx = idx;
+	/// <summary>
+	/// by selecting a layer, return selected part and channels
+
+	int selected_part()
+	{
+		if (this->selected_layer == NULL) {
+			return -1;
+		}
+
+		return this->selected_layer->part;
 	}
 
-	//std::vector<std::string> layer_names();
-	//std::string current_name();
-	//int current();
-	//void set_current(int index);
+	std::vector<std::string> selected_channels()
+	{
+		if (this->selected_layer == NULL) {
+			return {};
+		}
+		const auto& layer = this->selected_layer;
+		std::vector<std::string> channel_ids;
+		for (const auto& channel : layer->channels) {
+			channel_ids.push_back(channel.name);
+		}
+		return channel_ids;
+	}
 
-	//int current_part_idx();
-	//std::vector<std::string> current_channel_ids();
 private:
-	void show_layer_in_table(const OIIOLayerManager::Layer& layer);
 	std::filesystem::path mFilename;
 	std::unique_ptr<OIIO::ImageInput> file;
+
 	std::vector<Layer> mLayers;
-	std::vector<std::tuple<int, std::string>> mSelectedChannels;
-	int current_layer_idx=0;
+	const Layer* selected_layer=NULL;
 };
 
