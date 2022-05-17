@@ -13,7 +13,7 @@
 #include <numeric>
 #include <charconv> // std::to_chars
 #include <iostream>
-//#include "../../tracy/Tracy.hpp"
+#include "../../tracy/Tracy.hpp"
 
 // ImGui
 #define IMGUI_DEFINE_MATH_OPERATORS
@@ -37,7 +37,7 @@
 
 // sequence readers
 #include "Readers/EXRSequenceReader.h"
-#include "Readers/EXRLayerManager.h"
+#include "Readers/EXRLayerManager2.h"
 
 #include "Readers/OIIOSequenceReader.h"
 #include "Readers/OIIOLayerManager.h"
@@ -56,12 +56,14 @@ int F, first_frame, last_frame;
 int selected_viewport_background{ 1 };//0: transparent 1: checkerboard 2:black
 
 FileSequence sequence;
-std::unique_ptr<OIIOSequenceReader>reader;
-std::unique_ptr<OIIOLayerManager>oiio_layermanager;
+//std::unique_ptr<OIIOSequenceReader>oiio_reader;
+//std::unique_ptr<OIIOLayerManager>oiio_layermanager;
+
+std::unique_ptr<BaseSequenceReader> reader;
+std::unique_ptr<EXRLayerManager2> exr_layermanager;
 
 bool use_pbostream{false};
 std::unique_ptr<PBOImageStream> pbostream;
-std::unique_ptr<EXRLayerManager> layer_manager;
 std::unique_ptr<PixelsRenderer> renderer;
 
 ImGui::GLViewerState viewer_state;
@@ -88,12 +90,17 @@ void open(std::filesystem::path filename)
 
     reader = std::make_unique<OIIOSequenceReader>(sequence);
     auto [display_width, display_height] = reader->size();
-    oiio_layermanager = std::make_unique<OIIOLayerManager>(sequence.item(sequence.first_frame));
+    //oiio_layermanager = std::make_unique<OIIOLayerManager>(sequence.item(sequence.first_frame));
+    exr_layermanager = std::make_unique<EXRLayerManager2>(sequence.item(sequence.first_frame));
+    exr_layermanager->on_change([](Layer* lyr) {
 
+        reader->set_selected_part_idx(lyr->part);
+        reader->set_selected_channels(lyr->channels);
+    });
 
     pbostream = std::make_unique<PBOImageStream>(display_width, display_height, 4, 3);
     renderer = std::make_unique<PixelsRenderer>(display_width, display_height);
-    layer_manager = std::make_unique<EXRLayerManager>(sequence.item(sequence.first_frame));
+    
     correction_plate = std::make_unique<CorrectionPlate>(renderer->width, renderer->height, renderer->color_attachment);
 
     viewer_state.camera.fit(renderer->width, renderer->height);
@@ -257,17 +264,21 @@ int main(int argc, char* argv[])
             {
                 if (ImGui::BeginMenuBar())
                 {
-                    const auto& layer_names = layer_manager->layer_names();
+                    std::vector<std::string> layer_names;
+                    for (const Layer layer : exr_layermanager->layers()) {
+                        layer_names.push_back(layer.name);
+                    };
                     ImGui::SetNextItemWidth(ImGui::CalcComboWidth(layer_names));
-                    if (ImGui::BeginCombo("##layers", layer_manager->current_name().c_str()))\
+                    const Layer* selected_layer = exr_layermanager->selected_layer();
+                    if (ImGui::BeginCombo("##layers", selected_layer==NULL ? "<select a layer>" : selected_layer->name.c_str()))\
                     {
                         for (auto i = 0; i < layer_names.size(); i++) {
                             ImGui::PushID(i);
-                            bool is_selected = i == layer_manager->current();
+                            bool is_selected = exr_layermanager->selected_layer()!=NULL && &exr_layermanager->layers().at(i) == exr_layermanager->selected_layer();
                             if (ImGui::Selectable(layer_names.at(i).c_str(), is_selected, ImGuiSelectableFlags_SpanAllColumns)) {
-                                layer_manager->set_current(i);
-                                reader->set_selected_part_idx(layer_manager->current_part_idx());
-                                reader->set_selected_channels(layer_manager->current_channel_ids());
+                                exr_layermanager->set_selected_layer(i);
+                                reader->set_selected_part_idx(exr_layermanager->selected_layer()->part);
+                                reader->set_selected_channels(exr_layermanager->selected_layer()->channels);
                             }
                             ImGui::PopID();
                         }
@@ -442,15 +453,6 @@ int main(int argc, char* argv[])
             }
             ImGui::End();
 
-            if (ImGui::Begin("OIIOLayerManager")) {
-                if (oiio_layermanager->onGUI())
-                {
-                    reader->set_selected_part_idx(oiio_layermanager->selected_part());
-                    reader->set_selected_channels(oiio_layermanager->selected_channels());
-                }
-            }
-            ImGui::End();
-
             {
                 auto viewsize = ImGui::GetMainViewport()->WorkSize;
                 ImGui::SetNextWindowSize({ 300, viewsize.y * 2 / 3 });
@@ -466,66 +468,6 @@ int main(int argc, char* argv[])
                             {
                                 auto file = Imf::MultiPartInputFile(sequence.item(reader->current_frame()).string().c_str());
                                 ImGui::TextWrapped(get_infostring(file).c_str());
-                                ImGui::EndTabItem();
-                            }
-
-                            if (ImGui::BeginTabItem("Channels"))
-                            {
-                                auto file = Imf::MultiPartInputFile(sequence.item(sequence.first_frame).string().c_str());
-                                auto parts = file.parts();
-                                for (auto p = 0; p < parts; p++)
-                                {
-                                    ImGui::PushID(p);
-                                    auto in = Imf::InputPart(file, p);
-                                    auto header = in.header();
-                                    auto cl = header.channels();
-                                    ImGui::LabelText("Part", "%d", p);
-                                    ImGui::LabelText("Name", "%s", header.hasName() ? header.name().c_str() : "");
-                                    ImGui::LabelText("View", "%s", header.hasView() ? header.view().c_str() : "");
-                                    if (ImGui::BeginTable("channels table", 4, ImGuiTableFlags_NoBordersInBody))
-                                    {
-                                        ImGui::TableSetupColumn("name");
-                                        ImGui::TableSetupColumn("type");
-                                        ImGui::TableSetupColumn("sampling");
-                                        ImGui::TableSetupColumn("linear");
-                                        ImGui::TableHeadersRow();
-                                        auto channels =reader->selected_channels();
-                                        for (Imf::ChannelList::ConstIterator i = cl.begin(); i != cl.end(); ++i)
-                                        {
-                                            //ImGui::TableNextRow();
-                                            ImGui::TableNextColumn();
-                                            bool is_selected = (reader->selected_part_idx() == p) && std::find(channels.begin(), channels.end(), std::string(i.name())) != channels.end();
-                                            if (ImGui::Selectable(i.name(), is_selected, ImGuiSelectableFlags_SpanAllColumns))
-                                            {
-                                                if (ImGui::GetIO().KeyCtrl && reader->selected_part_idx() == p)
-                                                {
-                                                    auto channel_name = std::string(i.name());
-                                                    auto current_selected_channels = reader->selected_channels();
-                                                    current_selected_channels.push_back(channel_name);
-                                                    reader->set_selected_channels(current_selected_channels);
-                                                }
-                                                else
-                                                {
-                                                    reader->set_selected_part_idx(p);
-                                                    auto channel_name = std::string(i.name());
-                                                    reader->set_selected_channels({ channel_name });
-                                                }
-                                            }
-
-                                            ImGui::TableNextColumn();
-                                            ImGui::Text("%s", to_string(i.channel().type).c_str());
-
-                                            ImGui::TableNextColumn();
-                                            ImGui::Text("%d %d", i.channel().xSampling, i.channel().ySampling);
-
-                                            ImGui::TableNextColumn();
-                                            ImGui::Text("%s", i.channel().pLinear ? "true" : "false");
-                                        }
-                                        ImGui::EndTable();
-                                    }
-                                    ImGui::PopID();
-                                }
-
                                 ImGui::EndTabItem();
                             }
 
@@ -554,12 +496,28 @@ int main(int argc, char* argv[])
                                 }
                                 if (ImGui::CollapsingHeader("LayerManager", ImGuiTreeNodeFlags_DefaultOpen))
                                 {
-                                    if (layer_manager->onGUI()) {
-                                        std::cout << "layer manager changed" << "\n";
-                                    }
+                                    exr_layermanager->onGUI();
                                 }
 
-                                if (ImGui::CollapsingHeader("Reader", ImGuiTreeNodeFlags_DefaultOpen)) {
+                                if (ImGui::CollapsingHeader("Reader", ImGuiTreeNodeFlags_DefaultOpen))
+                                {
+                                    int current = 0; 
+                                    if (dynamic_cast<const EXRSequenceReader*>(reader.get()) != nullptr) {
+                                        current = 1;
+                                    };
+                                    if (dynamic_cast<const OIIOSequenceReader*>(reader.get()) != nullptr) {
+                                        current = 2;
+                                    };
+                                    if (ImGui::Combo("using", &current, {"<None>", "EXR", "OIIO" }))
+                                    {
+                                        if (current == 1) {
+                                            reader = std::make_unique<EXRSequenceReader>(sequence);
+                                        }
+                                        else {
+                                            reader = std::make_unique<OIIOSequenceReader>(sequence);
+                                        }
+                                        
+                                    }
                                     reader->onGUI();
                                 }
                                 if (ImGui::CollapsingHeader("PBO Stream", ImGuiTreeNodeFlags_DefaultOpen))
@@ -598,7 +556,7 @@ int main(int argc, char* argv[])
             }
             update();
             glazy::end_frame();
-            //FrameMark;
+            FrameMark;
         }
 
         catch (const std::exception& ex) {

@@ -72,6 +72,8 @@ void EXRSequenceReader::onGUI() {
 
     ImGui::DragInt("current frame", &m_current_frame);
 
+    ImGui::LabelText("part", "%d", this->selected_part_idx());
+    ImGui::LabelText("channels", "%s", join_string(this->selected_channels(), ", ").c_str());
 }
 
 /// display size
@@ -160,30 +162,32 @@ void EXRSequenceReader::read_to_memory(void* memory)
             dataWindow.max.y - dataWindow.min.y + 1);
     }
 
-    // read pixels to pointer
-    auto [x, y, w, h] = m_bbox;
-
-    Imf::FrameBuffer frameBuffer;
-    //size_t chanoffset = 0;
-    unsigned long long xstride = sizeof(half) * mSelectedChannels.size();
-    char* buf = (char*)memory;
-    buf -= (x * xstride + y * w * xstride);
-
-    size_t chanoffset = 0;
-    for (auto name : mSelectedChannels)
+    /// Read pixels to pointer
     {
-        size_t chanbytes = sizeof(half);
-        frameBuffer.insert(name,   // name
-            Imf::Slice(Imf::PixelType::HALF, // type
-                buf + chanoffset,           // base
-                xstride,
-                (size_t)w * xstride
-            )
-        );
-        chanoffset += chanbytes;
-    }
+        auto [x, y, w, h] = m_bbox;
 
-    current_inputpart->setFrameBuffer(frameBuffer);
-    current_inputpart->readPixels(y, y + h - 1);
+        Imf::FrameBuffer frameBuffer;
+        //size_t chanoffset = 0;
+        unsigned long long xstride = sizeof(half) * mSelectedChannels.size();
+        char* buf = (char*)memory;
+        buf -= (x * xstride + y * w * xstride);
+
+        size_t chanoffset = 0;
+        for (auto name : mSelectedChannels)
+        {
+            size_t chanbytes = sizeof(half);
+            frameBuffer.insert(name,   // name
+                Imf::Slice(Imf::PixelType::HALF, // type
+                    buf + chanoffset,           // base
+                    xstride,
+                    (size_t)w * xstride
+                )
+            );
+            chanoffset += chanbytes;
+        }
+
+        current_inputpart->setFrameBuffer(frameBuffer);
+        current_inputpart->readPixels(y, y + h - 1);
+    }
 }
 

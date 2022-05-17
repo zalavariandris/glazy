@@ -42,13 +42,16 @@
     <ClCompile Include="ImGuiWidgets.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Readers\EXRLayerManager.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Readers\OIIOSequenceReader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Readers\OIIOLayerManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Readers\BaseLayerManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Readers\EXRLayerManager2.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -57,9 +60,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="FileSequence.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Readers\EXRLayerManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="RenderPlates\RenderPlate.h">
@@ -87,6 +87,15 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Readers\OIIOLayerManager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Readers\BaseLayerManager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Readers\EXRLayerManager2.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Readers\BaseSequenceReader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

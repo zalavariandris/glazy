@@ -160,6 +160,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\..\tracy\TracyClient.cpp" />
+    <ClCompile Include="Readers\BaseLayerManager.cpp" />
+    <ClCompile Include="Readers\EXRLayerManager2.cpp" />
     <ClCompile Include="Readers\OIIOLayerManager.cpp" />
     <ClCompile Include="Readers\EXRSequenceReader.cpp" />
     <ClCompile Include="EXRViewer.cpp" />
@@ -170,7 +172,6 @@
     <ClCompile Include="PixelsRenderer.cpp" />
     <ClCompile Include="RenderPlates\CorectionPlate.cpp" />
     <ClCompile Include="ImGuiWidgets.cpp" />
-    <ClCompile Include="Readers\EXRLayerManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\glazy.vcxproj">
@@ -178,11 +179,13 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Readers\BaseLayerManager.h" />
     <ClInclude Include="FileSequence.h" />
     <ClInclude Include="helpers.h" />
     <ClInclude Include="ImGuiWidgets.h" />
+    <ClInclude Include="Readers\BaseSequenceReader.h" />
+    <ClInclude Include="Readers\EXRLayerManager2.h" />
     <ClInclude Include="Readers\OIIOLayerManager.h" />
-    <ClInclude Include="Readers\EXRLayerManager.h" />
     <ClInclude Include="Readers\EXRSequenceReader.h" />
     <ClInclude Include="Readers\OIIOSequenceReader.h" />
     <ClInclude Include="PBOImageStream.h" />

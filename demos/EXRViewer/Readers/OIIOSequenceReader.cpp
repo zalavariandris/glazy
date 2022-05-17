@@ -1,6 +1,7 @@
 #include "OIIOSequenceReader.h"
 #include "OpenImageIO/imageio.h"
 #include "imgui.h"
+#include "../tracy/Tracy.hpp"
 
 OIIOSequenceReader::OIIOSequenceReader(const FileSequence& seq)
 {
@@ -10,16 +11,17 @@ OIIOSequenceReader::OIIOSequenceReader(const FileSequence& seq)
 	// OpenFile
 	auto filename = m_sequence.item(m_sequence.first_frame);
 
-	auto first_file = OIIO::ImageInput::open(filename.string());
+	auto file = OIIO::ImageInput::open(filename.string());
 
-	auto spec = first_file->spec();
+	auto spec = file->spec();
 	display_x = spec.full_x;
 	display_y = spec.full_y;
 	display_width = spec.full_width;
 	display_height = spec.full_height;
 }
 
-void OIIOSequenceReader::onGUI() {
+void OIIOSequenceReader::onGUI()
+{
 	ImGui::DragInt("current frame", &m_current_frame);
 }
 
@@ -33,7 +35,6 @@ std::tuple<int, int, int, int> OIIOSequenceReader::bbox() {
 
 std::vector<std::string> OIIOSequenceReader::selected_channels()
 {
-
 	return mSelectedChannels;
 }
 void OIIOSequenceReader::set_selected_channels(std::vector<std::string> channels)
@@ -43,47 +44,89 @@ void OIIOSequenceReader::set_selected_channels(std::vector<std::string> channels
 
 void OIIOSequenceReader::read_to_memory(void* memory)
 {
+	ZoneScoped;
 	if (mSelectedChannels.empty()) return;
 
-	//
-	auto filename = m_sequence.item(m_current_frame);
-	auto file = OIIO::ImageInput::open(filename.string());
-	
-	int miplevel = 0;
-	file->seek_subimage(m_selected_part_idx, 0);
-	
-	auto spec = file->spec();
-	auto channels_count = mSelectedChannels.size();
-	char* ptr = (char*)memory;
-	auto typesize = OIIO::TypeHalf.size();
-
-	for (auto i = 0;i< channels_count;i++)
+	/// Open current subimage
+	std::unique_ptr<OIIO::ImageInput> file;
+	OIIO::ImageSpec spec;
 	{
-		const std::string& channel_name = mSelectedChannels.at(i);
-
-		auto it = find(spec.channelnames.begin(), spec.channelnames.end(), channel_name);
-		if (it != spec.channelnames.end())
-		{
-			int chbegin = it - spec.channelnames.begin();
-
-			file->read_image(
-				m_selected_part_idx, 
-				miplevel, 
-				chbegin, 
-				chbegin+1, 
-				OIIO::TypeDesc::HALF, // type
-				&ptr[i* typesize], //data
-				typesize*channels_count, // xstride
-				typesize*channels_count*spec.width, //ystride
-				OIIO::AutoStride // zstride
-			);
+		ZoneScopedN("open current subimage")
+		auto filename = m_sequence.item(m_current_frame);
+		if (!std::filesystem::exists(filename)) {
+			std::cerr << "file does not exist: " << filename << "\n";
+			return;
 		}
+
+		file = OIIO::ImageInput::open(filename.string());
+
+		if (!file) {
+			std::cerr << "OIIO cant open this file" << "\n";
+			std::cerr << "  " << OIIO::geterror() << "\n";
+		}
+
+		file->seek_subimage(m_selected_part_idx, 0);
+		spec = file->spec();
 	}
 
-	// update atributes
-	auto fmt = spec.format;
-	bool is_half = fmt == OIIO::TypeDesc::HALF;
-	m_bbox = std::tuple<int, int, int, int>(spec.x, spec.y, spec.width, spec.height);
+	/// Update datawindow
+	m_bbox = std::tuple<int, int, int, int>(
+		spec.x,
+		spec.y,
+		spec.width,
+		spec.height);
 
+	/// Read pixels
+	{
+		
+		// get channel indices
+		std::vector<int> channel_indices;
+		{
+			ZoneScopedN("get channel indices");
+			auto channelnames = spec.channelnames;
+			for (auto channel_name : mSelectedChannels) {
+				auto it = std::find(channelnames.begin(), channelnames.end(), channel_name);
+				if (it != channelnames.end()) {
+					int index = it - channelnames.begin();
+					channel_indices.push_back(index);
+				}
+			}
+		}
+
+		
+
+		// read channels
+		{
+			ZoneScopedN("read channels");
+			int channels_count = channel_indices.size();
+			char* ptr = (char*)memory;
+			auto typesize = spec.format.size();
+			auto width = spec.width;
+
+			const auto [min, max] = std::minmax_element(channel_indices.begin(), channel_indices.end());
+			int chbegin = *min;
+			int chend = *max+1;
+			if (chend - chbegin != channel_indices.size()) {
+				throw std::exception("channels are not in order");
+			}
+			file->read_image(chbegin, chend, OIIO::TypeDesc::HALF, memory);
+
+			/// read each color plate seperatelly
+			//for (auto i = 0; i < channels_count; i++)
+			//{
+			//	int chbegin = channel_indices.at(i);
+
+			//	file->read_image(
+			//		chbegin,
+			//		chbegin + 1,
+			//		OIIO::TypeDesc::HALF, // type
+			//		&ptr[i * typesize], //data
+			//		typesize * channels_count, // xstride
+			//		typesize * channels_count * width, //ystride
+			//		OIIO::AutoStride // zstride
+			//	);
+			//}
+		}
+	}
 	file->close();
 }

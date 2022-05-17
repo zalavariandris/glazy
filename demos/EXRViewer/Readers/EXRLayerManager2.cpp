@@ -1,5 +1,9 @@
-#include "OIIOLayerManager.h"
+#include "EXRLayerManager2.h"
 #include "imgui.h"
+
+#include "OpenEXR/ImfMultiPartInputFile.h"
+#include <OpenEXR/ImfInputPart.h>
+#include <OpenEXR/ImfChannelList.h>
 
 inline std::tuple<std::string, std::string> split_channel_id(const std::string& channel_id)
 {
@@ -58,27 +62,28 @@ inline std::vector<std::tuple<int, int>> group_stringvector_by_patterns(const st
 	return groups;
 }
 
-OIIOLayerManager::OIIOLayerManager(const std::filesystem::path& filename) {
-	auto file =  OIIO::ImageInput::open(filename.string());
-	
-	/// Collect layers per subimage
+
+
+EXRLayerManager2::EXRLayerManager2(const std::filesystem::path& filename)
+{
+	auto file = std::make_unique<Imf::MultiPartInputFile>(filename.string().c_str());
+
+	/// Collect layers per parts
 	{
 		std::vector<Layer> part_layers;
-		int subimage = 0;
-		while (file->seek_subimage(subimage, 0)) {
-			const auto& spec = file->spec();
-			std::vector<std::string> channels;
-			for (int channel = 0; channel < spec.nchannels; channel++)
-			{
-				std::string channel_name = spec.channel_name(channel);
-				channels.push_back(channel_name);
+
+		for (auto p = 0; p < file->parts(); p++)
+		{
+			auto header = file->header(p);
+			std::string part_name = header.hasName() ? header.name() : "";
+			auto cl = header.channels();
+
+			std::vector<std::string> channel_names;
+			for (Imf::ChannelList::ConstIterator c = cl.begin(); c != cl.end(); ++c) {
+				channel_names.push_back(c.name());
 			}
-			auto name = spec.get_string_attribute("name");
-			auto layer = Layer(name, subimage, channels);
-			layer.part = subimage;
 
-			subimage++;
-
+			auto layer = Layer(part_name, p, channel_names);
 			part_layers.push_back(layer);
 		}
 		this->mLayers = part_layers;
@@ -116,7 +121,7 @@ OIIOLayerManager::OIIOLayerManager(const std::filesystem::path& filename) {
 
 	/// group layers by patterns
 	{
-		const std::vector<std::vector<std::string>> patterns = { 
+		const std::vector<std::vector<std::string>> patterns = {
 			{"red", "green", "blue"},
 			{"R", "G", "B", "A"}, {"R", "G", "B"}, {"R", "G"},
 			{"A", "B", "G", "R"},{"B", "G", "R"}, {"G", "R"},
@@ -150,7 +155,7 @@ OIIOLayerManager::OIIOLayerManager(const std::filesystem::path& filename) {
 	}
 }
 
-bool OIIOLayerManager::onGUI()
+bool EXRLayerManager2::onGUI()
 {
 	bool changed = false;
 
@@ -159,11 +164,13 @@ bool OIIOLayerManager::onGUI()
 		ImGui::LabelText("current part", "%d", mSelectedLayer->part);
 		for (const auto& channel : mSelectedLayer->channels) {
 			ImGui::Text(channel.c_str());
+			ImGui::SameLine();
 		}
+		ImGui::NewLine();
 	}
 
 	/// All channels
-	if (ImGui::BeginTabBar("OIIOLayerManager-tabs"))
+	if (ImGui::BeginTabBar("EXRLayerManager-tabs"))
 	{
 		if (ImGui::BeginTabItem("Layers"))
 		{
@@ -173,14 +180,14 @@ bool OIIOLayerManager::onGUI()
 				ImGui::TableSetupColumn("channels");
 				ImGui::TableHeadersRow();
 
-				for (int i=0;i<mLayers.size();i++)
+				for (int i = 0; i < mLayers.size(); i++)
 				{
 					const auto& layer = mLayers.at(i);
 					ImGui::PushID(i);
 					ImGui::TableNextRow();
 					ImGui::TableNextColumn();
 					if (ImGui::Selectable(layer.name.c_str(), &layer == mSelectedLayer, ImGuiSelectableFlags_SpanAllColumns)) {
-						mSelectedLayer = &layer;
+						set_selected_layer(i);
 						changed = true;
 					}
 					ImGui::TableNextColumn();
