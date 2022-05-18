@@ -123,15 +123,15 @@ public:
     FilesequenceNode()
     {
         pattern.onChange([&](auto filepath){
-            evaluate();
+            parse();
         });
 
         frame.onChange([&](int F) {
-            evaluate();
+            parse();
         });
     }
 
-    void evaluate() {
+    void parse() {
         auto result = sequence.item(frame.get());
         out.trigger(result);
     }
@@ -202,8 +202,6 @@ class ViewportNode {
         });
     }
 };
-
-
 
 auto read_node = ReadNode();
 auto filesequence_node = FilesequenceNode();
