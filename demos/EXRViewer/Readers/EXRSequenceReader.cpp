@@ -116,10 +116,11 @@ std::vector<std::string> EXRSequenceReader::selected_channels() {
     return mSelectedChannels;
 }
 
-void EXRSequenceReader::read_to_memory(void* memory)
+void EXRSequenceReader::read()
 {
     //ZoneScoped;
     if (mSelectedChannels.empty()) return;
+    assert(("memory address is NULL", memory != NULL));
 
     /// Open Current InputPart
     std::unique_ptr<Imf::MultiPartInputFile> current_file;

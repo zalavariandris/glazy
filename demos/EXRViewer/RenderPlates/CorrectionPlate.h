@@ -37,7 +37,7 @@ public:
 
     void compile_program();
 
-    void update();
+    void evaluate();
 
     void render();
 };

@@ -59,10 +59,30 @@ FileSequence sequence;
 //std::unique_ptr<OIIOSequenceReader>oiio_reader;
 //std::unique_ptr<OIIOLayerManager>oiio_layermanager;
 
+
+struct MemoryPlate {
+    const int width;
+    const int height;
+    const size_t typesize;
+    const int channels;
+    void * memory;
+    MemoryPlate(int width, int height, size_t typesize, int channels) :
+        width(width), 
+        height(height), 
+        typesize(typesize),
+        channels(channels), 
+        memory(malloc(width* height* typesize* channels)) {};
+
+    // COPYABLE?
+    // DESTRUCTOR!
+};
+
+void* pixels=NULL;
+std::unique_ptr<MemoryPlate> memory_plate;
 std::unique_ptr<BaseSequenceReader> reader;
 std::unique_ptr<EXRLayerManager2> exr_layermanager;
 
-bool use_pbostream{false};
+bool USE_PBO_STREAM{false};
 std::unique_ptr<PBOImageStream> pbostream;
 std::unique_ptr<PixelsRenderer> renderer;
 
@@ -76,6 +96,9 @@ bool READ_DIRECTLY_TO_PBO{ true };
 
 bool sidebar_visible{true};
 
+bool needs_update = false;
+bool force_update = false;
+
 void open(std::filesystem::path filename)
 {
     std::cout << "opening: " << filename << "\n";
@@ -88,12 +111,14 @@ void open(std::filesystem::path filename)
     F = sequence.first_frame;
     F = sequence.first_frame;
 
-    reader = std::make_unique<OIIOSequenceReader>(sequence);
+    reader = std::make_unique<EXRSequenceReader>(sequence);
     auto [display_width, display_height] = reader->size();
+
+    pixels = malloc((size_t)display_width * display_height * 4 * sizeof(half));
+    
     //oiio_layermanager = std::make_unique<OIIOLayerManager>(sequence.item(sequence.first_frame));
     exr_layermanager = std::make_unique<EXRLayerManager2>(sequence.item(sequence.first_frame));
     exr_layermanager->on_change([](Layer* lyr) {
-
         reader->set_selected_part_idx(lyr->part);
         reader->set_selected_channels(lyr->channels);
     });
@@ -104,6 +129,14 @@ void open(std::filesystem::path filename)
     correction_plate = std::make_unique<CorrectionPlate>(renderer->width, renderer->height, renderer->color_attachment);
 
     viewer_state.camera.fit(renderer->width, renderer->height);
+
+    if (USE_PBO_STREAM && READ_DIRECTLY_TO_PBO) {
+        reader->memory = pbostream->ptr;
+    }
+    else {
+        reader->memory = pixels;
+    }
+    needs_update = true;
 }
 
 void drop_callback(GLFWwindow* window, int argc, const char** argv)
@@ -121,14 +154,13 @@ void update()
 {
     auto [display_width, display_height] = reader->size();
 
-    if (use_pbostream)
+    if (USE_PBO_STREAM)
     {
         if (!READ_DIRECTLY_TO_PBO)
         {
             // read to memory
-            static void* pixels = malloc((size_t)display_width * display_height * 4 * sizeof(half));
-            if (pixels == NULL) std::cerr << "NULL allocation" << "\n";
-            reader->read_to_memory(pixels);
+            //reader->memory = pixels;
+            reader->read();
 
             // memory to pbo
             pbostream->write(pixels, reader->bbox(), reader->selected_channels(), sizeof(half));
@@ -137,13 +169,14 @@ void update()
             auto& pbo = pbostream->pbos[pbostream->display_index];
             renderer->update_from_pbo(pbo.id, pbo.bbox, pbo.channels, GL_HALF_FLOAT);
         }
-        else {
-
+        else
+        {
             // read to pbo
             pbostream->begin();
             if (pbostream->ptr)
             {
-                reader->read_to_memory(pbostream->ptr);
+                reader->memory = pbostream->ptr; // ptr is not persistent, but changing when mapped. so must update each frame
+                reader->read();
             }
 
             pbostream->end(reader->bbox(), reader->selected_channels());
@@ -155,16 +188,14 @@ void update()
     }
     else
     {
-        static void* pixels = malloc((size_t)display_width * display_height * 4 * sizeof(half));
-        if (pixels == NULL) std::cerr << "NULL allocation" << "\n";
-        reader->read_to_memory(pixels);
+        //reader->memory = pixels;
+        reader->read();
         
         renderer->update_from_data(pixels, reader->bbox(), reader->selected_channels(), GL_HALF_FLOAT);
     }
 
-
     correction_plate->set_input_tex(renderer->color_attachment);
-    correction_plate->update();
+    correction_plate->evaluate();
 }
 
 namespace fs = std::filesystem;
@@ -208,6 +239,7 @@ int main(int argc, char* argv[])
     {
         // open default sequence
         open("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr");
+        //open("C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr");
     }
 
     /// Setup render plates
@@ -227,6 +259,7 @@ int main(int argc, char* argv[])
                 F++;
                 if (F > last_frame) F = first_frame;
                 reader->set_current_frame(F);
+                needs_update = true;
             }
 
             if (ImGui::IsKeyPressed('F')) {
@@ -257,6 +290,11 @@ int main(int argc, char* argv[])
                     ImGui::EndMenu();
                 }
 
+                ImGui::Checkbox("force update", &force_update);
+                if (ImGui::Button("update")) {
+                    needs_update = true;
+                }
+
                 ImGui::EndMainMenuBar();
             }
 
@@ -279,6 +317,7 @@ int main(int argc, char* argv[])
                                 exr_layermanager->set_selected_layer(i);
                                 reader->set_selected_part_idx(exr_layermanager->selected_layer()->part);
                                 reader->set_selected_channels(exr_layermanager->selected_layer()->channels);
+                                needs_update = true;
                             }
                             ImGui::PopID();
                         }
@@ -522,11 +561,28 @@ int main(int argc, char* argv[])
                                 }
                                 if (ImGui::CollapsingHeader("PBO Stream", ImGuiTreeNodeFlags_DefaultOpen))
                                 {
-                                    ImGui::Checkbox("use pbostream", &use_pbostream);
-                                    if (use_pbostream)
+                                    if (ImGui::Checkbox("use pbostream", &USE_PBO_STREAM)) {
+                                        if (READ_DIRECTLY_TO_PBO) {
+                                            reader->memory = pbostream->ptr;
+                                        }
+                                        else {
+                                            reader->memory = pixels;
+                                        }
+                                    };
+                                    if (USE_PBO_STREAM)
                                     {
-                                        ImGui::Checkbox("READ DIRECTLY TO PBO", &READ_DIRECTLY_TO_PBO);
+                                        if (ImGui::Checkbox("READ DIRECTLY TO PBO", &READ_DIRECTLY_TO_PBO)) {
+                                            if (READ_DIRECTLY_TO_PBO) {
+                                                reader->memory = pbostream->ptr;
+                                            }
+                                            else {
+                                                reader->memory = pixels;
+                                            }
+                                        };
                                         pbostream->onGUI();
+                                    }
+                                    else {
+                                        reader->memory = pixels;
                                     }
                                 }
                                 if (ImGui::CollapsingHeader("PixelsRenderer", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -550,11 +606,14 @@ int main(int argc, char* argv[])
                 {
                     if (ImGui::Frameslider("timeslider", &is_playing, &F, first_frame, last_frame)) {
                         reader->set_current_frame(F);
+                        needs_update = true;
                     }
                 }
                 ImGui::End();
             }
+
             update();
+
             glazy::end_frame();
             FrameMark;
         }

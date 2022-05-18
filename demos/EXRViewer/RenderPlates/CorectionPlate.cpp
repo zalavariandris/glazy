@@ -175,7 +175,7 @@ void CorrectionPlate::compile_program()
 }
 
 
-    void CorrectionPlate::update()
+    void CorrectionPlate::evaluate()
     {
         // update result texture
         BeginRenderToTexture(fbo, 0, 0, mWidth, mHeight);

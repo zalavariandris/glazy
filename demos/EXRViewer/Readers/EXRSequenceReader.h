@@ -22,7 +22,7 @@ public:
     void set_selected_channels(std::vector<std::string> channels) override;
 
     // calculate
-    void read_to_memory(void* memory) override;
+    void read() override;
 
 private:
     FileSequence m_sequence;

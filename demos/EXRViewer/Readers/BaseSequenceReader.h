@@ -21,5 +21,7 @@ public:
 	virtual void set_selected_channels(std::vector<std::string> channels)=0;
 
 	// calculate
-	virtual void read_to_memory(void* memory)=0;
+	virtual void read()=0;
+
+	void* memory=NULL;
 };

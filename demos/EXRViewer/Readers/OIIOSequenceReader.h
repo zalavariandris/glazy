@@ -1,6 +1,7 @@
 #pragma once
 #include "../FileSequence.h"
 #include "BaseSequenceReader.h"
+#include "OpenImageIO/imagecache.h"
 
 class OIIOSequenceReader : public BaseSequenceReader
 {
@@ -22,7 +23,7 @@ public:
 	void set_selected_channels(std::vector<std::string> channels) override;
 
 	// calculate
-	void read_to_memory(void* memory) override;
+	void read() override;
 
 private:
 	FileSequence m_sequence;
@@ -31,5 +32,7 @@ private:
 	int m_current_frame; // current selected frame
 	int m_selected_part_idx = 0;
 	std::vector<std::string> mSelectedChannels{ "R", "G", "B", "A"}; // channels to actually read
+
+	OIIO::ImageCache* image_cache;
 };
 

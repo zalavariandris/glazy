@@ -3,6 +3,8 @@
 #include "imgui.h"
 #include "../tracy/Tracy.hpp"
 
+#include "OpenImageIO/imagecache.h"
+
 OIIOSequenceReader::OIIOSequenceReader(const FileSequence& seq)
 {
 	m_sequence = seq;
@@ -18,6 +20,11 @@ OIIOSequenceReader::OIIOSequenceReader(const FileSequence& seq)
 	display_y = spec.full_y;
 	display_width = spec.full_width;
 	display_height = spec.full_height;
+
+	image_cache = OIIO::ImageCache::create(true);
+	image_cache->attribute("max_memory_MB", 16000.0f);
+	//image_cache->attribute("autotile", 64);
+	//image_cache->attribute("max_open_files", 2);
 }
 
 void OIIOSequenceReader::onGUI()
@@ -42,16 +49,22 @@ void OIIOSequenceReader::set_selected_channels(std::vector<std::string> channels
 	mSelectedChannels = channels;
 }
 
-void OIIOSequenceReader::read_to_memory(void* memory)
+void OIIOSequenceReader::read()
 {
-	ZoneScoped;
+	//ZoneScoped;
 	if (mSelectedChannels.empty()) return;
+	assert(("memory address is NULL", memory != NULL));
 
-	/// Open current subimage
-	std::unique_ptr<OIIO::ImageInput> file;
+	auto filename = m_sequence.item(m_current_frame);
+	
 	OIIO::ImageSpec spec;
+	
+	/// Open current subimage
+	
+	std::unique_ptr<OIIO::ImageInput> file;
+	//OIIO::ImageSpec spec;
 	{
-		ZoneScopedN("open current subimage")
+		
 		auto filename = m_sequence.item(m_current_frame);
 		if (!std::filesystem::exists(filename)) {
 			std::cerr << "file does not exist: " << filename << "\n";
@@ -82,7 +95,6 @@ void OIIOSequenceReader::read_to_memory(void* memory)
 		// get channel indices
 		std::vector<int> channel_indices;
 		{
-			ZoneScopedN("get channel indices");
 			auto channelnames = spec.channelnames;
 			for (auto channel_name : mSelectedChannels) {
 				auto it = std::find(channelnames.begin(), channelnames.end(), channel_name);
@@ -93,11 +105,8 @@ void OIIOSequenceReader::read_to_memory(void* memory)
 			}
 		}
 
-		
-
 		// read channels
 		{
-			ZoneScopedN("read channels");
 			int channels_count = channel_indices.size();
 			char* ptr = (char*)memory;
 			auto typesize = spec.format.size();
