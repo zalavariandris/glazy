@@ -8,6 +8,7 @@
 #include <any>
 
 #include "glazy.h"
+#include "FileSequence.h";
 
 template<typename T> class MyInlet;
 template<typename T> class MyOutlet;
@@ -110,25 +111,47 @@ public:
     }
 };
 
-class FilesequenceNode {
+class FilesequenceNode
+{
+    FileSequence sequence;
+
 public:
-    Attribute<std::filesystem::path> filename;
+    Attribute<std::filesystem::path> pattern;
+    Attribute<int> frame;
     MyOutlet<std::filesystem::path> out;
 
     FilesequenceNode()
     {
-        filename.onChange([&](auto filepath) {
-            out.trigger(filepath);
+        pattern.onChange([&](auto filepath){
+            evaluate();
         });
+
+        frame.onChange([&](int F) {
+            evaluate();
+        });
+    }
+
+    void evaluate() {
+        auto result = sequence.item(frame.get());
+        out.trigger(result);
     }
 
     void onGui()
     {
         if(ImGui::Button("open"))
         {
-            filename.set( glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0JPEG images\0*.jpg") );
+            auto filename = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0JPEG images\0*.jpg");
+            sequence = FileSequence(filename);
+            frame.set(sequence.first_frame);
+            pattern.set( sequence.pattern );
         }
-        ImGui::LabelText("filename", "%s", filename.get().string().c_str());
+        ImGui::LabelText("pattern", "%s", pattern.get().string().c_str());
+
+        int _frame_ = frame.get();
+        if (ImGui::SliderInt("frame", &_frame_, 1, 9)) {
+            frame.set(_frame_);
+        }
+        //ImGui::LabelText("frame", "%d", frame.get());
     }
 };
 
@@ -146,7 +169,6 @@ public:
     {
         filename_in.onTrigger([this](auto path) {
             filename = path;
-            std::cout << "readnode filename_in changed to: " << path << "\n";
             read();
         });
 
@@ -164,6 +186,10 @@ public:
         // read file to pixels
 
         plate_out.trigger({ memory,0,0,512,512 });
+    }
+
+    void onGUI() {
+        ImGui::LabelText("filename", "%s", filename.string().c_str());
     }
 };
 
@@ -202,7 +228,7 @@ int main()
         glazy::new_frame();
 
         filesequence_node.onGui();
-
+        read_node.onGUI();
         glazy::end_frame();
     }
     glazy::destroy();
