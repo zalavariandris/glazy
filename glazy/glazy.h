@@ -1,5 +1,7 @@
 #pragma once
 
+
+
 // Logging
 #include <iostream>
 
@@ -22,6 +24,7 @@
 #include <GLFW/glfw3.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
+
 
 // imgui
 #include "imgui.h"
@@ -219,7 +222,14 @@ namespace glazy {
 
 		glfwMakeContextCurrent(window);
 
-		auto hwnd = glfwGetWin32Window(window);
+
+		HWND hwnd = glfwGetWin32Window(window);
+
+		const int DWMWA_USE_IMMERSIVE_DARK_MODE_A = 19;
+		const int DWMWA_USE_IMMERSIVE_DARK_MODE_B = 20;
+		BOOL isDarkMode = 1;
+		//DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_A, &isDarkMode, sizeof(isDarkMode));
+		//DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_B, &isDarkMode, sizeof(isDarkMode));
 
 
 
