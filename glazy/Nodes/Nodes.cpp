@@ -25,7 +25,7 @@
 #include "glad/glad.h"
 
 #include "../../tracy/Tracy.hpp"
-
+#include "Camera.h"
 
 template<typename T> class MyInlet;
 template<typename T> class MyOutlet;
@@ -137,54 +137,80 @@ namespace ImGui {
         return false;
     }
 
-    void ImageViewer(ImTextureID user_texture_id, glm::ivec2 resolution, ImVec2 size, ImVec2* uv0, ImVec2* uv1, ImVec4 tint_col= ImVec4(1, 1, 1, 1), ImVec4 border_col=ImVec4(1,1,1,0.3)) {
-
-        ImGui::BeginGroup();
-
+    void ImageViewer(ImTextureID user_texture_id, glm::ivec2 res, ImVec2 size, ImVec2* pan, float* zoom, ImVec4 tint_col = ImVec4(1, 1, 1, 1), ImVec4 border_col = ImVec4(0, 0, 0, 0)) {
         // get item rect
         auto itempos = ImGui::GetCursorPos(); // if child window has no border this is: 0,0
         auto itemsize = ImGui::CalcItemSize(size, 540, 360);
 
+        ImVec2 itemmouse = ImGui::GetMousePos() - itempos - ImGui::GetWindowPos();
+        ImVec2 dim(res.x, res.y);
+
+        static Camera camera;
+
+        ImGui::BeginGroup();
         ImGui::InvisibleButton("camera control", itemsize);
         if (ImGui::IsItemActive())
         {
 
             if (ImGui::IsMouseDragging(0) || ImGui::IsMouseDragging(2))// && !ImGui::GetIO().KeyMods)
             {
-                auto offset = ImVec2(ImGui::GetIO().MouseDelta.x, ImGui::GetIO().MouseDelta.y);
-                float current_zoom = (uv1->x - uv0->x);
-                offset = offset / itemsize * current_zoom * -1;
-                *uv0 += offset;
-                *uv1 += offset;
+                ImVec2 offset = ImVec2(ImGui::GetIO().MouseDelta.x, ImGui::GetIO().MouseDelta.y);
+                std::cout << "mousedelta: " << offset.x << offset.y << "\n";
+                *pan -= offset;
+
+                camera.pan(-ImGui::GetIO().MouseDelta.x / itemsize.x, -ImGui::GetIO().MouseDelta.y / itemsize.y);
             }
         }
 
         if (ImGui::IsItemHovered()) {
             if (ImGui::GetIO().MouseWheel != 0 && !ImGui::GetIO().KeyMods)
             {
-                auto delta = 1.0 + (-ImGui::GetIO().MouseWheel * 0.2);
-                ImVec2 itemmouse = ImGui::GetMousePos() - itempos - ImGui::GetWindowPos();
-                ImVec2 uvmouse = itemmouse / itemsize;
-
-                ImVec2 uvsize = *uv1 - *uv0;
-                ImVec2 uvcenter{ 0.5,0.5 };
-                ImVec2 offset = *uv0 / 2 + *uv1 / 2 + (uvmouse - uvcenter) * uvsize;
-
-                *uv0 -= offset;
-                *uv1 -= offset;
-                *uv0 *= delta;
-                *uv1 *= delta;
-                *uv0 += offset;
-                *uv1 += offset;
+                float zoom_factor = 1.0 + (-ImGui::GetIO().MouseWheel * 0.2);
+                *zoom /= zoom_factor;
+                const auto target_distance = camera.get_target_distance();
+                camera.dolly(-ImGui::GetIO().MouseWheel * target_distance * 0.2);
             }
         }
 
-        ImGui::SetCursorPos(itempos);
+        // init render to texture
+        static GLuint colorattachment = imdraw::make_texture(itemsize.x, itemsize.y, NULL);
+        static GLuint fbo = imdraw::make_fbo(colorattachment);
+        {
 
-        auto scale = itemsize / ImVec2(resolution.x, resolution.y);
-        ImVec2 uvsize = *uv1 - *uv0;
-        ImVec2 uvcenter = *uv0/2+*uv1/2;
-        ImGui::Image((ImTextureID)user_texture_id, itemsize, (*uv0) * scale, (*uv1) * scale, tint_col, border_col);
+
+            // begin render to tewxture
+            glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+            glViewport(0, 0, itemsize.x, itemsize.y);
+
+            // draw to fbo
+            glClearColor(0, 0, 0, 0.0);
+            glClear(GL_COLOR_BUFFER_BIT);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            camera.aspect = itemsize.x / itemsize.y;
+            imdraw::set_projection(camera.getProjection());
+            imdraw::set_view(camera.getView());
+            imdraw::quad((GLuint)user_texture_id);
+
+            // end render to texture
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        }
+
+        ImGui::SetCursorPos(itempos);
+        ImGui::Image((ImTextureID)colorattachment, itemsize, { 0,1 }, {1,0}, tint_col, border_col);
+        ImGui::Text("pan: %f,%f", pan->x, pan->y);
+        ImGui::Text("zoom: %f", *zoom);
+
+        ImGui::Text("itemmouse: %f,%f", itemmouse.x, itemmouse.y);
+        ImGui::Text("itemsize: %f, %f", itemsize.x, itemsize.y);
+        if (ImGui::Button("reset"))
+        {
+            pan->x = 0;
+            pan->y = 0;
+            *zoom = 1.0;
+        }
+        //ImGui::Text("itemmouse: %f, %f", itemmouse.x, itemmouse.y);
+
         ImGui::EndGroup();
     }
 }
@@ -350,9 +376,9 @@ public:
             auto [x, y, w, h] = bbox;
 
             // update texture size and bounding box
-            if (width < w || height < h) {
-                width = std::max(w, width);
-                height = std::max(h, height); 
+            if (width != w || height != h) {
+                width = w;
+                height = h; 
                 init_texture();
             }
 
@@ -558,9 +584,9 @@ public:
         if (ImGui::Begin("viewport")) {
             ImGui::Text("viewport");
 
-            static ImVec2 uv0{ 0,0 };
-            static ImVec2 uv1{ 1,1 };
-            ImGui::ImageViewer((ImTextureID)_datatex, {width, height}, { -1, -1 }, & uv0, & uv1, { 1,1,1,1 }, { 1,1,1,1 });
+            static ImVec2 pan{ 0,0 };
+            static float zoom{ 1 };
+            ImGui::ImageViewer((ImTextureID)_datatex, {width, height}, { -1, 0}, &pan, &zoom, { 1,1,1,1 }, { 1,1,1,0.3 });
         }
         ImGui::End();
     }
