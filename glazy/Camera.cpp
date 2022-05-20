@@ -128,10 +128,29 @@ glm::vec3 Camera::screen_to_planeXY(double mouseX, double mouseY, glm::vec4 view
 	return ray_plane_intersection(near_point, far_point, { 0,0,0 }, { 0,0,1 });
 }
 
-void Camera::dolly(double offset){
+void Camera::dolly(double offset) {
 	auto view = getView();
-	auto forward = glm::normalize(glm::vec3(view[0][2], view[1][2], view[2][2]));
-	this->eye += forward * (float)offset;
+	this->eye += forward() * (float)offset;
+}
+
+void Camera::dolly(double offset, float mouseX, float mouseY, glm::vec4 viewport){
+	glm::mat4 proj = getProjection();
+	glm::mat4 view = getView();
+
+	auto forw = forward();
+	auto near_point = glm::unProject(glm::vec3(mouseX, mouseY, 0.0), view, proj, viewport);
+	auto far_point = glm::unProject(glm::vec3(mouseX, mouseY, 1.0), view, proj, viewport);
+	auto dir = glm::normalize(near_point - far_point);
+	this->eye += dir * (float)offset;
+
+	this->target = ray_plane_intersection(this->eye, this->eye+forw, {0,0,0}, {0,0,1});
+	//this->target += dir * (float)offset;
+
+}
+
+glm::vec3 Camera::forward() const {
+	glm::mat4 view = getView();
+	return glm::normalize(glm::vec3(view[0][2], view[1][2], view[2][2]));
 }
 
 void Camera::to_program(unsigned int shader_program, std::string projection_name, std::string view_name) const {

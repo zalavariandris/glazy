@@ -155,10 +155,9 @@ namespace ImGui {
             if (ImGui::IsMouseDragging(0) || ImGui::IsMouseDragging(2))// && !ImGui::GetIO().KeyMods)
             {
                 ImVec2 offset = ImVec2(ImGui::GetIO().MouseDelta.x, ImGui::GetIO().MouseDelta.y);
-                std::cout << "mousedelta: " << offset.x << offset.y << "\n";
                 *pan -= offset;
 
-                camera.pan(-ImGui::GetIO().MouseDelta.x / itemsize.x, -ImGui::GetIO().MouseDelta.y / itemsize.y);
+                camera.pan(-ImGui::GetIO().MouseDelta.x / itemsize.x, ImGui::GetIO().MouseDelta.y / itemsize.y);
             }
         }
 
@@ -168,13 +167,19 @@ namespace ImGui {
                 float zoom_factor = 1.0 + (-ImGui::GetIO().MouseWheel * 0.2);
                 *zoom /= zoom_factor;
                 const auto target_distance = camera.get_target_distance();
-                camera.dolly(-ImGui::GetIO().MouseWheel * target_distance * 0.2);
+                //camera.dolly(-ImGui::GetIO().MouseWheel * target_distance * 0.2);
+                camera.dolly(-ImGui::GetIO().MouseWheel * target_distance * 0.2, itemmouse.x, itemmouse.y, {0,0,itemsize.x, itemsize.y});
             }
         }
 
         // init render to texture
-        static GLuint colorattachment = imdraw::make_texture(itemsize.x, itemsize.y, NULL);
-        static GLuint fbo = imdraw::make_fbo(colorattachment);
+        static ImVec2 fbosize{ 0,0 };
+        static GLuint colorattachment;
+        static GLuint fbo;
+        if (fbosize.x!=itemsize.x || fbosize.y != itemsize.y) {
+            colorattachment = imdraw::make_texture(itemsize.x, itemsize.y, NULL, GL_RGBA);
+            fbo = imdraw::make_fbo(colorattachment);
+        }
         {
 
 
@@ -197,7 +202,7 @@ namespace ImGui {
         }
 
         ImGui::SetCursorPos(itempos);
-        ImGui::Image((ImTextureID)colorattachment, itemsize, { 0,1 }, {1,0}, tint_col, border_col);
+        ImGui::Image((ImTextureID)colorattachment, itemsize, { 0,0 }, {1,1}, tint_col, border_col);
         ImGui::Text("pan: %f,%f", pan->x, pan->y);
         ImGui::Text("zoom: %f", *zoom);
 

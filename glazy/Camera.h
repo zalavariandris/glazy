@@ -53,6 +53,8 @@ public:
 
 	glm::mat4 getView() const;
 
+	glm::vec3 forward() const;
+
 	double get_target_distance() const;
 
 	void orbit(double yaw, double pitch);
@@ -63,6 +65,7 @@ public:
 	glm::vec3 screen_to_planeXY(double mouseX, double mouseY, glm::vec4 viewport) const;
 
 	void dolly(double offset);
+	void dolly(double offset, float mouseX, float mouseY, glm::vec4 viewport);
 
 	void to_program(unsigned int shader_program, std::string projection_name = "projection", std::string view_name = "view") const;
 
