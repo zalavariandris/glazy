@@ -10,7 +10,7 @@ public:
 
 	float fovy;
 	glm::vec2 tiltshift;
-	float aspect;
+	float aspect; // x/y
 	float near_plane;
 	float far_plane;
 	bool ortho;

@@ -27,6 +27,8 @@
 #include "../../tracy/Tracy.hpp"
 #include "Camera.h"
 
+#include <format>
+
 template<typename T> class MyInlet;
 template<typename T> class MyOutlet;
 
@@ -126,6 +128,90 @@ public:
     }
 };
 
+class RenderTexture
+{
+private:
+    int mWidth, mHeight;
+    GLuint colorattachment;
+    GLuint fbo;
+public:
+    RenderTexture(int w, int h):mWidth(w), mHeight(h) {
+        colorattachment = imdraw::make_texture(w, h, NULL, GL_RGBA);
+        fbo = imdraw::make_fbo(colorattachment);
+    }
+
+    void resize(int w, int h)
+    {
+
+        if (w == mWidth && h == mHeight) return;
+
+        if (glIsTexture(colorattachment)) {
+            glDeleteTextures(1, &colorattachment);
+        }
+
+        colorattachment = imdraw::make_texture(w, h, NULL, GL_RGBA);
+        fbo = imdraw::make_fbo(colorattachment);
+
+        mWidth = w;
+        mHeight = h;
+    }
+
+    void begin() const
+    {
+        // setup fbo
+        ImVec4 viewport(0.0f, 0.0f, width(), height()); // x, y, w, h
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glViewport(viewport.x, viewport.y, viewport.z, viewport.w);
+
+        // clear canvas    
+        glClearColor(0, 0, 0, 0.0);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+        // draw to fbo
+        // ...
+    }
+
+    void end() const
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+
+    GLuint color() {
+        return colorattachment;
+    }
+
+    int width() const
+    {
+        return mWidth;
+    }
+
+    int height() const
+    {
+        return mHeight;
+    }
+
+    std::tuple<int,int> size() {
+        return { mWidth, mHeight };
+    }
+
+    void operator()(std::function<void()> cb)
+    {
+        begin();
+        cb();
+        end();
+    }
+
+    void operator()(int w, int h, std::function<void()> cb)
+    {
+        resize(w, h);
+        begin();
+        cb();
+        end();
+    }
+};
+
 namespace ImGui {
     bool Attrib(const char* label, Attribute<int>* attr, int v_min, int v_max)
     {
@@ -137,86 +223,177 @@ namespace ImGui {
         return false;
     }
 
-    void ImageViewer(ImTextureID user_texture_id, glm::ivec2 res, ImVec2 size, ImVec2* pan, float* zoom, ImVec4 tint_col = ImVec4(1, 1, 1, 1), ImVec4 border_col = ImVec4(0, 0, 0, 0)) {
+    void ImageViewer(const char* std_id, ImTextureID user_texture_id, glm::ivec2 res, ImVec2 size, ImVec2* pan, float* zoom, float zoom_speed = 0.1, ImVec4 tint_col = ImVec4(1, 1, 1, 1), ImVec4 border_col = ImVec4(0, 0, 0, 0.3)) {
+        auto itemsize = ImGui::CalcItemSize(size, 540 / 2, 360 / 2);
+
         // get item rect
-        auto itempos = ImGui::GetCursorPos(); // if child window has no border this is: 0,0
-        auto itemsize = ImGui::CalcItemSize(size, 540, 360);
+        auto windowpos = ImGui::GetWindowPos();
 
-        ImVec2 itemmouse = ImGui::GetMousePos() - itempos - ImGui::GetWindowPos();
-        ImVec2 dim(res.x, res.y);
+        // Projection
+        ImVec4 viewport(0, 0, itemsize.x, itemsize.y);
 
-        static Camera camera;
+        auto matrices = [&](ImVec2 pan, float zoom)->std::tuple<glm::mat4, glm::mat4, glm::mat4> {
+            glm::mat4 projection = glm::ortho(-itemsize.x/2, itemsize.x/2, -itemsize.y/2, itemsize.y/2, 0.1f, 10.0f);
+            glm::mat4 view(1);
+            glm::mat4 model = glm::mat4(1);
+            view = glm::translate(view, { pan.x, pan.y, 0.0f });
+            view = glm::scale(view, { 1.0 / zoom, 1.0 / zoom, 1.0 / zoom });
+            return { model, view, projection };
+        };
 
+        // world to screen
+        auto project = [&](ImVec2 world)->ImVec2
+        {
+            auto [model, view, projection] = matrices(*pan, *zoom);
+            auto screen = glm::project(glm::vec3(world.x, world.y, 0.0f), model * glm::inverse(view), projection, glm::uvec4(viewport.x, viewport.y, viewport.z, viewport.w));
+            return { screen.x, screen.y };
+        };
+
+        // screen to world
+        auto unproject = [&](ImVec2 screen)->ImVec2
+        {
+            auto [model, view, projection] = matrices(*pan, *zoom);
+            auto world = glm::unProject(glm::vec3(screen.x, screen.y, 0.0f), model * glm::inverse(view), projection, glm::uvec4(viewport.x, viewport.y, viewport.z, viewport.w));
+            return { world.x, world.y };
+        };
+
+        const auto set_zoom = [&](float value, ImVec2 pivot) {
+            auto mouse_world = unproject(pivot);
+            *zoom = value;
+            *pan += mouse_world - unproject(pivot);
+        };
+
+        // GUI
+        ImGui::PushID((ImGuiID)std_id);
         ImGui::BeginGroup();
+
+        auto itempos = ImGui::GetCursorPos();
+        auto mouse_item = ImGui::GetMousePos() - itempos - windowpos + ImVec2(ImGui::GetScrollX(), ImGui::GetScrollY());
+        auto mouse_item_prev = ImGui::GetMousePos() - ImGui::GetIO().MouseDelta - itempos - windowpos + ImVec2(ImGui::GetScrollX(), ImGui::GetScrollY());
         ImGui::InvisibleButton("camera control", itemsize);
+        ImGui::SetItemAllowOverlap();
+        ImGui::SetItemUsingMouseWheel();
         if (ImGui::IsItemActive())
         {
-
             if (ImGui::IsMouseDragging(0) || ImGui::IsMouseDragging(2))// && !ImGui::GetIO().KeyMods)
             {
-                ImVec2 offset = ImVec2(ImGui::GetIO().MouseDelta.x, ImGui::GetIO().MouseDelta.y);
-                *pan -= offset;
-
-                camera.pan(-ImGui::GetIO().MouseDelta.x / itemsize.x, ImGui::GetIO().MouseDelta.y / itemsize.y);
+                ImVec2 offset = unproject(mouse_item_prev) - unproject(mouse_item);
+                *pan += offset;
             }
         }
 
         if (ImGui::IsItemHovered()) {
             if (ImGui::GetIO().MouseWheel != 0 && !ImGui::GetIO().KeyMods)
             {
-                float zoom_factor = 1.0 + (-ImGui::GetIO().MouseWheel * 0.2);
-                *zoom /= zoom_factor;
-                const auto target_distance = camera.get_target_distance();
-                //camera.dolly(-ImGui::GetIO().MouseWheel * target_distance * 0.2);
-                camera.dolly(-ImGui::GetIO().MouseWheel * target_distance * 0.2, itemmouse.x, itemmouse.y, {0,0,itemsize.x, itemsize.y});
+                //auto mouse_world = unproject(mouse_item_prev);
+                float zoom_factor = 1.0 + (-ImGui::GetIO().MouseWheel * zoom_speed);
+                //*zoom /= zoom_factor;
+                //*zoom /= zoom_factor;
+
+                //ImVec2 offset = mouse_world - unproject(mouse_item);
+                //*pan += offset;
+
+                set_zoom(*zoom / zoom_factor, mouse_item);
+
+
             }
         }
-
-        // init render to texture
-        static ImVec2 fbosize{ 0,0 };
-        static GLuint colorattachment;
-        static GLuint fbo;
-        if (fbosize.x!=itemsize.x || fbosize.y != itemsize.y) {
-            colorattachment = imdraw::make_texture(itemsize.x, itemsize.y, NULL, GL_RGBA);
-            fbo = imdraw::make_fbo(colorattachment);
-        }
-        {
-
-
-            // begin render to tewxture
-            glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-            glViewport(0, 0, itemsize.x, itemsize.y);
-
-            // draw to fbo
-            glClearColor(0, 0, 0, 0.0);
-            glClear(GL_COLOR_BUFFER_BIT);
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            camera.aspect = itemsize.x / itemsize.y;
-            imdraw::set_projection(camera.getProjection());
-            imdraw::set_view(camera.getView());
-            imdraw::quad((GLuint)user_texture_id);
-
-            // end render to texture
-            glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        }
-
         ImGui::SetCursorPos(itempos);
-        ImGui::Image((ImTextureID)colorattachment, itemsize, { 0,0 }, {1,1}, tint_col, border_col);
-        ImGui::Text("pan: %f,%f", pan->x, pan->y);
-        ImGui::Text("zoom: %f", *zoom);
 
-        ImGui::Text("itemmouse: %f,%f", itemmouse.x, itemmouse.y);
-        ImGui::Text("itemsize: %f, %f", itemsize.x, itemsize.y);
-        if (ImGui::Button("reset"))
-        {
-            pan->x = 0;
-            pan->y = 0;
-            *zoom = 1.0;
+        auto bl = project(ImVec2(0,0));
+        auto tr = project(ImVec2(res[0], res[1]));
+
+
+        /// Render to Texture
+        //RenderTexture render_to_texture = RenderTexture(itemsize.x, itemsize.y);
+        //render_to_texture.resize(itemsize.x, itemsize.y);
+        //render_to_texture([&]() {
+        //    imdraw::set_projection(glm::ortho(0.0f, itemsize.x, 0.0f, itemsize.y));
+        //    imdraw::set_view(glm::mat4(1));
+        //    imdraw::quad((GLuint)user_texture_id, { bl.x, bl.y }, { tr.x, tr.y });
+
+
+        //    imdraw::disc({ mouse_item.x, mouse_item.y,0.0f}, 10);
+
+        //});
+        //ImGui::Image((ImTextureID)render_to_texture.color(), itemsize, {0,0}, {1,1}, tint_col, border_col);
+
+        /// Frame with UV coods
+        ImVec2 uv0 = (ImVec2(0,0) - bl) / (tr - bl);
+        ImVec2 uv1 = (itemsize - bl) / (tr - bl);
+        ImGui::Image((ImTextureID)user_texture_id, itemsize, uv0, uv1, tint_col, { 0,0,0,0 });
+
+        {// Image info
+            ImGui::PushClipRect(itempos + windowpos, windowpos + itempos + itemsize, true);
+            auto draw_list = ImGui::GetWindowDrawList();
+            ImRect image_data_rect = ImRect(project(ImVec2(0, 0)), project(ImVec2(res[0], res[1])));
+            draw_list->AddRect(ImGui::GetWindowPos() + itempos + image_data_rect.Min, ImGui::GetWindowPos() + itempos + image_data_rect.Max, ImColor(ImGui::GetStyle().Colors[ImGuiCol_Border]), 0.0);
+
+            std::string str;
+            int width = res[0];
+            int height = res[1];
+            //ImGui::SetCursorPos(itempos + image_data_rect.Max);
+            if (width == 1920 && height == 1080)
+            {
+                str = "HD";
+            }
+            else if (width == 3840 && height == 2160)
+            {
+                str = "UHD 4K";
+            }
+            else if (width == height)
+            {
+                str = "Square %d";
+            }
+            else
+            {
+                str = fmt::sprintf("%dx%d", width, height);
+            }
+
+            draw_list->AddText(windowpos + itempos + image_data_rect.Max, ImColor(ImGui::GetStyle().Colors[ImGuiCol_Text]), str.c_str());
+
+            draw_list->AddRect(windowpos + itempos, windowpos + itempos + itemsize, ImColor(ImGui::GetStyle().Colors[ImGuiCol_Border]));
+            ImGui::PopClipRect();
         }
-        //ImGui::Text("itemmouse: %f, %f", itemmouse.x, itemmouse.y);
 
+        /// Overlay toolbar
+        {
+            ImGui::SetCursorPos(itempos);
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0);
+
+            ImGui::SetNextItemWidth(ImGui::CalcTextSize("100%").x + ImGui::GetStyle().FramePadding.x * 2);
+            int zoom_percent = *zoom * 100;
+            if (ImGui::DragInt("##zoom", &zoom_percent, 0.1, 1, 100, "%d%%", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_Vertical)) {
+                set_zoom(zoom_percent / 100.0, itemsize/2);
+            }
+
+            if (ImGui::IsItemClicked(1)) {
+                *zoom = 1.0;
+            }
+            ImGui::SameLine();
+            ImGui::Button("pan", { 0,0 });
+            if (ImGui::IsItemActive() && ImGui::IsMouseDragging(0)) {
+                std::cout << "item active" << "\n";
+                ImVec2 offset = unproject(mouse_item_prev) - unproject(mouse_item);
+                *pan += offset;
+            }
+            if (ImGui::IsItemClicked(1))
+            {
+                *pan = ImVec2(res[0] / 2, res[1] / 2);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("fit")) {
+                *zoom = std::min(itemsize.x / res[0], itemsize.y / res[1]);
+                *pan = ImVec2(res[0] / 2, res[1] / 2);
+            }
+
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(2);
+        }
         ImGui::EndGroup();
+        ImGui::PopID();
     }
 }
 
@@ -290,6 +467,18 @@ public:
                 new_frame = sequence.first_frame;
             }
             frame.set(new_frame);
+        }
+
+        if (ImGui::BeginMainMenuBar())
+        {
+            if (ImGui::BeginMenu("File"))
+            {
+                if (ImGui::MenuItem("Open", "")) {
+                    open();
+                }
+                ImGui::EndMenu();
+            }
+            ImGui::EndMainMenuBar();
         }
     }
 };
@@ -365,6 +554,10 @@ private:
     enum class DeviceTransform : int{
         Linear=0, sRGB=1, Rec709=2
     };
+
+    ImVec2 itemsize;
+    ImVec2 pan{ 0,0 };
+    float zoom{ 1 };
 public:
     MyInlet<std::tuple<void*, std::tuple<int, int,int,int>>> image_in;
     Attribute<float> gamma;
@@ -403,8 +596,8 @@ public:
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
         glTexStorage2D(GL_TEXTURE_2D, 1, glinternalformat, width, height);
         glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -415,8 +608,8 @@ public:
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
         glTexStorage2D(GL_TEXTURE_2D, 1, glinternalformat, width, height);
         glBindTexture(GL_TEXTURE_2D, 0);
     }
@@ -580,20 +773,42 @@ public:
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
+    void fit()
+    {
+
+        zoom = std::min(itemsize.x / width, itemsize.y / height);
+        pan = ImVec2(width / 2, height / 2);
+    }
+
     void onGUI() {
 
-        ImGui::Text("gain %f", gain.get());
-        ImGui::Text("gamma %f", gamma.get());
-        ImGui::Text("gain %f", gain.get());
+        ImGui::LabelText("gain",  "%f", gain.get());
+        ImGui::LabelText("gamma", "%f", gamma.get());
+        ImGui::LabelText("gain",  "%f", gain.get());
 
-        if (ImGui::Begin("viewport")) {
-            ImGui::Text("viewport");
 
-            static ImVec2 pan{ 0,0 };
-            static float zoom{ 1 };
-            ImGui::ImageViewer((ImTextureID)_datatex, {width, height}, { -1, 0}, &pan, &zoom, { 1,1,1,1 }, { 1,1,1,0.3 });
+        ImVec2 itemsize;
+        if (ImGui::Begin("Viewport"))
+        {
+            ImGui::ImageViewer("viewer1", (ImTextureID)_datatex, {width, height}, {-1, -1}, &pan, &zoom, 0.1);
+            itemsize = ImGui::GetItemRectSize();
         }
         ImGui::End();
+
+        if (ImGui::BeginMainMenuBar())
+        {
+            if (ImGui::BeginMenu("View"))
+            {
+                if (ImGui::MenuItem("Reset Zoom", "")) {
+                    zoom = 1.0;
+                }
+                if (ImGui::MenuItem("Fit", "")) {
+                    fit();
+                }
+                ImGui::EndMenu();
+            }
+            ImGui::EndMainMenuBar();
+        }
     }
 };
 
@@ -613,7 +828,7 @@ int main()
     std::cout << "Hello World!\n";
 
     glazy::init();
-    glazy::set_vsync(false);
+    glazy::set_vsync(true);
     auto filesequence_node = FilesequenceNode();
     auto read_node = ReadNode();
     auto viewport_node = ViewportNode();
@@ -621,6 +836,7 @@ int main()
     read_node.plate_out.target(viewport_node.image_in);
 
     filesequence_node.open("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr");
+    //viewport_node.fit();
 
     while (glazy::is_running()) {
         glazy::new_frame();
@@ -628,6 +844,9 @@ int main()
         if (ImGui::Begin("Inspector")) {
             if (ImGui::CollapsingHeader("filesequence", ImGuiTreeNodeFlags_DefaultOpen)) {
                 filesequence_node.onGui();
+                filesequence_node.pattern.onChange([&](auto pattern) {
+                    //viewport_node.fit();
+                });
             }
             if (ImGui::CollapsingHeader("read", ImGuiTreeNodeFlags_DefaultOpen)) {
                 read_node.onGUI();
