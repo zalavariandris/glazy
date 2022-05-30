@@ -157,6 +157,7 @@
   <ItemGroup>
     <ClCompile Include="..\..\tracy\TracyClient.cpp" />
     <ClCompile Include="FileSequence.cpp" />
+    <ClCompile Include="ImGuiWidgets.cpp" />
     <ClCompile Include="Nodes.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -166,6 +167,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FileSequence.h" />
+    <ClInclude Include="ImGuiWidgets.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

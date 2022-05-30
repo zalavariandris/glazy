@@ -29,6 +29,8 @@
 
 #include <format>
 
+#include "ImGuiWidgets.h"
+
 template<typename T> class MyInlet;
 template<typename T> class MyOutlet;
 
@@ -110,6 +112,12 @@ class Attribute {
     T value;
     std::vector<std::function<void(T)>> handlers;
 public:
+    Attribute(){}
+
+    Attribute(T val):value(val) {
+
+    }
+
     void set(T val) {
         for (const auto& handler : handlers) {
             handler(val);
@@ -212,10 +220,11 @@ public:
     }
 };
 
+
 namespace ImGui {
-    bool Attrib(const char* label, Attribute<int>* attr, int v_min, int v_max)
+    bool SliderInt(const char* label, Attribute<int>* attr, int v_min, int v_max)
     {
-        int val = attr->get();
+        auto val = attr->get();
         if (ImGui::SliderInt(label, &val, v_min, v_max)) {
             attr->set(val);
             return true;
@@ -223,198 +232,37 @@ namespace ImGui {
         return false;
     }
 
-    void ImageViewer(const char* std_id, ImTextureID user_texture_id, glm::ivec2 res, ImVec2 size, ImVec2* pan, float* zoom, float zoom_speed = 0.1, ImVec4 tint_col = ImVec4(1, 1, 1, 1), ImVec4 border_col = ImVec4(0, 0, 0, 0.3)) {
-        auto itemsize = ImGui::CalcItemSize(size, 540 / 2, 360 / 2);
-
-        // get item rect
-        auto windowpos = ImGui::GetWindowPos();
-
-        // Projection
-        ImVec4 viewport(0, 0, itemsize.x, itemsize.y);
-
-        auto matrices = [&](ImVec2 pan, float zoom)->std::tuple<glm::mat4, glm::mat4, glm::mat4> {
-            glm::mat4 projection = glm::ortho(-itemsize.x/2, itemsize.x/2, -itemsize.y/2, itemsize.y/2, 0.1f, 10.0f);
-            glm::mat4 view(1);
-            glm::mat4 model = glm::mat4(1);
-            view = glm::translate(view, { pan.x, pan.y, 0.0f });
-            view = glm::scale(view, { 1.0 / zoom, 1.0 / zoom, 1.0 / zoom });
-            return { model, view, projection };
-        };
-
-        // world to screen
-        auto project = [&](ImVec2 world)->ImVec2
-        {
-            auto [model, view, projection] = matrices(*pan, *zoom);
-            auto screen = glm::project(glm::vec3(world.x, world.y, 0.0f), model * glm::inverse(view), projection, glm::uvec4(viewport.x, viewport.y, viewport.z, viewport.w));
-            return { screen.x, screen.y };
-        };
-
-        // screen to world
-        auto unproject = [&](ImVec2 screen)->ImVec2
-        {
-            auto [model, view, projection] = matrices(*pan, *zoom);
-            auto world = glm::unProject(glm::vec3(screen.x, screen.y, 0.0f), model * glm::inverse(view), projection, glm::uvec4(viewport.x, viewport.y, viewport.z, viewport.w));
-            return { world.x, world.y };
-        };
-
-        const auto set_zoom = [&](float value, ImVec2 pivot) {
-            auto mouse_world = unproject(pivot);
-            *zoom = value;
-            *pan += mouse_world - unproject(pivot);
-        };
-
-        // GUI
-        ImGui::PushID((ImGuiID)std_id);
-        ImGui::BeginGroup();
-
-        auto itempos = ImGui::GetCursorPos();
-        auto mouse_item = ImGui::GetMousePos() - itempos - windowpos + ImVec2(ImGui::GetScrollX(), ImGui::GetScrollY());
-        auto mouse_item_prev = ImGui::GetMousePos() - ImGui::GetIO().MouseDelta - itempos - windowpos + ImVec2(ImGui::GetScrollX(), ImGui::GetScrollY());
-        ImGui::InvisibleButton("camera control", itemsize);
-        ImGui::SetItemAllowOverlap();
-        ImGui::SetItemUsingMouseWheel();
-        if (ImGui::IsItemActive())
-        {
-            if (ImGui::IsMouseDragging(0) || ImGui::IsMouseDragging(2))// && !ImGui::GetIO().KeyMods)
-            {
-                ImVec2 offset = unproject(mouse_item_prev) - unproject(mouse_item);
-                *pan += offset;
-            }
+    bool SliderFloat(const char* label, Attribute<float>* attr, int v_min, int v_max)
+    {
+        auto val = attr->get();
+        if (ImGui::SliderFloat(label, &val, v_min, v_max)) {
+            attr->set(val);
+            return true;
         }
-
-        if (ImGui::IsItemHovered()) {
-            if (ImGui::GetIO().MouseWheel != 0 && !ImGui::GetIO().KeyMods)
-            {
-                //auto mouse_world = unproject(mouse_item_prev);
-                float zoom_factor = 1.0 + (-ImGui::GetIO().MouseWheel * zoom_speed);
-                //*zoom /= zoom_factor;
-                //*zoom /= zoom_factor;
-
-                //ImVec2 offset = mouse_world - unproject(mouse_item);
-                //*pan += offset;
-
-                set_zoom(*zoom / zoom_factor, mouse_item);
-
-
-            }
-        }
-        ImGui::SetCursorPos(itempos);
-
-        auto bl = project(ImVec2(0,0));
-        auto tr = project(ImVec2(res[0], res[1]));
-
-
-        /// Render to Texture
-        //RenderTexture render_to_texture = RenderTexture(itemsize.x, itemsize.y);
-        //render_to_texture.resize(itemsize.x, itemsize.y);
-        //render_to_texture([&]() {
-        //    imdraw::set_projection(glm::ortho(0.0f, itemsize.x, 0.0f, itemsize.y));
-        //    imdraw::set_view(glm::mat4(1));
-        //    imdraw::quad((GLuint)user_texture_id, { bl.x, bl.y }, { tr.x, tr.y });
-
-
-        //    imdraw::disc({ mouse_item.x, mouse_item.y,0.0f}, 10);
-
-        //});
-        //ImGui::Image((ImTextureID)render_to_texture.color(), itemsize, {0,0}, {1,1}, tint_col, border_col);
-
-        /// Frame with UV coods
-        ImVec2 uv0 = (ImVec2(0,0) - bl) / (tr - bl);
-        ImVec2 uv1 = (itemsize - bl) / (tr - bl);
-        ImGui::Image((ImTextureID)user_texture_id, itemsize, uv0, uv1, tint_col, { 0,0,0,0 });
-
-        {// Image info
-            ImGui::PushClipRect(itempos + windowpos, windowpos + itempos + itemsize, true);
-            auto draw_list = ImGui::GetWindowDrawList();
-            ImRect image_data_rect = ImRect(project(ImVec2(0, 0)), project(ImVec2(res[0], res[1])));
-            draw_list->AddRect(ImGui::GetWindowPos() + itempos + image_data_rect.Min, ImGui::GetWindowPos() + itempos + image_data_rect.Max, ImColor(ImGui::GetStyle().Colors[ImGuiCol_Border]), 0.0);
-
-            std::string str;
-            int width = res[0];
-            int height = res[1];
-            //ImGui::SetCursorPos(itempos + image_data_rect.Max);
-            if (width == 1920 && height == 1080)
-            {
-                str = "HD";
-            }
-            else if (width == 3840 && height == 2160)
-            {
-                str = "UHD 4K";
-            }
-            else if (width == height)
-            {
-                str = "Square %d";
-            }
-            else
-            {
-                str = fmt::sprintf("%dx%d", width, height);
-            }
-
-            draw_list->AddText(windowpos + itempos + image_data_rect.Max, ImColor(ImGui::GetStyle().Colors[ImGuiCol_Text]), str.c_str());
-
-            draw_list->AddRect(windowpos + itempos, windowpos + itempos + itemsize, ImColor(ImGui::GetStyle().Colors[ImGuiCol_Border]));
-            ImGui::PopClipRect();
-        }
-
-        /// Overlay toolbar
-        {
-            ImGui::SetCursorPos(itempos);
-            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0);
-
-            ImGui::SetNextItemWidth(ImGui::CalcTextSize("100%").x + ImGui::GetStyle().FramePadding.x * 2);
-            int zoom_percent = *zoom * 100;
-            if (ImGui::DragInt("##zoom", &zoom_percent, 0.1, 1, 100, "%d%%", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_Vertical)) {
-                set_zoom(zoom_percent / 100.0, itemsize/2);
-            }
-
-            if (ImGui::IsItemClicked(1)) {
-                *zoom = 1.0;
-            }
-            ImGui::SameLine();
-            ImGui::Button("pan", { 0,0 });
-            if (ImGui::IsItemActive() && ImGui::IsMouseDragging(0)) {
-                std::cout << "item active" << "\n";
-                ImVec2 offset = unproject(mouse_item_prev) - unproject(mouse_item);
-                *pan += offset;
-            }
-            if (ImGui::IsItemClicked(1))
-            {
-                *pan = ImVec2(res[0] / 2, res[1] / 2);
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("fit")) {
-                *zoom = std::min(itemsize.x / res[0], itemsize.y / res[1]);
-                *pan = ImVec2(res[0] / 2, res[1] / 2);
-            }
-
-            ImGui::PopStyleVar();
-            ImGui::PopStyleColor(2);
-        }
-        ImGui::EndGroup();
-        ImGui::PopID();
+        return false;
     }
 }
 
 class FilesequenceNode
 {
-    FileSequence sequence;
 
 public:
-    Attribute<std::filesystem::path> pattern;
+    Attribute<FileSequence> sequence;
     Attribute<int> frame;
     Attribute<bool> play;
     MyOutlet<std::filesystem::path> out;
+    
 
     FilesequenceNode()
     {
-        pattern.onChange([&](auto filepath){
-            parse();
+        sequence.onChange([&](auto value){
+            auto result = value.item(frame.get());
+            out.trigger(result);
         });
 
-        frame.onChange([&](int F) {
-            parse();
+        frame.onChange([&](int value) {
+            auto result = sequence.get().item(value);
+            out.trigger(result);
         });
     }
 
@@ -422,15 +270,23 @@ public:
     {
         if (filename.empty()) {
             filename = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0JPEG images\0*.jpg");
+            if (filename.empty()) return; /// file selection was cancelled
         }
-        sequence = FileSequence(filename);
-        frame.set(sequence.first_frame);
-        pattern.set(sequence.pattern);
+
+        assert(("filename does not exist", std::filesystem::exists(filename)));
+        sequence.set(FileSequence(filename));
+        frame.set(sequence.get().first_frame);
     }
 
-    void parse() {
-        auto result = sequence.item(frame.get());
-        out.trigger(result);
+    void animate() {
+        if (play.get()) {
+            auto new_frame = frame.get();
+            new_frame++;
+            if (new_frame > sequence.get().last_frame) {
+                new_frame = sequence.get().first_frame;
+            }
+            frame.set(new_frame);
+        }
     }
 
     void onGui()
@@ -439,15 +295,16 @@ public:
         {
             open();
         }
-        ImGui::LabelText("pattern", "%s", pattern.get().string().c_str());
-        ImGui::LabelText("range", "[%d-%d]", sequence.first_frame, sequence.last_frame);
+        auto [pattern, first_frame, last_frame] = sequence.get();
+        ImGui::LabelText("pattern", "%s", pattern.string().c_str());
+        ImGui::LabelText("range", "[%d-%d]", first_frame, last_frame);
 
         if (ImGui::Button(play.get() ? "pause" : "play")) {
             play.set(play.get() ? false : true);
             std::cout << "change play to: " << play.get() << "\n";
         }
 
-        if (ImGui::Attrib("frame", &frame, sequence.first_frame, sequence.last_frame)) {
+        if (ImGui::SliderInt("frame", &frame, first_frame, last_frame)) {
             play.set(false);
         };
 
@@ -460,26 +317,7 @@ public:
         }
         */
 
-        if (play.get()) {
-            auto new_frame = frame.get();
-            new_frame++;
-            if (new_frame > sequence.last_frame) {
-                new_frame = sequence.first_frame;
-            }
-            frame.set(new_frame);
-        }
 
-        if (ImGui::BeginMainMenuBar())
-        {
-            if (ImGui::BeginMenu("File"))
-            {
-                if (ImGui::MenuItem("Open", "")) {
-                    open();
-                }
-                ImGui::EndMenu();
-            }
-            ImGui::EndMainMenuBar();
-        }
     }
 };
 
@@ -542,27 +380,28 @@ public:
 
 class ViewportNode {
 private:
-    GLuint _datatex=-1;
+    
     GLuint _fbo;
     GLuint _program;
-    GLuint _correctedtex = -1;
-    GLint glinternalformat = GL_RGBA16F;
 
-    int width=0;
-    int height=0;
+    GLint glinternalformat = GL_RGBA16F;
 
     enum class DeviceTransform : int{
         Linear=0, sRGB=1, Rec709=2
     };
 
-    ImVec2 itemsize;
     ImVec2 pan{ 0,0 };
     float zoom{ 1 };
 public:
     MyInlet<std::tuple<void*, std::tuple<int, int,int,int>>> image_in;
-    Attribute<float> gamma;
-    Attribute<float> gain;
-    Attribute<DeviceTransform> selected_device;
+    Attribute<float> gamma{ 1.0 };
+    Attribute<float> gain{0.0};
+    Attribute<DeviceTransform> selected_device{DeviceTransform::sRGB};
+
+    GLuint _datatex = -1;
+    GLuint _correctedtex = -1;
+    int _width = 0;
+    int _height = 0;
 
     ViewportNode()
     {
@@ -574,20 +413,23 @@ public:
             auto [x, y, w, h] = bbox;
 
             // update texture size and bounding box
-            if (width != w || height != h) {
-                width = w;
-                height = h; 
+            if (_width != w || _height != h) {
+                _width = w;
+                _height = h; 
                 init_texture();
             }
 
             update_texture(ptr, w, h);
             color_correct_texture();
         });
+
+        gamma.onChange([&](auto val) {color_correct_texture(); });
+        gain.onChange([&](auto val) {color_correct_texture(); });
     }
 
     void init_texture()
     {
-        std::cout << "init texture" << "\n";
+        //std::cout << "init texture" << "\n";
 
         if (glIsTexture(_datatex)) glDeleteTextures(1, &_datatex);
         glGenTextures(1, &_datatex);
@@ -598,7 +440,7 @@ public:
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-        glTexStorage2D(GL_TEXTURE_2D, 1, glinternalformat, width, height);
+        glTexStorage2D(GL_TEXTURE_2D, 1, glinternalformat, _width, _height);
         glBindTexture(GL_TEXTURE_2D, 0);
 
         if (glIsTexture(_correctedtex)) glDeleteTextures(1, &_correctedtex);
@@ -610,8 +452,22 @@ public:
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-        glTexStorage2D(GL_TEXTURE_2D, 1, glinternalformat, width, height);
+        glTexStorage2D(GL_TEXTURE_2D, 1, glinternalformat, _width, _height);
         glBindTexture(GL_TEXTURE_2D, 0);
+
+        // init fbo
+        glGenFramebuffers(1, &_fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, _fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, _correctedtex, 0);
+
+
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        {
+            std::cout << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << std::endl;
+        }
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
     }
 
     void update_texture(void* ptr, int w, int h) {
@@ -741,7 +597,7 @@ public:
     {
         // begin render to tewxture
         glBindFramebuffer(GL_FRAMEBUFFER, _fbo);
-        glViewport(0, 0, width, height);
+        glViewport(0, 0, _width, _height);
 
         // draw to fbo
         glClearColor(0, 0, 0, 0);
@@ -757,7 +613,7 @@ public:
 
         imdraw::set_uniforms(_program, {
             {"inputTexture", 0},
-            {"resolution", glm::vec2(width, height)},
+            {"resolution", glm::vec2(_width, _height)},
             {"gain_correction", gain.get()},
             {"gamma_correction", 1.0f / gamma.get()},
             {"convert_to_device", (int)selected_device.get()},
@@ -773,80 +629,154 @@ public:
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
-    void fit()
-    {
-
-        zoom = std::min(itemsize.x / width, itemsize.y / height);
-        pan = ImVec2(width / 2, height / 2);
-    }
 
     void onGUI() {
 
-        ImGui::LabelText("gain",  "%f", gain.get());
-        ImGui::LabelText("gamma", "%f", gamma.get());
-        ImGui::LabelText("gain",  "%f", gain.get());
-
-
         ImVec2 itemsize;
-        if (ImGui::Begin("Viewport"))
+        ImGui::BeginGroup(); // display correction
         {
-            ImGui::ImageViewer("viewer1", (ImTextureID)_datatex, {width, height}, {-1, -1}, &pan, &zoom, 0.1);
+            //static const std::vector<std::string> devices{ "linear", "sRGB", "Rec.709" };
+            //int devices_combo_width = ImGui::CalcComboWidth(devices);
+            ImGui::SetNextItemWidth(ImGui::GetTextLineHeight() * 6);
+            ImGui::SliderFloat(ICON_FA_ADJUST "##gain", &gain, -6.0f, 6.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("gain");
+            if (ImGui::IsItemClicked(1)) gain.set(0.0);
+
+            ImGui::SetNextItemWidth(ImGui::GetTextLineHeight() * 6);
+            ImGui::SliderFloat("##gamma", &gamma, 0, 4);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("gamma");
+            if (ImGui::IsItemClicked(1)) gamma.set(1.0);
+
+
+            //ImGui::SetNextItemWidth(devices_combo_width);
+            //ImGui::Combo("##device", &selected_device, "linear\0sRGB\0Rec.709\0");
+            //if (ImGui::IsItemHovered()) ImGui::SetTooltip("device");
+
+            ImGui::ImageViewer("viewer1", (ImTextureID)_correctedtex, _width, _height, &pan, &zoom);
             itemsize = ImGui::GetItemRectSize();
         }
-        ImGui::End();
-
-        if (ImGui::BeginMainMenuBar())
-        {
-            if (ImGui::BeginMenu("View"))
-            {
-                if (ImGui::MenuItem("Reset Zoom", "")) {
-                    zoom = 1.0;
-                }
-                if (ImGui::MenuItem("Fit", "")) {
-                    fit();
-                }
-                ImGui::EndMenu();
-            }
-            ImGui::EndMainMenuBar();
-        }
+        ImGui::EndGroup();
     }
 };
 
-int main()
-{
-    auto outlet = MyOutlet<int>();
-    auto inlet = MyInlet<int>();
-    
-    inlet.onTrigger([](int props) {
-        std::cout << "inlet got value: " << props << "\n";
-    });
 
-    outlet.target(inlet);
-    outlet.trigger(5);
-    outlet.trigger(10);
-    
-    std::cout << "Hello World!\n";
+int main(int argc, char* argv[])
+{
+    /// Open with file argument
+    // Fix Current Working Directory
+    if (argc > 0) {
+        try {
+
+            std::filesystem::current_path(std::filesystem::path(argv[0]).parent_path()); // set working directory to exe
+        }
+        catch (std::filesystem::filesystem_error const& ex) {
+            std::cout
+                << "what():  " << ex.what() << '\n'
+                << "path1(): " << ex.path1() << '\n'
+                << "path2(): " << ex.path2() << '\n'
+                << "code().value():    " << ex.code().value() << '\n'
+                << "code().message():  " << ex.code().message() << '\n'
+                << "code().category(): " << ex.code().category().name() << '\n';
+        }
+    }
+    std::cout << "current working directory: " << std::filesystem::current_path() << "\n";
 
     glazy::init();
-    glazy::set_vsync(true);
+
+
+    auto& style = ImGui::GetStyle();
+    style.WindowBorderSize = 0;
+    style.ChildBorderSize = 0;
+    style.PopupBorderSize = 0;
+    style.FrameBorderSize = 0;
+    glazy::set_vsync(false);
     auto filesequence_node = FilesequenceNode();
     auto read_node = ReadNode();
     auto viewport_node = ViewportNode();
     filesequence_node.out.target(read_node.filename_in);
     read_node.plate_out.target(viewport_node.image_in);
 
-    filesequence_node.open("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr");
+    // Open file
+    if (argc == 2)
+    {
+        // open dropped file
+        filesequence_node.open(argv[1]);
+    }
+    else
+    {
+        // open default sequence
+        filesequence_node.open("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr");
+    }
+    
     //viewport_node.fit();
 
     while (glazy::is_running()) {
         glazy::new_frame();
         FrameMark;
-        if (ImGui::Begin("Inspector")) {
-            if (ImGui::CollapsingHeader("filesequence", ImGuiTreeNodeFlags_DefaultOpen)) {
+
+        ImVec2 itemsize;
+        static ImVec2 pan{ 0,0 };
+        static float zoom{ 1 };
+
+        if (ImGui::BeginMainMenuBar())
+        {
+            if (ImGui::BeginMenu("File"))
+            {
+                if (ImGui::MenuItem("Open", "")) {
+                    filesequence_node.open();
+                }
+                ImGui::EndMenu();
+            }
+
+            if (ImGui::BeginMenu("View"))
+            {
+                if (ImGui::MenuItem("100%", "")) {
+                    zoom = 1.0;
+                }
+
+                if (ImGui::MenuItem("Center", "")) {
+                    pan = ImVec2(0, 0);
+                }
+
+                if (ImGui::MenuItem("Fit", "")) {
+                    zoom = std::min(itemsize.x / viewport_node._width, itemsize.y / viewport_node._height);
+                    pan = ImVec2(0, 0);
+                }
+                ImGui::EndMenu();
+            }
+            ImGui::EndMainMenuBar();
+        }
+
+        if (ImGui::Begin("Viewer", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBringToFrontOnFocus)) {
+
+            ImGui::ImageViewer("viewer", (ImTextureID)viewport_node._correctedtex, viewport_node._width, viewport_node._height, &pan, &zoom, { -1,-1 });
+            itemsize = ImGui::GetItemRectSize();
+        }
+        ImGui::End();
+
+        auto viewsize = ImGui::GetMainViewport()->WorkSize;
+
+        if (filesequence_node.sequence.get().length() > 0) {
+            ImGui::SetNextWindowSize({ viewsize.x * 2 / 3,0 });
+            ImGui::SetNextWindowPos({ viewsize.x * 1 / 3 / 2, viewsize.y - 80 });
+            if (ImGui::Begin("Frameslider", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoDocking))
+            {
+                int F = filesequence_node.frame.get();
+                bool is_playing = filesequence_node.play.get();
+                if (ImGui::Frameslider("frameslider", &is_playing, &F, filesequence_node.sequence.get().first_frame, filesequence_node.sequence.get().last_frame))
+                {
+                    filesequence_node.frame.set(F);
+                    filesequence_node.play.set(is_playing);
+                }
+            }
+            ImGui::End();
+        }
+
+        ImGui::SetNextWindowSize({ 300, viewsize.y * 2 / 3 });
+        ImGui::SetNextWindowPos({ viewsize.x-300, viewsize.y * 1 / 3 / 2 });
+        if (ImGui::Begin("Inspector", NULL, ImGuiWindowFlags_NoDecoration)) {
+            if (ImGui::CollapsingHeader("filesequence", ImGuiTreeNodeFlags_DefaultOpen | ImGuiWindowFlags_NoDocking)) {
                 filesequence_node.onGui();
-                filesequence_node.pattern.onChange([&](auto pattern) {
-                    //viewport_node.fit();
-                });
             }
             if (ImGui::CollapsingHeader("read", ImGuiTreeNodeFlags_DefaultOpen)) {
                 read_node.onGUI();
@@ -857,20 +787,12 @@ int main()
         }
         ImGui::End();
 
+        filesequence_node.animate();
+
         glazy::end_frame();
+
         FrameMark;
     }
     glazy::destroy();
 
 }
-
-// Run program: Ctrl + F5 or Debug > Start Without Debugging menu
-// Debug program: F5 or Debug > Start Debugging menu
-
-// Tips for Getting Started: 
-//   1. Use the Solution Explorer window to add/manage files
-//   2. Use the Team Explorer window to connect to source control
-//   3. Use the Output window to see build output and other messages
-//   4. Use the Error List window to view errors
-//   5. Go to Project > Add New Item to create new code files, or Project > Add Existing Item to add existing code files to the project
-//   6. In the future, to open this project again, go to File > Open > Project and select the .sln file

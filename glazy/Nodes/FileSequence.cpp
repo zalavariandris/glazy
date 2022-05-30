@@ -9,7 +9,7 @@ FileSequence::FileSequence(std::filesystem::path filepath) {
     last_frame = end;
 }
 
-std::filesystem::path FileSequence::item(int F)
+std::filesystem::path FileSequence::item(int F) const
 {
     if (pattern.empty()) return std::filesystem::path();
 
@@ -26,7 +26,7 @@ std::filesystem::path FileSequence::item(int F)
     return std::filesystem::path(filename);
 }
 
-std::vector<int> FileSequence::missing_frames()
+std::vector<int> FileSequence::missing_frames() const
 {
     std::vector<int> missing_frames;
     for (int F = first_frame; F <= last_frame; F++) {
