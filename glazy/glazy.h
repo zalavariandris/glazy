@@ -157,6 +157,8 @@ namespace glazy {
 	float DeltaTime; // in seconds
 	float Framerate; // frames per sec
 
+	bool _vsync = false;
+
 
 	// GLuint default_program;
 
@@ -179,6 +181,11 @@ namespace glazy {
 
 	void set_vsync(bool enable) {
 		glfwSwapInterval(enable ? 1 : 0);
+		_vsync = enable;
+	}
+
+	bool get_vsync() {
+		return _vsync;
 	}
 
 	inline int init() {
@@ -201,7 +208,7 @@ namespace glazy {
 		
 		// create main window
 
-		window = glfwCreateWindow(1024, 768, "MiniViewer", nullptr, nullptr);
+		window = glfwCreateWindow(1024, 768, "VFX Viewer", nullptr, nullptr);
 
 		auto hwd = glfwGetWin32Window(glazy::window);
 		
@@ -241,7 +248,6 @@ namespace glazy {
 		};
 
 		std::cout << "using opengl " << glGetString(GL_VERSION) << "\n";
-
 
 
 		/********
@@ -468,7 +474,8 @@ namespace glazy {
 			static bool fullscreen;
 			if (ImGui::BeginMainMenuBar()) {
 				auto left_cursor = ImGui::GetCursorPos(); // store cursor
-				ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x-(ImGui::CalcTextSize("glazy").x + 60 + ImGui::CalcTextSize("99.00fps").x + ImGui::CalcTextSize(ICON_FA_EXPAND).x+2*ImGui::GetStyle().ItemSpacing.x*4));
+				ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x-
+					(ImGui::CalcTextSize("glazy").x + ImGui::GetFrameHeightWithSpacing() + 60 + ImGui::CalcTextSize("9999fps").x + ImGui::CalcTextSize(ICON_FA_EXPAND).x + 2 * ImGui::GetStyle().ItemSpacing.x * 4));
 
 				if (ImGui::BeginMenu("glazy"))
 				{
@@ -504,19 +511,19 @@ namespace glazy {
 
 				// Show fps in the right side
 				{
+					if (ImGui::Checkbox("##vsync", &_vsync)) {
+						set_vsync(_vsync);
+					}
+
 					auto ctx = ImGui::GetCurrentContext();
 					float* dts = ctx->FramerateSecPerFrame;
 					auto offset = ctx->FramerateSecPerFrameIdx;
 
-					float fpss[120];
-					for (auto i = 0; i < 120; i++) fpss[i] = 1.0 / dts[i];
+					float fps_history[120];
+					for (auto i = 0; i < 120; i++) fps_history[i] = 1.0 / dts[i];
 					auto avg_fps = ImGui::GetIO().Framerate;
-					ImGui::PlotHistogram("fps", fpss, 120, offset,std::to_string((int)avg_fps).c_str(), 0, 120, {60,0});
-
-					std::stringstream ss; // compose text to calculate size
-					//ss << std::fixed << std::setprecision(0) << 1.0/ImGui::GetIO().DeltaTime << "fps";
-					ss << std::fixed << std::setprecision(0) << Framerate << "fps";
-					ImGui::Text(ss.str().c_str());
+					ImGui::PlotHistogram("##fps", fps_history, 120, offset,std::to_string((int)avg_fps).c_str(), 0, 120, {60,0});
+					ImGui::Text("%5.0f fps", Framerate);
 				}
 
 				// restore cursor to the left side

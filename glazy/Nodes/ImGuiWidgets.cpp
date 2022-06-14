@@ -8,10 +8,54 @@
 #include <format>
 
 #include "IconsFontAwesome5.h"
+void ImGui::Ranges(const std::vector<std::tuple<int, int>>& ranges, int v_min, int v_max, ImVec2 size) {
+    ImGuiWindow* window = GetCurrentWindow();
+    if (window->SkipItems)
+        return;
+    ImGuiContext& g = *GImGui;
 
-bool ImGui::Frameslider(const char* label, bool* is_playing, int* v, int v_min, int v_max, const char* format, ImGuiSliderFlags flags)
+    const ImVec2 item_pos(window->DC.CursorPos.x, window->DC.CursorPos.y + window->DC.CurrLineTextBaseOffset);
+    const float wrap_pos_x = window->DC.TextWrapPos;
+    const bool wrap_enabled = (wrap_pos_x >= 0.0f);
+
+
+   
+    ImVec2 item_size = ImGui::CalcItemSize(size, 100, ImGui::GetFrameHeight()/2);
+    ImRect bb(item_pos, item_pos +item_size );
+    ItemSize(item_size);
+    if (!ItemAdd(bb, 0))
+        return;
+
+    // Render
+    ImGuiStyle& style = ImGui::GetStyle();
+    auto dl = ImGui::GetWindowDrawList();
+    // background
+    
+    dl->AddRectFilled(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), ImColor(style.Colors[ImGuiCol_FrameBg]), style.FrameRounding);
+
+    // ticks
+    ImVec2 grab_padding{ 2,2 };
+    for (const auto& range : ranges) {
+        
+        auto [b, e] = range;
+        auto p_min = ImGui::GetItemRectMin() + ImVec2((b-v_min) * (item_size.x- grab_padding.x*2+1) / (v_max - v_min+1)+ grab_padding.x, grab_padding.y);
+        auto p_max = ImGui::GetItemRectMin() + ImVec2((e-v_min + 1) * (item_size.x - grab_padding.x * 2+1) / (v_max - v_min+1), item_size.y- grab_padding.y);
+        dl->AddRectFilled(
+            p_min,
+            p_max,
+            ImColor(style.Colors[ImGuiCol_PlotLines]),
+            style.GrabRounding
+        );
+    }
+
+    // border
+    //dl->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), ImColor(1.0f, 1.0f, 1.0f, 1.0f));    
+}
+
+bool ImGui::Frameslider(const char* label, bool* is_playing, int* v, int v_min, int v_max, const std::vector<std::tuple<int, int>>& ranges, const char* format, ImGuiSliderFlags flags)
 {
     bool changed = false;
+    // Playback controls
     ImGui::BeginGroup();
     {
         ImGui::SetNextItemWidth(ImGui::GetTextLineHeight());
@@ -51,7 +95,7 @@ bool ImGui::Frameslider(const char* label, bool* is_playing, int* v, int v_min, 
     ImGui::EndGroup();
 
     ImGui::SameLine();
-    ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+    ImGui::SeparatorEx(ImGuiSeparatorFlags_Horizontal);
     ImGui::SameLine();
 
     // timeslider
@@ -62,10 +106,20 @@ bool ImGui::Frameslider(const char* label, bool* is_playing, int* v, int v_min, 
         ImGui::InputInt("##start frame", &v_min, 0, 0);
         ImGui::EndDisabled();
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::GetTextLineHeight() * 2 - ImGui::GetStyle().ItemSpacing.x);
+
+        ImGui::BeginGroup();
+        auto slider_width = ImGui::GetContentRegionAvail().x - ImGui::GetTextLineHeight() * 2 - ImGui::GetStyle().ItemSpacing.x;
+        ImGui::SetNextItemWidth(slider_width);
+        
         if (ImGui::SliderInt("##frame", v, v_min, v_max)) {
             changed = true;
         }
+        if (!ranges.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_PlotLines, ImVec4(0, 1, 0, 0.6));
+            Ranges(ranges, v_min, v_max, {slider_width, 0});
+            ImGui::PopStyleColor();
+        }
+        ImGui::EndGroup();
         ImGui::SameLine();
         ImGui::BeginDisabled();
         ImGui::SetNextItemWidth(ImGui::GetTextLineHeight() * 2);
@@ -244,4 +298,24 @@ void ImGui::ImageViewer(const char* std_id, ImTextureID user_texture_id, int tex
     ImGui::PopID();
 
 
+}
+
+bool ImGui::SliderInt(const char* label, Nodes::Attribute<int>* attr, int v_min, int v_max)
+{
+    auto val = attr->get();
+    if (ImGui::SliderInt(label, &val, v_min, v_max)) {
+        attr->set(val);
+        return true;
+    }
+    return false;
+}
+
+bool ImGui::SliderFloat(const char* label, Nodes::Attribute<float>* attr, int v_min, int v_max)
+{
+    auto val = attr->get();
+    if (ImGui::SliderFloat(label, &val, v_min, v_max)) {
+        attr->set(val);
+        return true;
+    }
+    return false;
 }

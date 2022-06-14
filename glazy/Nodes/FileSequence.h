@@ -1,21 +1,23 @@
 #pragma once
 #include <filesystem>
+#include <string>
 
 class FileSequence
 {
 public:
     FileSequence()
     {
-        pattern = "";
+        _pattern = "";
         first_frame = 0;
         last_frame = 0;
     }
 
     FileSequence(std::filesystem::path filepath);
 
+    std::string pattern() const;
     std::filesystem::path item(int F) const;
 
-    std::filesystem::path pattern;
+    
     int first_frame;
     int last_frame;
     int length() const{
@@ -23,4 +25,7 @@ public:
     }
 
     std::vector<int> missing_frames() const;
+
+private:
+    std::string _pattern;
 };

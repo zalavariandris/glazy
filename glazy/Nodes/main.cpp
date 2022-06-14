@@ -31,110 +31,10 @@
 
 #include "ImGuiWidgets.h"
 
-template<typename T> class MyInlet;
-template<typename T> class MyOutlet;
+#include "nodes.h"
 
-class Node;
+#include <future>
 
-template <typename T>
-class MyInlet
-{
-
-public:
-    void onTrigger(std::function<void(T)> handler)
-    {
-        handlers.push_back(handler);
-    }
-
-    template<typename T> friend class MyOutlet;
-    ~MyInlet() {
-        for (MyOutlet<T>* outlet : sources)
-        {
-            auto it = std::find(outlet->targets.begin(), outlet->targets.end(), this);
-            if (it!=outlet->targets.end()) {
-                outlet->targets.erase(it);
-            }
-        }
-    }
-private:
-    std::vector<std::function<void(T)>> handlers;
-    std::vector<MyOutlet<T>*> sources;
-    friend class MyOutlet<T>;
-
-
-};
-
-
-template <typename T>
-class MyOutlet {
-private:
-    T value;
-    std::vector<const MyInlet<T>*> targets;
-public:
-    
-
-    void target(const MyInlet<T>& inlet) {
-        targets.push_back(&inlet);
-        //inlet.sources.push_back(this);
-        for (const auto& handler : inlet.handlers)
-        {
-            handler(value);
-        }
-    }
-
-    void trigger(T props) {
-        value = props;
-        for (const auto& inlet : targets) {
-            for (const auto& handler : inlet->handlers)
-            {
-                handler(value);
-            }
-        }
-    }
-
-    //~MyOutlet() {
-    //    for (const MyInlet<T>* inlet : targets)
-    //    {
-    //        auto it = std::find(inlet->sources.begin(), inlet->sources.end(), this);
-    //        if (it != inlet->sources.end()) {
-    //            inlet->sources.erase(it);
-    //        }
-    //    }
-    //}
-
-    friend class MyInlet<T>;
-};
-
-
-
-template <typename T>
-class Attribute {
-    T value;
-    std::vector<std::function<void(T)>> handlers;
-public:
-    Attribute(){}
-
-    Attribute(T val):value(val) {
-
-    }
-
-    void set(T val) {
-        for (const auto& handler : handlers) {
-            handler(val);
-        }
-        value = val;
-    }
-
-    const T& get() const
-    {
-        return value;
-    }
-
-    void onChange(std::function<void(T)> handler)
-    {
-        handlers.push_back(handler);
-    }
-};
 
 class RenderTexture
 {
@@ -221,48 +121,29 @@ public:
 };
 
 
-namespace ImGui {
-    bool SliderInt(const char* label, Attribute<int>* attr, int v_min, int v_max)
-    {
-        auto val = attr->get();
-        if (ImGui::SliderInt(label, &val, v_min, v_max)) {
-            attr->set(val);
-            return true;
-        }
-        return false;
-    }
-
-    bool SliderFloat(const char* label, Attribute<float>* attr, int v_min, int v_max)
-    {
-        auto val = attr->get();
-        if (ImGui::SliderFloat(label, &val, v_min, v_max)) {
-            attr->set(val);
-            return true;
-        }
-        return false;
-    }
-}
-
 class FilesequenceNode
 {
 
 public:
-    Attribute<FileSequence> sequence;
-    Attribute<int> frame;
-    Attribute<bool> play;
-    MyOutlet<std::filesystem::path> out;
+    Nodes::Attribute<FileSequence> sequence;
+    Nodes::Attribute<int> frame;
+    Nodes::Attribute<bool> play;
+    Nodes::Outlet<std::tuple<std::string, int, std::filesystem::path>> out;
     
 
     FilesequenceNode()
     {
-        sequence.onChange([&](auto value){
-            auto result = value.item(frame.get());
-            out.trigger(result);
+        sequence.onChange([&](FileSequence value){
+            int F = frame.get();
+            auto filename = value.item(F);
+            out.trigger({ value.pattern(), F, filename});
         });
 
         frame.onChange([&](int value) {
-            auto result = sequence.get().item(value);
-            out.trigger(result);
+            int F = value;
+            
+            auto filename = sequence.get().item(F);
+            out.trigger({ sequence.get().pattern(), F, filename});
         });
     }
 
@@ -295,16 +176,16 @@ public:
         {
             open();
         }
-        auto [pattern, first_frame, last_frame] = sequence.get();
-        ImGui::LabelText("pattern", "%s", pattern.string().c_str());
-        ImGui::LabelText("range", "[%d-%d]", first_frame, last_frame);
+
+        ImGui::LabelText("pattern", "%s", sequence.get().pattern().c_str());
+        ImGui::LabelText("range", "[%d-%d]", sequence.get().first_frame, sequence.get().last_frame);
 
         if (ImGui::Button(play.get() ? "pause" : "play")) {
             play.set(play.get() ? false : true);
             std::cout << "change play to: " << play.get() << "\n";
         }
 
-        if (ImGui::SliderInt("frame", &frame, first_frame, last_frame)) {
+        if (ImGui::SliderInt("frame", &frame, sequence.get().first_frame, sequence.get().last_frame)) {
             play.set(false);
         };
 
@@ -316,64 +197,157 @@ public:
             frame.set(_frame_);
         }
         */
-
-
     }
 };
+
 
 class ReadNode
 {
 private:
-    std::filesystem::path filename;
-    void* memory=NULL;
-public:
-    MyInlet<std::filesystem::path> filename_in;
-    MyInlet<void*> memory_in;
-    MyOutlet<std::tuple<void*, std::tuple<int, int, int,int>>> plate_out;
+    int _F;
+    std::string _cache_pattern;
+    std::filesystem::path _filename;
 
-    std::vector<half> pixels;
+    using MemoryImage = std::tuple<void*, int,int,int>; //ptr, width, height, channels
+public:
+    Nodes::Inlet<std::tuple<std::string, int, std::filesystem::path>> filename_in{"filename_in"};
+    Nodes::Outlet<std::tuple<void*, std::tuple<int, int, int,int>>> plate_out;
+
+    void* memory;
+    size_t capacity{ 0 };
+
+    std::map<int, MemoryImage> _cache; // memory, width, height, channels
 
     ReadNode()
     {
-        filename_in.onTrigger([this](auto path) {
-            filename = path;
-            read();
-        });
+        // alloc default memory with a small imagesize
+        capacity = 256 * 256 * 4 * sizeof(half);
+        memory = std::malloc(capacity);
+        
+        // setup inlet triggers
+        filename_in.onTrigger([this](auto params){
+            if (_cache_pattern != std::get<0>(params)) {
+                _cache.clear();
+                _cache_pattern = std::get<0>(params);
+            };
+            _F = std::get<1>(params);
+            _filename = std::get<2>(params);
 
-        memory_in.onTrigger([this](auto buffer) {
-            memory = buffer;
             read();
         });
+    }
+
+    static std::mutex cache_mutex;
+    static void read_to_cache(std::map<int, MemoryImage>& cache, std::filesystem::path filename)
+    {
+        
+        std::lock_guard<std::mutex> lock(cache_mutex); // lock cache
+
+        // move pixels to cache
+        
+
+        // unlock cache! (lock destructor unlock mutex automatuically)
+    }
+
+    ~ReadNode()
+    {
+        free(memory);
     }
 
     void read()
     {
-        
-        OIIO::ImageSpec spec;
+        if (!_cache.contains(_F))
         {
             ZoneScoped;
+            read_to_cache(_cache, _filename);
             //if (memory == NULL) return;
-            if (!std::filesystem::exists(filename)) return;
+            if (!std::filesystem::exists(_filename)) return;
 
             // read file to pixels
-            auto file = OIIO::ImageInput::open(filename.string());
-            spec = file->spec();
+            auto file = OIIO::ImageInput::open(_filename.string());
+            OIIO::ImageSpec spec = file->spec();
             int nchannels = 4;
 
-            auto npixels = spec.width * spec.height * nchannels;
-            pixels.reserve(npixels);
-            if (pixels.size() < npixels) {
-                std::cout << "resize pixels" << "\n";
-                pixels.resize(npixels);
+            auto required_capacity = spec.width * spec.height * nchannels * sizeof(half);
+
+            if (capacity < required_capacity)
+            {
+                std::cout << "reader->realloc" << "\n";
+                if (void* new_memory = std::realloc(memory, required_capacity))
+                {
+                    memory = new_memory;
+                    capacity = required_capacity;
+                }
+                else {
+                    throw std::bad_alloc();
+                }
             }
-            file->read_image(0, nchannels, OIIO::TypeHalf, &pixels[0]);
+
+            file->read_image(0, nchannels, OIIO::TypeHalf, memory);
+            auto& img_cache = _cache[_F];
+            std::get<0>(img_cache) = malloc(capacity);
+            std::memcpy(std::get<0>(img_cache), memory, capacity);
+            std::get<1>(img_cache) = spec.width;
+            std::get<2>(img_cache) = spec.height;
+            std::get<3>(img_cache) = nchannels;
+
             file->close();
         }
-        plate_out.trigger({ &pixels[0],{spec.x,spec.y,spec.width,spec.height} });
+
+        auto [memory, w, h, c] = _cache.at(_F);
+        plate_out.trigger({ memory,{0,0,w,h} });
+    }
+
+    std::vector<std::tuple<int, int>> cached_range() const{
+        // collect cache frame ranges
+        std::vector<int> cached_frames;
+        for (const auto& [F, img] : _cache)
+        {
+            cached_frames.push_back(F);
+        }
+        std::sort(cached_frames.begin(), cached_frames.end());
+
+        std::vector<std::tuple<int, int>> ranges;
+
+        for (auto F : cached_frames) {
+            if (!ranges.empty()) {
+                auto& last_range = ranges.back();
+                auto [begin, end] = last_range;
+                if (F == end + 1) {
+                    std::get<1>(last_range)++;
+                }
+                else {
+                    ranges.push_back({ F, F });
+                }
+            }
+            else {
+                ranges.push_back({ F, F });
+            }
+        }
+
+        return ranges;
     }
 
     void onGUI() {
-        ImGui::LabelText("filename", "%s", filename.string().c_str());
+        ImGui::LabelText("filename", "%s", _filename.string().c_str());
+
+        int used_memory=0;
+        for (const auto& [key, memory_img] : _cache) {
+            const auto& [mem, w,h,c] = memory_img;
+            used_memory += w * h * c * sizeof(half);
+        }
+        ImGui::LabelText("images", "%d", _cache.size());
+        ImGui::LabelText("memory", "%.2f MB", used_memory / pow(1000, 2) );
+
+        for (const auto& inlet : plate_out.targets()) {
+            ImGui::Text("inlet: %s", "target");
+        }
+
+        for (auto [begin, end] : cached_range()) {
+            ImGui::Text("%d-%d", begin, end);
+        }
+
+        ImGui::Ranges(cached_range(), 0, 100);
     }
 };
 
@@ -393,10 +367,10 @@ private:
     ImVec2 pan{ 0,0 };
     float zoom{ 1 };
 public:
-    MyInlet<std::tuple<void*, std::tuple<int, int,int,int>>> image_in;
-    Attribute<float> gamma{ 1.0 };
-    Attribute<float> gain{0.0};
-    Attribute<DeviceTransform> selected_device{DeviceTransform::sRGB};
+    Nodes::Inlet<std::tuple<void*, std::tuple<int, int, int, int>>> image_in{ "image_in" };
+    Nodes::Attribute<float> gamma{ 1.0 };
+    Nodes::Attribute<float> gain{0.0};
+    Nodes::Attribute<DeviceTransform> selected_device{DeviceTransform::sRGB};
 
     GLuint _datatex = -1;
     GLuint _correctedtex = -1;
@@ -429,7 +403,7 @@ public:
 
     void init_texture()
     {
-        //std::cout << "init texture" << "\n";
+        std::cout << "Viewport->init texture" << "\n";
 
         if (glIsTexture(_datatex)) glDeleteTextures(1, &_datatex);
         glGenTextures(1, &_datatex);
@@ -456,6 +430,9 @@ public:
         glBindTexture(GL_TEXTURE_2D, 0);
 
         // init fbo
+        if (glIsFramebuffer(_fbo)) {
+            glDeleteFramebuffers(1, &_fbo);
+        }
         glGenFramebuffers(1, &_fbo);
         glBindFramebuffer(GL_FRAMEBUFFER, _fbo);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, _correctedtex, 0);
@@ -589,7 +566,9 @@ public:
             glDeleteProgram(_program);
         }
         _program = imdraw::make_program_from_source(PASS_THROUGH_VERTEX_CODE, display_correction_fragment_code);
-    
+        if (glIsFramebuffer(_fbo)) {
+            glDeleteFramebuffers(1, &_fbo);
+        }
         _fbo = imdraw::make_fbo(_correctedtex);
     }
 
@@ -690,6 +669,8 @@ int main(int argc, char* argv[])
     style.PopupBorderSize = 0;
     style.FrameBorderSize = 0;
     glazy::set_vsync(false);
+
+    // create graph
     auto filesequence_node = FilesequenceNode();
     auto read_node = ReadNode();
     auto viewport_node = ViewportNode();
@@ -763,7 +744,8 @@ int main(int argc, char* argv[])
             {
                 int F = filesequence_node.frame.get();
                 bool is_playing = filesequence_node.play.get();
-                if (ImGui::Frameslider("frameslider", &is_playing, &F, filesequence_node.sequence.get().first_frame, filesequence_node.sequence.get().last_frame))
+
+                if (ImGui::Frameslider("frameslider", &is_playing, &F, filesequence_node.sequence.get().first_frame, filesequence_node.sequence.get().last_frame, read_node.cached_range()))
                 {
                     filesequence_node.frame.set(F);
                     filesequence_node.play.set(is_playing);
@@ -772,8 +754,8 @@ int main(int argc, char* argv[])
             ImGui::End();
         }
 
-        ImGui::SetNextWindowSize({ 300, viewsize.y * 2 / 3 });
-        ImGui::SetNextWindowPos({ viewsize.x-300, viewsize.y * 1 / 3 / 2 });
+        //ImGui::SetNextWindowSize({ 300, viewsize.y * 2 / 3 });
+        //ImGui::SetNextWindowPos({ viewsize.x-300, viewsize.y * 1 / 3 / 2 });
         if (ImGui::Begin("Inspector", NULL, ImGuiWindowFlags_NoDecoration)) {
             if (ImGui::CollapsingHeader("filesequence", ImGuiTreeNodeFlags_DefaultOpen | ImGuiWindowFlags_NoDocking)) {
                 filesequence_node.onGui();
