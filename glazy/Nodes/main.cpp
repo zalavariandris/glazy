@@ -15,7 +15,6 @@
 #include "imgui_internal.h" // use imgui math operators
 
 #include "glazy.h"
-#include "FileSequence.h";
 
 #include <filesystem>
 #include <tuple>
@@ -35,6 +34,7 @@
 
 #include <future>
 
+#include "pathutils.h"
 
 class RenderTexture
 {
@@ -121,86 +121,6 @@ public:
 };
 
 
-class FilesequenceNode
-{
-
-public:
-    Nodes::Attribute<FileSequence> sequence;
-    Nodes::Attribute<int> frame;
-    Nodes::Attribute<bool> play;
-    Nodes::Outlet<std::tuple<std::string, int, std::filesystem::path>> out;
-    
-
-    FilesequenceNode()
-    {
-        sequence.onChange([&](FileSequence value){
-            int F = frame.get();
-            auto filename = value.item(F);
-            out.trigger({ value.pattern(), F, filename});
-        });
-
-        frame.onChange([&](int value) {
-            int F = value;
-            
-            auto filename = sequence.get().item(F);
-            out.trigger({ sequence.get().pattern(), F, filename});
-        });
-    }
-
-    void open(std::filesystem::path filename = std::filesystem::path())
-    {
-        if (filename.empty()) {
-            filename = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0JPEG images\0*.jpg");
-            if (filename.empty()) return; /// file selection was cancelled
-        }
-
-        assert(("filename does not exist", std::filesystem::exists(filename)));
-        sequence.set(FileSequence(filename));
-        frame.set(sequence.get().first_frame);
-    }
-
-    void animate() {
-        if (play.get()) {
-            auto new_frame = frame.get();
-            new_frame++;
-            if (new_frame > sequence.get().last_frame) {
-                new_frame = sequence.get().first_frame;
-            }
-            frame.set(new_frame);
-        }
-    }
-
-    void onGui()
-    {
-        if(ImGui::Button("open"))
-        {
-            open();
-        }
-
-        ImGui::LabelText("pattern", "%s", sequence.get().pattern().c_str());
-        ImGui::LabelText("range", "[%d-%d]", sequence.get().first_frame, sequence.get().last_frame);
-
-        if (ImGui::Button(play.get() ? "pause" : "play")) {
-            play.set(play.get() ? false : true);
-            std::cout << "change play to: " << play.get() << "\n";
-        }
-
-        if (ImGui::SliderInt("frame", &frame, sequence.get().first_frame, sequence.get().last_frame)) {
-            play.set(false);
-        };
-
-        /*
-        int _frame_ = frame.get();
-        if (ImGui::SliderInt("frame", &_frame_, sequence.first_frame, sequence.last_frame))
-        {
-            play.set(false);
-            frame.set(_frame_);
-        }
-        */
-    }
-};
-
-
 class ReadNode
 {
 private:
@@ -209,14 +129,102 @@ private:
     std::filesystem::path _filename;
 
     using MemoryImage = std::tuple<void*, int,int,int>; //ptr, width, height, channels
+
+    bool _is_movie{ false };
+    int _first_frame;
+    int _last_frame;
 public:
-    Nodes::Inlet<std::tuple<std::string, int, std::filesystem::path>> filename_in{"filename_in"};
+    Nodes::Attribute<std::string> file; // filename or sequence pattern
+    Nodes::Attribute<int> frame;
     Nodes::Outlet<std::tuple<void*, std::tuple<int, int, int,int>>> plate_out;
 
     void* memory;
     size_t capacity{ 0 };
 
     std::map<int, MemoryImage> _cache; // memory, width, height, channels
+
+    int first_frame() const{
+        return _first_frame;
+    }
+
+    int last_frame() const{
+        return _last_frame;
+    }
+
+    int length() const {
+        return _last_frame - _first_frame + 1;
+    }
+
+    void open(std::string filepath) {
+        _cache.clear(); // clear the cache
+
+        bool Exist = std::filesystem::exists(filepath);
+
+        std::cout << "ReadNode->open: " << filepath << "\n";
+
+        // movie
+        if (Exist) {
+            auto file = OIIO::ImageInput::open(filepath);
+            _is_movie = file->spec().get_int_attribute("oiio:Movie") > 0 ? true : false;
+            if (_is_movie) {
+                // ...
+
+                return;
+            }
+        }
+
+        // sequence from item
+        if (Exist) {
+            auto [p, s, e, F] = sequence_from_item(filepath);
+
+            //return { pattern.string(), startframe, endframe };
+            _first_frame = s;
+            _last_frame = e;
+            file.set(p.string());
+            frame.set(s);
+        }
+
+        // sequence from pattern
+        if (!Exist) {
+            auto [p, s, e] = sequence_from_pattern(filepath);
+            if (p.empty()) return;
+
+            //return { pattern.string(), startframe, endframe };
+
+            _first_frame = s;
+            _last_frame = e;
+            file.set(p.string());
+            frame.set(s);
+        }
+
+        
+        
+
+        // single image
+
+        // parse filepath
+
+
+        //if (std::filesystem::exists(file_pattern)) {
+        //    auto file = OIIO::ImageInput::open(file_pattern);
+        //    _is_movie = file->spec().get_int_attribute("oiio:Movie") > 0 ? true : false;
+
+        //    if (!_is_movie) {
+        //        auto sequence = FileSequence(name);
+        //        _first_frame = sequence.first_frame;
+        //        _last_frame = sequence.last_frame;
+        //        frame.set(sequence.first_frame);
+        //    }
+        //}
+        //else {
+        //    auto sequence = FileSequence(name);
+        //    _first_frame = sequence.first_frame;
+        //    _last_frame = sequence.last_frame;
+        //    auto first_filename = sequence.item(sequence.first_frame);
+        //    assert(("filename does not exist", std::filesystem::exists(first_filename)));
+        //}
+    }
+
 
     ReadNode()
     {
@@ -225,28 +233,16 @@ public:
         memory = std::malloc(capacity);
         
         // setup inlet triggers
-        filename_in.onTrigger([this](auto params){
-            if (_cache_pattern != std::get<0>(params)) {
-                _cache.clear();
-                _cache_pattern = std::get<0>(params);
-            };
-            _F = std::get<1>(params);
-            _filename = std::get<2>(params);
+        file.onChange([&](std::string pattern) {
+            //open(pattern);
+            frame.set(_first_frame);
+        });
 
+        frame.onChange([&](int F){
+            _F = frame.get();
+            _filename = sequence_item(file.get(), frame.get());
             read();
         });
-    }
-
-    static std::mutex cache_mutex;
-    static void read_to_cache(std::map<int, MemoryImage>& cache, std::filesystem::path filename)
-    {
-        
-        std::lock_guard<std::mutex> lock(cache_mutex); // lock cache
-
-        // move pixels to cache
-        
-
-        // unlock cache! (lock destructor unlock mutex automatuically)
     }
 
     ~ReadNode()
@@ -259,13 +255,12 @@ public:
         if (!_cache.contains(_F))
         {
             ZoneScoped;
-            read_to_cache(_cache, _filename);
             //if (memory == NULL) return;
             if (!std::filesystem::exists(_filename)) return;
 
             // read file to pixels
-            auto file = OIIO::ImageInput::open(_filename.string());
-            OIIO::ImageSpec spec = file->spec();
+            auto imagefile = OIIO::ImageInput::open(_filename.string());
+            OIIO::ImageSpec spec = imagefile->spec();
             int nchannels = 4;
 
             auto required_capacity = spec.width * spec.height * nchannels * sizeof(half);
@@ -283,7 +278,7 @@ public:
                 }
             }
 
-            file->read_image(0, nchannels, OIIO::TypeHalf, memory);
+            imagefile->read_image(0, nchannels, OIIO::TypeHalf, memory);
             auto& img_cache = _cache[_F];
             std::get<0>(img_cache) = malloc(capacity);
             std::memcpy(std::get<0>(img_cache), memory, capacity);
@@ -291,7 +286,7 @@ public:
             std::get<2>(img_cache) = spec.height;
             std::get<3>(img_cache) = nchannels;
 
-            file->close();
+            imagefile->close();
         }
 
         auto [memory, w, h, c] = _cache.at(_F);
@@ -329,7 +324,23 @@ public:
     }
 
     void onGUI() {
-        ImGui::LabelText("filename", "%s", _filename.string().c_str());
+
+        std::string filename = file.get();
+        if (ImGui::InputText("file", &filename)) {
+            file.set(filename);
+        }
+        ImGui::SameLine();
+
+        ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - ImGui::GetTextLineHeightWithSpacing());
+        ImGui::SetNextItemWidth(ImGui::GetTextLineHeightWithSpacing());
+        if (ImGui::Button(ICON_FA_FOLDER_OPEN "##open")) {
+            auto selected_file = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0JPEG images\0*.jpg");
+            if (!selected_file.empty()) open(selected_file.string());
+        }
+        ImGui::LabelText("range", "%d-%d", _first_frame, _last_frame);
+        ImGui::SliderInt("frame", &frame, _first_frame, _last_frame);
+
+        ImGui::LabelText("filename", "%s", _filename.filename().string().c_str());
 
         int used_memory=0;
         for (const auto& [key, memory_img] : _cache) {
@@ -343,11 +354,7 @@ public:
             ImGui::Text("inlet: %s", "target");
         }
 
-        for (auto [begin, end] : cached_range()) {
-            ImGui::Text("%d-%d", begin, end);
-        }
-
-        ImGui::Ranges(cached_range(), 0, 100);
+        ImGui::Ranges(cached_range(), _first_frame, _last_frame);
     }
 };
 
@@ -366,6 +373,7 @@ private:
 
     ImVec2 pan{ 0,0 };
     float zoom{ 1 };
+
 public:
     Nodes::Inlet<std::tuple<void*, std::tuple<int, int, int, int>>> image_in{ "image_in" };
     Nodes::Attribute<float> gamma{ 1.0 };
@@ -376,6 +384,8 @@ public:
     GLuint _correctedtex = -1;
     int _width = 0;
     int _height = 0;
+
+
 
     ViewportNode()
     {
@@ -660,7 +670,7 @@ int main(int argc, char* argv[])
     }
     std::cout << "current working directory: " << std::filesystem::current_path() << "\n";
 
-    glazy::init();
+    glazy::init({.docking=true, .viewports=false});
 
 
     auto& style = ImGui::GetStyle();
@@ -671,22 +681,20 @@ int main(int argc, char* argv[])
     glazy::set_vsync(false);
 
     // create graph
-    auto filesequence_node = FilesequenceNode();
     auto read_node = ReadNode();
     auto viewport_node = ViewportNode();
-    filesequence_node.out.target(read_node.filename_in);
     read_node.plate_out.target(viewport_node.image_in);
 
     // Open file
     if (argc == 2)
     {
         // open dropped file
-        filesequence_node.open(argv[1]);
+        read_node.open("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.%04d.exr");
     }
     else
     {
         // open default sequence
-        filesequence_node.open("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr");
+        read_node.open("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.%04d.exr");
     }
     
     //viewport_node.fit();
@@ -704,7 +712,8 @@ int main(int argc, char* argv[])
             if (ImGui::BeginMenu("File"))
             {
                 if (ImGui::MenuItem("Open", "")) {
-                    filesequence_node.open();
+                    //filesequence_node.open();
+                    //read_node.filename.set("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr");
                 }
                 ImGui::EndMenu();
             }
@@ -728,27 +737,31 @@ int main(int argc, char* argv[])
             ImGui::EndMainMenuBar();
         }
 
-        if (ImGui::Begin("Viewer", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBringToFrontOnFocus)) {
+        if (ImGui::Begin("Viewer##Panel")) {
 
             ImGui::ImageViewer("viewer", (ImTextureID)viewport_node._correctedtex, viewport_node._width, viewport_node._height, &pan, &zoom, { -1,-1 });
             itemsize = ImGui::GetItemRectSize();
         }
         ImGui::End();
 
-        auto viewsize = ImGui::GetMainViewport()->WorkSize;
+        //auto viewsize = ImGui::GetMainViewport()->WorkSize;
 
-        if (filesequence_node.sequence.get().length() > 0) {
-            ImGui::SetNextWindowSize({ viewsize.x * 2 / 3,0 });
-            ImGui::SetNextWindowPos({ viewsize.x * 1 / 3 / 2, viewsize.y - 80 });
-            if (ImGui::Begin("Frameslider", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoDocking))
+        if (read_node.length() > 0) {
+            //ImGui::SetNextWindowSize({ viewsize.x * 2 / 3,0 });
+            //ImGui::SetNextWindowPos({ viewsize.x * 1 / 3 / 2, viewsize.y - 80 });
+            if (ImGui::Begin("Frameslider##Panel"))
             {
-                int F = filesequence_node.frame.get();
-                bool is_playing = filesequence_node.play.get();
+                int F = read_node.frame.get();
+                bool is_playing = false;// filesequence_node.play.get();
 
-                if (ImGui::Frameslider("frameslider", &is_playing, &F, filesequence_node.sequence.get().first_frame, filesequence_node.sequence.get().last_frame, read_node.cached_range()))
+                //if (ImGui::SliderInt("frameslider", &F, read_node.first_frame(), read_node.last_frame())) {
+                //    read_node.frame.set(F);
+                //}
+
+                if (ImGui::Frameslider("frameslider", &is_playing, &F, read_node.first_frame(), read_node.last_frame(), read_node.cached_range()))
                 {
-                    filesequence_node.frame.set(F);
-                    filesequence_node.play.set(is_playing);
+                    read_node.frame.set(F);
+                    //filesequence_node.play.set(is_playing);
                 }
             }
             ImGui::End();
@@ -756,10 +769,10 @@ int main(int argc, char* argv[])
 
         //ImGui::SetNextWindowSize({ 300, viewsize.y * 2 / 3 });
         //ImGui::SetNextWindowPos({ viewsize.x-300, viewsize.y * 1 / 3 / 2 });
-        if (ImGui::Begin("Inspector", NULL, ImGuiWindowFlags_NoDecoration)) {
-            if (ImGui::CollapsingHeader("filesequence", ImGuiTreeNodeFlags_DefaultOpen | ImGuiWindowFlags_NoDocking)) {
-                filesequence_node.onGui();
-            }
+        if (ImGui::Begin("Inspector##Panel")) {
+            //if (ImGui::CollapsingHeader("filesequence", ImGuiTreeNodeFlags_DefaultOpen | ImGuiWindowFlags_NoDocking)) {
+            //    filesequence_node.onGui();
+            //}
             if (ImGui::CollapsingHeader("read", ImGuiTreeNodeFlags_DefaultOpen)) {
                 read_node.onGUI();
             }
@@ -769,7 +782,7 @@ int main(int argc, char* argv[])
         }
         ImGui::End();
 
-        filesequence_node.animate();
+        //filesequence_node.animate();
 
         glazy::end_frame();
 

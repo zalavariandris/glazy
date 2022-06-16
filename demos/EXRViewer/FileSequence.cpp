@@ -3,7 +3,7 @@
 
 
 FileSequence::FileSequence(std::filesystem::path filepath) {
-    auto [format, begin, end, current] = scan_for_sequence(filepath);
+    auto [format, begin, end, current] = sequence_from_item(filepath);
     pattern = format.string();
     first_frame = begin;
     last_frame = end;

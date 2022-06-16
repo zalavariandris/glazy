@@ -18,9 +18,6 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="FileSequence.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\tracy\TracyClient.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -29,9 +26,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="FileSequence.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="ImGuiWidgets.h">
       <Filter>Header Files</Filter>
     </ClInclude>

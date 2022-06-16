@@ -17,8 +17,6 @@ void ImGui::Ranges(const std::vector<std::tuple<int, int>>& ranges, int v_min, i
     const ImVec2 item_pos(window->DC.CursorPos.x, window->DC.CursorPos.y + window->DC.CurrLineTextBaseOffset);
     const float wrap_pos_x = window->DC.TextWrapPos;
     const bool wrap_enabled = (wrap_pos_x >= 0.0f);
-
-
    
     ImVec2 item_size = ImGui::CalcItemSize(size, 100, ImGui::GetFrameHeight()/2);
     ImRect bb(item_pos, item_pos +item_size );
@@ -52,23 +50,22 @@ void ImGui::Ranges(const std::vector<std::tuple<int, int>>& ranges, int v_min, i
     //dl->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), ImColor(1.0f, 1.0f, 1.0f, 1.0f));    
 }
 
-bool ImGui::Frameslider(const char* label, bool* is_playing, int* v, int v_min, int v_max, const std::vector<std::tuple<int, int>>& ranges, const char* format, ImGuiSliderFlags flags)
+bool ImGui::Frameslider(const char* label, bool* is_playing, int* F, int v_min, int v_max, const std::vector<std::tuple<int, int>>& ranges, const char* format, ImGuiSliderFlags flags)
 {
     bool changed = false;
-    // Playback controls
     ImGui::BeginGroup();
     {
         ImGui::SetNextItemWidth(ImGui::GetTextLineHeight());
         if (ImGui::Button(ICON_FA_FAST_BACKWARD "##first frame")) {
-            *v = v_min;
+            *F = v_min;
             changed = true;
         }
 
         ImGui::SameLine();
         ImGui::SetNextItemWidth(ImGui::GetTextLineHeight());
         if (ImGui::Button(ICON_FA_STEP_BACKWARD "##step backward")) {
-            *v -= 1;
-            if (*v < v_min) *v = v_max;
+            *F -= 1;
+            if (*F < v_min) *F = v_max;
             changed = true;
         }
         ImGui::SameLine();
@@ -76,26 +73,25 @@ bool ImGui::Frameslider(const char* label, bool* is_playing, int* v, int v_min, 
         if (ImGui::Button(*is_playing ? ICON_FA_PAUSE : ICON_FA_PLAY "##play"))
         {
             *is_playing = !*is_playing;
-            changed = true;
         }
         ImGui::SameLine();
         ImGui::SetNextItemWidth(ImGui::GetTextLineHeight());
         if (ImGui::Button(ICON_FA_STEP_FORWARD "##step forward")) {
-            *v += 1;
-            if (*v > v_max) *v = v_min;
+            *F += 1;
+            if (*F > v_max) *F = v_min;
             changed = true;
         }
         ImGui::SameLine();
         ImGui::SetNextItemWidth(ImGui::GetTextLineHeight());
         if (ImGui::Button(ICON_FA_FAST_FORWARD "##last frame")) {
-            *v = v_max;
+            *F = v_max;
             changed = true;
         }
     }
     ImGui::EndGroup();
 
     ImGui::SameLine();
-    ImGui::SeparatorEx(ImGuiSeparatorFlags_Horizontal);
+    ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
     ImGui::SameLine();
 
     // timeslider
@@ -106,20 +102,10 @@ bool ImGui::Frameslider(const char* label, bool* is_playing, int* v, int v_min, 
         ImGui::InputInt("##start frame", &v_min, 0, 0);
         ImGui::EndDisabled();
         ImGui::SameLine();
-
-        ImGui::BeginGroup();
-        auto slider_width = ImGui::GetContentRegionAvail().x - ImGui::GetTextLineHeight() * 2 - ImGui::GetStyle().ItemSpacing.x;
-        ImGui::SetNextItemWidth(slider_width);
-        
-        if (ImGui::SliderInt("##frame", v, v_min, v_max)) {
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::GetTextLineHeight() * 2 - ImGui::GetStyle().ItemSpacing.x);
+        if (ImGui::SliderInt("##frame", F, v_min, v_max)) {
             changed = true;
         }
-        if (!ranges.empty()) {
-            ImGui::PushStyleColor(ImGuiCol_PlotLines, ImVec4(0, 1, 0, 0.6));
-            Ranges(ranges, v_min, v_max, {slider_width, 0});
-            ImGui::PopStyleColor();
-        }
-        ImGui::EndGroup();
         ImGui::SameLine();
         ImGui::BeginDisabled();
         ImGui::SetNextItemWidth(ImGui::GetTextLineHeight() * 2);

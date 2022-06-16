@@ -184,11 +184,18 @@ namespace glazy {
 		_vsync = enable;
 	}
 
+
+
 	bool get_vsync() {
 		return _vsync;
 	}
 
-	inline int init() {
+	struct Settings {
+		bool docking;
+		bool viewports;
+	};
+
+	inline int init(Settings settings=Settings(false, false)) {
 		/***********
 		  Init GLFW
 		************/
@@ -261,8 +268,8 @@ namespace glazy {
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();
 		ImGuiIO& io = ImGui::GetIO();
-		io.ConfigFlags |= ImGuiConfigFlags_DockingEnable; // enable docking
-		//io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable; // enable multiviewports
+		if(settings.docking) io.ConfigFlags |= ImGuiConfigFlags_DockingEnable; // enable docking
+		if(settings.viewports) io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable; // enable multiviewports
 		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // enable keyboard navigation
 		
 		
@@ -455,7 +462,11 @@ namespace glazy {
 		/************ 
 		  CREATE GUI 
 		*************/
-		ImGui::DockSpaceOverViewport(NULL, ImGuiDockNodeFlags_PassthruCentralNode);
+		auto& io = ImGui::GetIO();
+		if (io.ConfigFlags & ImGuiConfigFlags_DockingEnable) {
+			ImGui::DockSpaceOverViewport(NULL, ImGuiDockNodeFlags_PassthruCentralNode);
+		}
+		
 
 		camera.aspect = (float)display_w / display_h;
 

@@ -234,7 +234,7 @@ void open(const std::filesystem::path& filepath, bool sequence=false)
 {
     if (!filepath.empty())
     {
-        auto [pattern, start, end, selected_frame] = scan_for_sequence(filepath);
+        auto [pattern, start, end, selected_frame] = sequence_from_item(filepath);
         state.file_pattern = pattern;
         state.start_frame = start;
         state.end_frame = end;

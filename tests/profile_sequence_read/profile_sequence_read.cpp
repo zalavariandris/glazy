@@ -220,7 +220,7 @@ int main()
     OIIO::attribute("try_all_readers", 0);
     OIIO::attribute("openexr:core", 1);
 
-    auto [file_pattern, first_frame, last_frame, current_frame] = scan_for_sequence("C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr");
+    auto [file_pattern, first_frame, last_frame, current_frame] = sequence_from_item("C:/Users/andris/Desktop/52_06_EXAM-half/52_06_EXAM_v04-vrayraw.0005.exr");
     //std::filesystem::path file_pattern = "C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.%04d.exr";
     //WithImageInput(file_pattern, first_frame, last_frame);
     WithImageCache(file_pattern, first_frame, last_frame);

@@ -3,6 +3,7 @@
 #include "stringutils.h"
 #include <cassert>
 #include <cstdio> // printf sprintf snprintf
+#include <regex>
 
 std::string to_string(std::vector<std::filesystem::path> sequence) {
     // collect frame numbers
@@ -28,8 +29,10 @@ std::string to_string(std::vector<std::filesystem::path> sequence) {
     return text;
 }
 
-std::tuple<std::filesystem::path, int, int, int> scan_for_sequence(const std::filesystem::path& input_path) {
-    assert(("file does not exist", std::filesystem::exists(input_path)));
+std::tuple<std::filesystem::path, int, int, int> sequence_from_item(const std::filesystem::path& input_path) {
+    if (!std::filesystem::exists(input_path)) {
+        throw std::filesystem::filesystem_error("No sequence", input_path, std::error_code(2, std::generic_category()));
+    }
 
     std::vector<std::filesystem::path> sequence;
     std::vector<int> framenumbers;
@@ -60,8 +63,46 @@ std::tuple<std::filesystem::path, int, int, int> scan_for_sequence(const std::fi
         }
     }
 
+    if (framenumbers.empty()) throw std::filesystem::filesystem_error("No sequence with pattern", sequence_pattern, std::error_code(2, std::generic_category()));
+
     std::sort(framenumbers.begin(), framenumbers.end());
     return { sequence_pattern, framenumbers[0], framenumbers.back(), selected_frame};
+}
+
+std::tuple<std::filesystem::path, int, int> sequence_from_pattern(std::string pattern) {
+    static std::regex format_re("%0([0-9]+)d");
+
+    if (!std::regex_search(pattern, format_re)) throw std::filesystem::filesystem_error("unrecognized pattern format", pattern, std::error_code(2, std::generic_category()));
+
+
+    auto input_folder = std::filesystem::path(pattern).parent_path();
+
+    if(!std::filesystem::exists(input_folder)) throw std::filesystem::filesystem_error("No sequence", input_folder, std::error_code(2, std::generic_category()));
+
+    std::vector<std::filesystem::path> sequence;
+    std::vector<int> framenumbers;
+    for (auto&& entry : std::filesystem::directory_iterator{ input_folder, std::filesystem::directory_options::skip_permission_denied }) {
+        try {
+            // match filename and digits count
+            const auto& [name, digits] = split_digits(entry.path().stem().string());
+            auto pattern_stem = std::filesystem::path(pattern).stem().string();
+            bool IsSequenceItem = starts_with(pattern_stem, name);
+            //std::cout << "check file " << IsSequenceItem << " " << path << std::endl;
+            //std::cout << name << " <> " << input_name << std::endl;
+            if (IsSequenceItem) {
+                sequence.push_back(entry.path());
+                framenumbers.push_back(std::stoi(digits));
+            }
+        }
+        catch (const std::system_error& ex) {
+            std::cout << "Exception: " << ex.what() << "\n-  probably std::filesystem does not support Unicode filenames" << std::endl;
+        }
+    }
+
+    if (framenumbers.empty()) throw std::filesystem::filesystem_error("No sequence with pattern", pattern, std::error_code(2, std::generic_category()));
+
+    std::sort(framenumbers.begin(), framenumbers.end());
+    return { pattern, framenumbers[0], framenumbers.back() };
 }
 
 std::filesystem::path sequence_item(const std::filesystem::path& pattern, int F) {

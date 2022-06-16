@@ -156,7 +156,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\..\tracy\TracyClient.cpp" />
-    <ClCompile Include="FileSequence.cpp" />
     <ClCompile Include="ImGuiWidgets.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
@@ -166,7 +165,6 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="FileSequence.h" />
     <ClInclude Include="ImGuiWidgets.h" />
     <ClInclude Include="nodes.h" />
   </ItemGroup>

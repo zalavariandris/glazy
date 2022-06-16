@@ -51,7 +51,7 @@ public:
     }
 
     Sequence(std::filesystem::path filepath) {
-        auto [p, b, e, c] = scan_for_sequence(filepath);
+        auto [p, b, e, c] = sequence_from_item(filepath);
         pattern = p;
         first_frame = b;
         last_frame = e;

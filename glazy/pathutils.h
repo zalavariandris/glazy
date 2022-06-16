@@ -4,14 +4,22 @@
 #include <string>
 #include <vector>
 
-std::vector<std::filesystem::path> find_sequence(std::filesystem::path input_path, int* start_frame = NULL, int* end_frame = NULL);
-
 /*
 * Find the image sequence on disk from a single frame
-* return pattern such as "image.%04d.tif", start_frame, and_frame, selected frame
+* return pattern such as "image.%04d.tif", start_frame, end_frame, selected frame
+* [p, b, e, c]
+* 
 */
-std::tuple<std::filesystem::path, int, int, int> scan_for_sequence(const std::filesystem::path& input_path);
+std::tuple<std::filesystem::path, int, int, int> sequence_from_item(const std::filesystem::path& input_path);
 std::filesystem::path sequence_item(const std::filesystem::path& pattern, int F);
+
+/* 
+* Find image sequence on disk from sequence pattern
+* return pattern such as "image.%04d.tif", start_frame, end_frame, selected frame
+* 
+* if no item is found, then an empty pattern is returned: { std::filesystem::path(), 0, 0, 0 };
+*/
+std::tuple<std::filesystem::path, int, int> sequence_from_pattern(std::string sequence_pattern);
 
 /*
 return a list of filepaths from a pattrern, and framerange
@@ -19,3 +27,5 @@ return a list of filepaths from a pattrern, and framerange
 std::vector<std::filesystem::path> enumerate_sequence(const std::tuple<std::filesystem::path, int, int>& sequence);
 
 std::string to_string(std::vector<std::filesystem::path> sequence);
+
+

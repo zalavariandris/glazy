@@ -110,10 +110,11 @@ namespace Nodes
         }
 
         void set(T val) {
+            value = val;
             for (const auto& handler : handlers) {
                 handler(val);
             }
-            value = val;
+            
         }
 
         const T& get() const
