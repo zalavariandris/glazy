@@ -130,9 +130,9 @@ private:
 
     using MemoryImage = std::tuple<void*, int,int,int>; //ptr, width, height, channels
 
-    bool _is_movie{ false };
     int _first_frame;
     int _last_frame;
+    bool _is_movie;
 public:
     Nodes::Attribute<std::string> file; // filename or sequence pattern
     Nodes::Attribute<int> frame;
@@ -164,11 +164,19 @@ public:
 
         // movie
         if (Exist) {
-            auto file = OIIO::ImageInput::open(filepath);
-            _is_movie = file->spec().get_int_attribute("oiio:Movie") > 0 ? true : false;
-            if (_is_movie) {
+            auto imagefile = OIIO::ImageInput::open(filepath);
+            if (!imagefile) {
+                auto error_msg = OIIO::geterror();
+                std::cout << error_msg << "\n";
+            }
+            bool IsMovie = imagefile->spec().get_int_attribute("oiio:Movie") > 0 ? true : false;
+            if (IsMovie) {
                 // ...
-
+                _first_frame = 0;
+                _last_frame = imagefile->spec().get_int_attribute("oiio:subimages");
+                _is_movie = true;
+                file.set(filepath);
+                frame.set(_first_frame);
                 return;
             }
         }
@@ -197,34 +205,9 @@ public:
             frame.set(s);
         }
 
-        
-        
 
         // single image
-
-        // parse filepath
-
-
-        //if (std::filesystem::exists(file_pattern)) {
-        //    auto file = OIIO::ImageInput::open(file_pattern);
-        //    _is_movie = file->spec().get_int_attribute("oiio:Movie") > 0 ? true : false;
-
-        //    if (!_is_movie) {
-        //        auto sequence = FileSequence(name);
-        //        _first_frame = sequence.first_frame;
-        //        _last_frame = sequence.last_frame;
-        //        frame.set(sequence.first_frame);
-        //    }
-        //}
-        //else {
-        //    auto sequence = FileSequence(name);
-        //    _first_frame = sequence.first_frame;
-        //    _last_frame = sequence.last_frame;
-        //    auto first_filename = sequence.item(sequence.first_frame);
-        //    assert(("filename does not exist", std::filesystem::exists(first_filename)));
-        //}
     }
-
 
     ReadNode()
     {
@@ -255,10 +238,9 @@ public:
         if (!_cache.contains(_F))
         {
             ZoneScoped;
-            //if (memory == NULL) return;
             if (!std::filesystem::exists(_filename)) return;
 
-            // read file to pixels
+            // open imagefile
             auto imagefile = OIIO::ImageInput::open(_filename.string());
             OIIO::ImageSpec spec = imagefile->spec();
             int nchannels = 4;
@@ -334,7 +316,7 @@ public:
         ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - ImGui::GetTextLineHeightWithSpacing());
         ImGui::SetNextItemWidth(ImGui::GetTextLineHeightWithSpacing());
         if (ImGui::Button(ICON_FA_FOLDER_OPEN "##open")) {
-            auto selected_file = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0JPEG images\0*.jpg");
+            auto selected_file = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0JPEG images\0*.jpg\0MP4 movies\0*.mp4");
             if (!selected_file.empty()) open(selected_file.string());
         }
         ImGui::LabelText("range", "%d-%d", _first_frame, _last_frame);
