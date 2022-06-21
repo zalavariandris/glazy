@@ -44,7 +44,7 @@ private:
     GLuint fbo;
 public:
     RenderTexture(int w, int h):mWidth(w), mHeight(h) {
-        colorattachment = imdraw::make_texture(w, h, NULL, GL_RGBA);
+        colorattachment = imdraw::make_texture(w, h, NULL, GL_RGB);
         fbo = imdraw::make_fbo(colorattachment);
     }
 
@@ -57,7 +57,7 @@ public:
             glDeleteTextures(1, &colorattachment);
         }
 
-        colorattachment = imdraw::make_texture(w, h, NULL, GL_RGBA);
+        colorattachment = imdraw::make_texture(w, h, NULL, GL_RGB);
         fbo = imdraw::make_fbo(colorattachment);
 
         mWidth = w;
@@ -126,7 +126,6 @@ class ReadNode
 private:
     int _F;
     std::string _cache_pattern;
-    std::filesystem::path _filename;
 
     using MemoryImage = std::tuple<void*, int,int,int>; //ptr, width, height, channels
 
@@ -217,13 +216,11 @@ public:
         
         // setup inlet triggers
         file.onChange([&](std::string pattern) {
-            //open(pattern);
             frame.set(_first_frame);
         });
 
         frame.onChange([&](int F){
             _F = frame.get();
-            _filename = sequence_item(file.get(), frame.get());
             read();
         });
     }
@@ -238,37 +235,86 @@ public:
         if (!_cache.contains(_F))
         {
             ZoneScoped;
-            if (!std::filesystem::exists(_filename)) return;
-
-            // open imagefile
-            auto imagefile = OIIO::ImageInput::open(_filename.string());
-            OIIO::ImageSpec spec = imagefile->spec();
-            int nchannels = 4;
-
-            auto required_capacity = spec.width * spec.height * nchannels * sizeof(half);
-
-            if (capacity < required_capacity)
+            
+            if (std::filesystem::exists(file.get()))
             {
-                std::cout << "reader->realloc" << "\n";
-                if (void* new_memory = std::realloc(memory, required_capacity))
-                {
-                    memory = new_memory;
-                    capacity = required_capacity;
+                auto current_filename = file.get();
+                auto imagefile = OIIO::ImageInput::open(current_filename);
+                OIIO::ImageSpec spec = imagefile->spec();
+                if (spec.get_int_attribute("oiio:Movie") > 0) {
+                    // case 1.: Movie
+                    bool success = imagefile->seek_subimage(frame.get(), 0, spec);
+                    if (!success) {
+                        std::cout << "cannot seek to subimage: " << frame.get() << "\n";
+                        return;
+                    }
+                    int nchannels = 3;
+                    auto required_capacity = spec.width * spec.height * nchannels * sizeof(half);
+                    if (capacity < required_capacity)
+                    {
+                        std::cout << "reader->realloc" << "\n";
+                        if (void* new_memory = std::realloc(memory, required_capacity))
+                        {
+                            memory = new_memory;
+                            capacity = required_capacity;
+                        }
+                        else {
+                            throw std::bad_alloc();
+                        }
+                    }
+
+                    if (!imagefile->read_image(0, spec.nchannels, OIIO::TypeHalf, memory)) {
+                        std::cout << "cant read subimage" << "\n";
+                    }
+                    auto& img_cache = _cache[_F];
+                    std::get<0>(img_cache) = malloc(capacity);
+                    std::memcpy(std::get<0>(img_cache), memory, capacity);
+                    std::get<1>(img_cache) = spec.width;
+                    std::get<2>(img_cache) = spec.height;
+                    std::get<3>(img_cache) = nchannels;
+
+                    imagefile->close();
                 }
                 else {
-                    throw std::bad_alloc();
+                    // case 2.: single image
                 }
+
             }
+            else
+            {
+                // case 3: sequence 
+                auto current_filename = sequence_item(file.get(), frame.get());
+                if (!std::filesystem::exists(current_filename)) return;
 
-            imagefile->read_image(0, nchannels, OIIO::TypeHalf, memory);
-            auto& img_cache = _cache[_F];
-            std::get<0>(img_cache) = malloc(capacity);
-            std::memcpy(std::get<0>(img_cache), memory, capacity);
-            std::get<1>(img_cache) = spec.width;
-            std::get<2>(img_cache) = spec.height;
-            std::get<3>(img_cache) = nchannels;
+                // open imagefile
+                auto imagefile = OIIO::ImageInput::open(current_filename.string());
+                OIIO::ImageSpec spec = imagefile->spec();
+                int nchannels = 4;
 
-            imagefile->close();
+                auto required_capacity = spec.width * spec.height * nchannels * sizeof(half);
+                if (capacity < required_capacity)
+                {
+                    std::cout << "reader->realloc" << "\n";
+                    if (void* new_memory = std::realloc(memory, required_capacity))
+                    {
+                        memory = new_memory;
+                        capacity = required_capacity;
+                    }
+                    else {
+                        throw std::bad_alloc();
+                    }
+                }
+
+                imagefile->read_image(0, nchannels, OIIO::TypeHalf, memory);
+                auto& img_cache = _cache[_F];
+                std::get<0>(img_cache) = malloc(capacity);
+                std::memcpy(std::get<0>(img_cache), memory, capacity);
+                std::get<1>(img_cache) = spec.width;
+                std::get<2>(img_cache) = spec.height;
+                std::get<3>(img_cache) = nchannels;
+
+                imagefile->close();
+            }
         }
 
         auto [memory, w, h, c] = _cache.at(_F);
@@ -322,7 +368,7 @@ public:
         ImGui::LabelText("range", "%d-%d", _first_frame, _last_frame);
         ImGui::SliderInt("frame", &frame, _first_frame, _last_frame);
 
-        ImGui::LabelText("filename", "%s", _filename.filename().string().c_str());
+        //ImGui::LabelText("filename", "%s", _filename.filename().string().c_str());
 
         int used_memory=0;
         for (const auto& [key, memory_img] : _cache) {
@@ -347,7 +393,7 @@ private:
     GLuint _fbo;
     GLuint _program;
 
-    GLint glinternalformat = GL_RGBA16F;
+    GLint glinternalformat = GL_RGB16F;
 
     enum class DeviceTransform : int{
         Linear=0, sRGB=1, Rec709=2
@@ -441,7 +487,7 @@ public:
 
     void update_texture(void* ptr, int w, int h) {
         // update texture
-        auto glformat = GL_RGBA;
+        auto glformat = GL_RGBHEFLLLL;
 
         // transfer pixels to texture
         //auto [x, y, w, h] = m_bbox;
@@ -573,8 +619,8 @@ public:
         // draw to fbo
         glClearColor(0, 0, 0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        //glEnable(GL_BLEND);
+        //glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
         imdraw::push_program(_program);
         /// Draw quad with fragment shader
@@ -671,12 +717,13 @@ int main(int argc, char* argv[])
     if (argc == 2)
     {
         // open dropped file
-        read_node.open("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.%04d.exr");
+        read_node.open(argv[1]);
     }
     else
     {
         // open default sequence
-        read_node.open("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.%04d.exr");
+        //read_node.open("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.%04d.exr");
+        read_node.open("C:/Users/andris/Desktop/testimages/58_31_FIRE_v20.mp4");
     }
     
     //viewport_node.fit();
