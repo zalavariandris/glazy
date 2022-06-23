@@ -36,6 +36,8 @@
 
 #include "pathutils.h"
 
+#include <opencv2/opencv.hpp>
+
 class RenderTexture
 {
 private:
@@ -120,12 +122,14 @@ public:
     }
 };
 
+
+
 namespace MovieIO{
     class MovieInput {
     public:
         static std::unique_ptr<MovieInput> open(const std::string& name);
 
-        virtual bool close() = 0;
+        //virtual bool close() = 0;
 
         virtual bool read_image(int chbegin, int chend, OIIO::TypeDesc format, void* data) = 0;
 
@@ -137,17 +141,23 @@ namespace MovieIO{
     class OIIOMovieInput : public MovieInput {
         std::unique_ptr<OIIO::ImageInput> oiio_input;
     public:
-        OIIOMovieInput(std::string name) {
+        OIIOMovieInput(std::string name)
+        {
+
             oiio_input = OIIO::ImageInput::open(name);
+        }
+
+        ~OIIOMovieInput() {
+
         }
 
         bool read_image(int chbegin, int chend, OIIO::TypeDesc format, void* data) override {
             return oiio_input->read_image(0, chend, format, data);
         }
 
-        bool close() override {
-            return oiio_input->close();
-        }
+        //bool close() override {
+        //    return oiio_input->close();
+        //}
 
         OIIO::ImageSpec spec() override {
             return oiio_input->spec();
@@ -155,6 +165,21 @@ namespace MovieIO{
 
         bool seek_subimage(int subimage, int miplevel) {
             return oiio_input->seek_subimage(subimage, miplevel);
+        }
+    };
+
+    class OpenCVMovieInput : public MovieInput {
+    private:
+        cv::VideoCapture cap;
+    public:
+        OpenCVMovieInput(std::string name) {
+            cap = cv::VideoCapture(name);
+        }
+
+        bool read_image(int chbegin, int chend, OIIO::TypeDesc format, void* data) override {
+            //Mat(480, 640, CV_16UC1, depths).clone();
+            bool success = cap.read(img);
+            img.data
         }
     };
 
