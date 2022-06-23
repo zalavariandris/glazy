@@ -120,6 +120,49 @@ public:
     }
 };
 
+namespace MovieIO{
+    class MovieInput {
+    public:
+        static std::unique_ptr<MovieInput> open(const std::string& name);
+
+        virtual bool close() = 0;
+
+        virtual bool read_image(int chbegin, int chend, OIIO::TypeDesc format, void* data) = 0;
+
+        virtual bool seek_subimage(int subimage, int miplevel) = 0;
+
+        virtual OIIO::ImageSpec spec() = 0;
+    };
+
+    class OIIOMovieInput : public MovieInput {
+        std::unique_ptr<OIIO::ImageInput> oiio_input;
+    public:
+        OIIOMovieInput(std::string name) {
+            oiio_input = OIIO::ImageInput::open(name);
+        }
+
+        bool read_image(int chbegin, int chend, OIIO::TypeDesc format, void* data) override {
+            return oiio_input->read_image(0, chend, format, data);
+        }
+
+        bool close() override {
+            return oiio_input->close();
+        }
+
+        OIIO::ImageSpec spec() override {
+            return oiio_input->spec();
+        }
+
+        bool seek_subimage(int subimage, int miplevel) {
+            return oiio_input->seek_subimage(subimage, miplevel);
+        }
+    };
+
+    std::unique_ptr<MovieInput> MovieInput::open(const std::string& name)
+    {
+        return std::make_unique<OIIOMovieInput>(name);
+    }
+}
 
 class ReadNode
 {
@@ -132,6 +175,11 @@ private:
     int _first_frame;
     int _last_frame;
     bool _is_movie;
+
+    std::filesystem::path _current_filepath;
+    std::unique_ptr<MovieIO::MovieInput> _current_file;
+
+
 public:
     Nodes::Attribute<std::string> file; // filename or sequence pattern
     Nodes::Attribute<int> frame;
@@ -236,14 +284,19 @@ public:
         {
             ZoneScoped;
             
-            if (std::filesystem::exists(file.get()))
+            if (_is_movie)
             {
                 auto current_filename = file.get();
-                auto imagefile = OIIO::ImageInput::open(current_filename);
-                OIIO::ImageSpec spec = imagefile->spec();
+                if (_current_filepath != file.get()) {
+                    _current_filepath = file.get();
+                    _current_file = MovieIO::MovieInput::open(current_filename);// OIIO::ImageInput::open(current_filename);
+                    std::cout << "open file" << "\n";
+                }
+
+                OIIO::ImageSpec spec = _current_file->spec();
                 if (spec.get_int_attribute("oiio:Movie") > 0) {
                     // case 1.: Movie
-                    bool success = imagefile->seek_subimage(frame.get(), 0, spec);
+                    bool success = _current_file->seek_subimage(frame.get(), 0);
                     if (!success) {
                         std::cout << "cannot seek to subimage: " << frame.get() << "\n";
                         return;
@@ -263,7 +316,7 @@ public:
                         }
                     }
 
-                    if (!imagefile->read_image(0, spec.nchannels, OIIO::TypeHalf, memory)) {
+                    if (!_current_file->read_image(0, spec.nchannels, OIIO::TypeHalf, memory)) {
                         std::cout << "cant read subimage" << "\n";
                     }
                     auto& img_cache = _cache[_F];
@@ -272,17 +325,11 @@ public:
                     std::get<1>(img_cache) = spec.width;
                     std::get<2>(img_cache) = spec.height;
                     std::get<3>(img_cache) = nchannels;
-
-                    imagefile->close();
                 }
-                else {
-                    // case 2.: single image
-                }
-
             }
             else
             {
-                // case 3: sequence 
+                // case 3: Sequence 
                 auto current_filename = sequence_item(file.get(), frame.get());
                 if (!std::filesystem::exists(current_filename)) return;
 
@@ -368,6 +415,17 @@ public:
         ImGui::LabelText("range", "%d-%d", _first_frame, _last_frame);
         ImGui::SliderInt("frame", &frame, _first_frame, _last_frame);
 
+        static bool is_playing{ false };
+        ImGui::Checkbox("play", &is_playing);
+        if (is_playing) {
+            int F = frame.get();
+            F++;
+            if (F > _last_frame) {
+                F = _first_frame;
+            }
+            frame.set(F);
+        }
+
         //ImGui::LabelText("filename", "%s", _filename.filename().string().c_str());
 
         int used_memory=0;
@@ -412,8 +470,6 @@ public:
     GLuint _correctedtex = -1;
     int _width = 0;
     int _height = 0;
-
-
 
     ViewportNode()
     {
@@ -487,7 +543,7 @@ public:
 
     void update_texture(void* ptr, int w, int h) {
         // update texture
-        auto glformat = GL_RGBHEFLLLL;
+        auto glformat = GL_RGB;
 
         // transfer pixels to texture
         //auto [x, y, w, h] = m_bbox;
@@ -722,8 +778,8 @@ int main(int argc, char* argv[])
     else
     {
         // open default sequence
-        //read_node.open("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.%04d.exr");
-        read_node.open("C:/Users/andris/Desktop/testimages/58_31_FIRE_v20.mp4");
+        read_node.open("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.%04d.exr");
+        //read_node.open("C:/Users/andris/Desktop/testimages/58_31_FIRE_v20.mp4");
     }
     
     //viewport_node.fit();
