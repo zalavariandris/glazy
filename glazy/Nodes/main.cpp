@@ -176,10 +176,20 @@ namespace MovieIO{
             cap = cv::VideoCapture(name);
         }
 
-        bool read_image(int chbegin, int chend, OIIO::TypeDesc format, void* data) override {
-            //Mat(480, 640, CV_16UC1, depths).clone();
+        bool read_image(int chbegin, int chend, OIIO::TypeDesc format, void* data) override
+        {
+            cap.get(cv::CAP_PROP_FRAME_WIDTH);
+            cap.get(cv::CAP_PROP_FRAME_HEIGHT);
+
+            cap.get(cv::CAP_PROP_FPS);
+            cap.get(cv::CAP_PROP_FRAME_COUNT);
+
+            cv::Mat img;
             bool success = cap.read(img);
-            img.data
+            
+            sizeof(img.type());
+
+            memcpy(data, img.data, img.size().width*img.size().height*img.;
         }
     };
 
