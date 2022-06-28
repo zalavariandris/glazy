@@ -46,7 +46,7 @@ private:
     GLuint fbo;
 public:
     RenderTexture(int w, int h):mWidth(w), mHeight(h) {
-        colorattachment = imdraw::make_texture(w, h, NULL, GL_RGB);
+        colorattachment = imdraw::make_texture(w, h, NULL, GL_RGBA);
         fbo = imdraw::make_fbo(colorattachment);
     }
 
@@ -59,7 +59,7 @@ public:
             glDeleteTextures(1, &colorattachment);
         }
 
-        colorattachment = imdraw::make_texture(w, h, NULL, GL_RGB);
+        colorattachment = imdraw::make_texture(w, h, NULL, GL_RGBA);
         fbo = imdraw::make_fbo(colorattachment);
 
         mWidth = w;
@@ -131,7 +131,7 @@ namespace MovieIO{
 
         //virtual bool close() = 0;
 
-        virtual bool read_image(int chbegin, int chend, OIIO::TypeDesc format, void* data) = 0;
+        virtual bool read_image(int frame, int chbegin, int chend, OIIO::TypeDesc format, void* data) = 0;
 
         virtual bool seek_subimage(int subimage, int miplevel) = 0;
 
@@ -151,7 +151,7 @@ namespace MovieIO{
 
         }
 
-        bool read_image(int chbegin, int chend, OIIO::TypeDesc format, void* data) override {
+        bool read_image(int frame, int chbegin, int chend, OIIO::TypeDesc format, void* data) override {
             return oiio_input->read_image(0, chend, format, data);
         }
 
@@ -176,7 +176,7 @@ namespace MovieIO{
             cap = cv::VideoCapture(name);
         }
 
-        bool read_image(int chbegin, int chend, OIIO::TypeDesc format, void* data) override
+        bool read_image(int frame, int chbegin, int chend, OIIO::TypeDesc format, void* data) override
         {
             cap.get(cv::CAP_PROP_FRAME_WIDTH);
             cap.get(cv::CAP_PROP_FRAME_HEIGHT);
@@ -184,12 +184,11 @@ namespace MovieIO{
             cap.get(cv::CAP_PROP_FPS);
             cap.get(cv::CAP_PROP_FRAME_COUNT);
 
-            cv::Mat img;
-            bool success = cap.read(img);
+            cv::Mat mat;
+            cap.set(cv::CAP_PROP_POS_FRAMES, frame);
+            bool success = cap.read(mat);
             
-            sizeof(img.type());
-
-            memcpy(data, img.data, img.size().width*img.size().height*img.;
+            throw "NOT IMPLEMENTED ERROR";
         }
     };
 
@@ -336,7 +335,7 @@ public:
                         std::cout << "cannot seek to subimage: " << frame.get() << "\n";
                         return;
                     }
-                    int nchannels = 3;
+                    int nchannels = 4;
                     auto required_capacity = spec.width * spec.height * nchannels * sizeof(half);
                     if (capacity < required_capacity)
                     {
@@ -351,7 +350,7 @@ public:
                         }
                     }
 
-                    if (!_current_file->read_image(0, spec.nchannels, OIIO::TypeHalf, memory)) {
+                    if (!_current_file->read_image(frame.get(), 0, spec.nchannels, OIIO::TypeHalf, memory)) {
                         std::cout << "cant read subimage" << "\n";
                     }
                     auto& img_cache = _cache[_F];
@@ -486,7 +485,7 @@ private:
     GLuint _fbo;
     GLuint _program;
 
-    GLint glinternalformat = GL_RGB16F;
+    GLint glinternalformat = GL_RGBA16F;
 
     enum class DeviceTransform : int{
         Linear=0, sRGB=1, Rec709=2
@@ -578,7 +577,7 @@ public:
 
     void update_texture(void* ptr, int w, int h) {
         // update texture
-        auto glformat = GL_RGB;
+        auto glformat = GL_RGBA;
 
         // transfer pixels to texture
         //auto [x, y, w, h] = m_bbox;
