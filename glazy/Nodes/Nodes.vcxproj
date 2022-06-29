@@ -166,6 +166,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ImGuiWidgets.h" />
+    <ClInclude Include="MovieIO.h" />
     <ClInclude Include="nodes.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

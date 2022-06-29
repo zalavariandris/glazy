@@ -122,81 +122,7 @@ public:
     }
 };
 
-
-
-namespace MovieIO{
-    class MovieInput {
-    public:
-        static std::unique_ptr<MovieInput> open(const std::string& name);
-
-        //virtual bool close() = 0;
-
-        virtual bool read_image(int frame, int chbegin, int chend, OIIO::TypeDesc format, void* data) = 0;
-
-        virtual bool seek_subimage(int subimage, int miplevel) = 0;
-
-        virtual OIIO::ImageSpec spec() = 0;
-    };
-
-    class OIIOMovieInput : public MovieInput {
-        std::unique_ptr<OIIO::ImageInput> oiio_input;
-    public:
-        OIIOMovieInput(std::string name)
-        {
-
-            oiio_input = OIIO::ImageInput::open(name);
-        }
-
-        ~OIIOMovieInput() {
-
-        }
-
-        bool read_image(int frame, int chbegin, int chend, OIIO::TypeDesc format, void* data) override {
-            return oiio_input->read_image(0, chend, format, data);
-        }
-
-        //bool close() override {
-        //    return oiio_input->close();
-        //}
-
-        OIIO::ImageSpec spec() override {
-            return oiio_input->spec();
-        }
-
-        bool seek_subimage(int subimage, int miplevel) {
-            return oiio_input->seek_subimage(subimage, miplevel);
-        }
-    };
-
-    class OpenCVMovieInput : public MovieInput {
-    private:
-        cv::VideoCapture cap;
-    public:
-        OpenCVMovieInput(std::string name) {
-            cap = cv::VideoCapture(name);
-        }
-
-        bool read_image(int frame, int chbegin, int chend, OIIO::TypeDesc format, void* data) override
-        {
-            cap.get(cv::CAP_PROP_FRAME_WIDTH);
-            cap.get(cv::CAP_PROP_FRAME_HEIGHT);
-
-            cap.get(cv::CAP_PROP_FPS);
-            cap.get(cv::CAP_PROP_FRAME_COUNT);
-
-            cv::Mat mat;
-            cap.set(cv::CAP_PROP_POS_FRAMES, frame);
-            bool success = cap.read(mat);
-            
-            throw "NOT IMPLEMENTED ERROR";
-        }
-    };
-
-    std::unique_ptr<MovieInput> MovieInput::open(const std::string& name)
-    {
-        return std::make_unique<OIIOMovieInput>(name);
-    }
-}
+#include "MovieIO.h"
 
 class ReadNode
 {
@@ -217,7 +143,7 @@ private:
 public:
     Nodes::Attribute<std::string> file; // filename or sequence pattern
     Nodes::Attribute<int> frame;
-    Nodes::Outlet<std::tuple<void*, std::tuple<int, int, int,int>>> plate_out;
+    Nodes::Outlet<std::tuple<void*, std::tuple<int, int, int,int, int>>> plate_out;
 
     void* memory;
     size_t capacity{ 0 };
@@ -243,51 +169,12 @@ public:
 
         std::cout << "ReadNode->open: " << filepath << "\n";
 
-        // movie
-        if (Exist) {
-            auto imagefile = OIIO::ImageInput::open(filepath);
-            if (!imagefile) {
-                auto error_msg = OIIO::geterror();
-                std::cout << error_msg << "\n";
-            }
-            bool IsMovie = imagefile->spec().get_int_attribute("oiio:Movie") > 0 ? true : false;
-            if (IsMovie) {
-                // ...
-                _first_frame = 0;
-                _last_frame = imagefile->spec().get_int_attribute("oiio:subimages");
-                _is_movie = true;
-                file.set(filepath);
-                frame.set(_first_frame);
-                return;
-            }
-        }
-
-        // sequence from item
-        if (Exist) {
-            auto [p, s, e, F] = sequence_from_item(filepath);
-
-            //return { pattern.string(), startframe, endframe };
-            _first_frame = s;
-            _last_frame = e;
-            file.set(p.string());
-            frame.set(s);
-        }
-
-        // sequence from pattern
-        if (!Exist) {
-            auto [p, s, e] = sequence_from_pattern(filepath);
-            if (p.empty()) return;
-
-            //return { pattern.string(), startframe, endframe };
-
-            _first_frame = s;
-            _last_frame = e;
-            file.set(p.string());
-            frame.set(s);
-        }
-
-
-        // single image
+        _current_file = MovieIO::MovieInput::open(filepath);
+        auto [b, e] = _current_file->range();
+        _first_frame = b;
+        _last_frame = e;
+        file.set(filepath);
+        frame.set(_first_frame);
     }
 
     ReadNode()
@@ -317,89 +204,42 @@ public:
         if (!_cache.contains(_F))
         {
             ZoneScoped;
-            
-            if (_is_movie)
-            {
-                auto current_filename = file.get();
-                if (_current_filepath != file.get()) {
-                    _current_filepath = file.get();
-                    _current_file = MovieIO::MovieInput::open(current_filename);// OIIO::ImageInput::open(current_filename);
-                    std::cout << "open file" << "\n";
-                }
 
-                OIIO::ImageSpec spec = _current_file->spec();
-                if (spec.get_int_attribute("oiio:Movie") > 0) {
-                    // case 1.: Movie
-                    bool success = _current_file->seek_subimage(frame.get(), 0);
-                    if (!success) {
-                        std::cout << "cannot seek to subimage: " << frame.get() << "\n";
-                        return;
-                    }
-                    int nchannels = 4;
-                    auto required_capacity = spec.width * spec.height * nchannels * sizeof(half);
-                    if (capacity < required_capacity)
-                    {
-                        std::cout << "reader->realloc" << "\n";
-                        if (void* new_memory = std::realloc(memory, required_capacity))
-                        {
-                            memory = new_memory;
-                            capacity = required_capacity;
-                        }
-                        else {
-                            throw std::bad_alloc();
-                        }
-                    }
-
-                    if (!_current_file->read_image(frame.get(), 0, spec.nchannels, OIIO::TypeHalf, memory)) {
-                        std::cout << "cant read subimage" << "\n";
-                    }
-                    auto& img_cache = _cache[_F];
-                    std::get<0>(img_cache) = malloc(capacity);
-                    std::memcpy(std::get<0>(img_cache), memory, capacity);
-                    std::get<1>(img_cache) = spec.width;
-                    std::get<2>(img_cache) = spec.height;
-                    std::get<3>(img_cache) = nchannels;
-                }
+            // reopen the file if filename changed
+            if (_current_filepath != file.get()) {
+                _current_filepath = file.get();
+                _current_file = MovieIO::MovieInput::open(file.get());
+                std::cout << "open file" << "\n";
             }
-            else
+
+            _current_file->seek(frame.get());
+            auto info = _current_file->info();
+            int nchannels = 4;
+            auto required_capacity = info.width * info.height * nchannels * sizeof(half);
+            if (capacity < required_capacity)
             {
-                // case 3: Sequence 
-                auto current_filename = sequence_item(file.get(), frame.get());
-                if (!std::filesystem::exists(current_filename)) return;
-
-                // open imagefile
-                auto imagefile = OIIO::ImageInput::open(current_filename.string());
-                OIIO::ImageSpec spec = imagefile->spec();
-                int nchannels = 4;
-
-                auto required_capacity = spec.width * spec.height * nchannels * sizeof(half);
-                if (capacity < required_capacity)
+                std::cout << "reader->realloc" << "\n";
+                if (void* new_memory = std::realloc(memory, required_capacity))
                 {
-                    std::cout << "reader->realloc" << "\n";
-                    if (void* new_memory = std::realloc(memory, required_capacity))
-                    {
-                        memory = new_memory;
-                        capacity = required_capacity;
-                    }
-                    else {
-                        throw std::bad_alloc();
-                    }
+                    memory = new_memory;
+                    capacity = required_capacity;
                 }
-
-                imagefile->read_image(0, nchannels, OIIO::TypeHalf, memory);
-                auto& img_cache = _cache[_F];
-                std::get<0>(img_cache) = malloc(capacity);
-                std::memcpy(std::get<0>(img_cache), memory, capacity);
-                std::get<1>(img_cache) = spec.width;
-                std::get<2>(img_cache) = spec.height;
-                std::get<3>(img_cache) = nchannels;
-
-                imagefile->close();
+                else {
+                    throw std::bad_alloc();
+                }
             }
+
+            _current_file->read(memory);
+            auto& img_cache = _cache[_F];
+            std::get<0>(img_cache) = malloc(capacity);
+            std::memcpy(std::get<0>(img_cache), memory, capacity);
+            std::get<1>(img_cache) = info.width;
+            std::get<2>(img_cache) = info.height;
+            std::get<3>(img_cache) = nchannels;
         }
 
         auto [memory, w, h, c] = _cache.at(_F);
-        plate_out.trigger({ memory,{0,0,w,h} });
+        plate_out.trigger({ memory,{0,0,w,h,c} });
     }
 
     std::vector<std::tuple<int, int>> cached_range() const{
@@ -495,7 +335,7 @@ private:
     float zoom{ 1 };
 
 public:
-    Nodes::Inlet<std::tuple<void*, std::tuple<int, int, int, int>>> image_in{ "image_in" };
+    Nodes::Inlet<std::tuple<void*, std::tuple<int, int, int, int, int>>> image_in{ "image_in" };
     Nodes::Attribute<float> gamma{ 1.0 };
     Nodes::Attribute<float> gain{0.0};
     Nodes::Attribute<DeviceTransform> selected_device{DeviceTransform::sRGB};
@@ -504,6 +344,7 @@ public:
     GLuint _correctedtex = -1;
     int _width = 0;
     int _height = 0;
+    int _nchannels = 0;
 
     ViewportNode()
     {
@@ -512,16 +353,17 @@ public:
             
             ZoneScopedN("upload to texture");
             auto [ptr, bbox] = plate;
-            auto [x, y, w, h] = bbox;
+            auto [x, y, w, h, c] = bbox;
 
             // update texture size and bounding box
-            if (_width != w || _height != h) {
+            if (_width != w || _height != h || _nchannels!=c) {
                 _width = w;
                 _height = h; 
+                _nchannels = c;
                 init_texture();
             }
 
-            update_texture(ptr, w, h);
+            update_texture(ptr, w, h, c);
             color_correct_texture();
         });
 
@@ -575,9 +417,21 @@ public:
 
     }
 
-    void update_texture(void* ptr, int w, int h) {
+    void update_texture(void* ptr, int w, int h, int c) {
         // update texture
-        auto glformat = GL_RGBA;
+        GLenum glformat;
+        switch (c)
+        {
+        case 3:
+            glformat = GL_RGB;
+            break;
+        case 4:
+            glformat = GL_RGBA;
+            break;
+        default:
+            glformat = GL_RGB;
+            break;
+        }
 
         // transfer pixels to texture
         //auto [x, y, w, h] = m_bbox;
@@ -798,6 +652,9 @@ int main(int argc, char* argv[])
     style.FrameBorderSize = 0;
     glazy::set_vsync(false);
 
+    // create state
+    bool IS_PLAYING = false;
+
     // create graph
     auto read_node = ReadNode();
     auto viewport_node = ViewportNode();
@@ -812,7 +669,8 @@ int main(int argc, char* argv[])
     else
     {
         // open default sequence
-        read_node.open("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.%04d.exr");
+        //read_node.open("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0004.exr");
+        //read_node.open("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.%04d.exr");
         //read_node.open("C:/Users/andris/Desktop/testimages/58_31_FIRE_v20.mp4");
     }
     
@@ -864,23 +722,22 @@ int main(int argc, char* argv[])
         ImGui::End();
 
         //auto viewsize = ImGui::GetMainViewport()->WorkSize;
-
+        
         if (read_node.length() > 0) {
             //ImGui::SetNextWindowSize({ viewsize.x * 2 / 3,0 });
             //ImGui::SetNextWindowPos({ viewsize.x * 1 / 3 / 2, viewsize.y - 80 });
             if (ImGui::Begin("Frameslider##Panel"))
             {
                 int F = read_node.frame.get();
-                bool is_playing = false;// filesequence_node.play.get();
+                // filesequence_node.play.get();
 
                 //if (ImGui::SliderInt("frameslider", &F, read_node.first_frame(), read_node.last_frame())) {
                 //    read_node.frame.set(F);
                 //}
 
-                if (ImGui::Frameslider("frameslider", &is_playing, &F, read_node.first_frame(), read_node.last_frame(), read_node.cached_range()))
+                if (ImGui::Frameslider("frameslider", &IS_PLAYING, &F, read_node.first_frame(), read_node.last_frame(), read_node.cached_range()))
                 {
                     read_node.frame.set(F);
-                    //filesequence_node.play.set(is_playing);
                 }
             }
             ImGui::End();
@@ -901,7 +758,16 @@ int main(int argc, char* argv[])
         }
         ImGui::End();
 
-        //filesequence_node.animate();
+        if (IS_PLAYING)
+        {
+            int frame = read_node.frame.get();
+            
+            frame+=1;
+            if (read_node.last_frame() < frame) {
+                frame = read_node.first_frame();
+            }
+            read_node.frame.set(frame);
+        }
 
         glazy::end_frame();
 
