@@ -38,6 +38,8 @@
 
 #include <opencv2/opencv.hpp>
 
+#include "glhelpers.h"
+
 class RenderTexture
 {
 private:
@@ -130,7 +132,7 @@ private:
     int _F;
     std::string _cache_pattern;
 
-    using MemoryImage = std::tuple<void*, int,int,int>; //ptr, width, height, channels
+    using MemoryImage = std::tuple<void*, int,int,int, OIIO::TypeDesc>; //ptr, width, height, channels, format
 
     int _first_frame;
     int _last_frame;
@@ -143,7 +145,7 @@ private:
 public:
     Nodes::Attribute<std::string> file; // filename or sequence pattern
     Nodes::Attribute<int> frame;
-    Nodes::Outlet<std::tuple<void*, std::tuple<int, int, int,int, int>>> plate_out;
+    Nodes::Outlet<std::tuple<void*, std::tuple<int, int, int,int, int, OIIO::TypeDesc>>> plate_out;
 
     void* memory;
     size_t capacity{ 0 };
@@ -214,8 +216,8 @@ public:
 
             _current_file->seek(frame.get());
             auto info = _current_file->info();
-            int nchannels = 4;
-            auto required_capacity = info.width * info.height * nchannels * sizeof(half);
+
+            auto required_capacity = info.width * info.height * info.nchannels * info.format.size();
             if (capacity < required_capacity)
             {
                 std::cout << "reader->realloc" << "\n";
@@ -235,11 +237,12 @@ public:
             std::memcpy(std::get<0>(img_cache), memory, capacity);
             std::get<1>(img_cache) = info.width;
             std::get<2>(img_cache) = info.height;
-            std::get<3>(img_cache) = nchannels;
+            std::get<3>(img_cache) = info.nchannels;
+            std::get<4>(img_cache) = info.format;
         }
 
-        auto [memory, w, h, c] = _cache.at(_F);
-        plate_out.trigger({ memory,{0,0,w,h,c} });
+        auto [memory, w, h, c, f] = _cache.at(_F);
+        plate_out.trigger({ memory,{0,0,w,h,c, f} });
     }
 
     std::vector<std::tuple<int, int>> cached_range() const{
@@ -300,12 +303,12 @@ public:
             frame.set(F);
         }
 
-        //ImGui::LabelText("filename", "%s", _filename.filename().string().c_str());
-
         int used_memory=0;
         for (const auto& [key, memory_img] : _cache) {
-            const auto& [mem, w,h,c] = memory_img;
-            used_memory += w * h * c * sizeof(half);
+            const auto& [mem, w,h,c, f] = memory_img;
+
+            
+            used_memory += w * h * c * f.size();
         }
         ImGui::LabelText("images", "%d", _cache.size());
         ImGui::LabelText("memory", "%.2f MB", used_memory / pow(1000, 2) );
@@ -315,9 +318,14 @@ public:
         }
 
         ImGui::Ranges(cached_range(), _first_frame, _last_frame);
+
+        auto info = _current_file->info();
+        ImGui::LabelText("size", "%dx%d", info.width, info.height);
+        ImGui::LabelText("channels", "%d", info.nchannels);
+
+        ImGui::LabelText("format", "%s", info.format.c_str());
     }
 };
-
 
 class ViewportNode {
 private:
@@ -325,7 +333,9 @@ private:
     GLuint _fbo;
     GLuint _program;
 
-    GLint glinternalformat = GL_RGBA16F;
+    GLint glinternalformat = GL_RGB8;//GL_RGBA16F;
+    GLenum glformat; // keep for gui
+    GLenum gltype; // keep for gui
 
     enum class DeviceTransform : int{
         Linear=0, sRGB=1, Rec709=2
@@ -335,7 +345,7 @@ private:
     float zoom{ 1 };
 
 public:
-    Nodes::Inlet<std::tuple<void*, std::tuple<int, int, int, int, int>>> image_in{ "image_in" };
+    Nodes::Inlet<std::tuple<void*, std::tuple<int, int, int, int, int, OIIO::TypeDesc>>> image_in{ "image_in" };
     Nodes::Attribute<float> gamma{ 1.0 };
     Nodes::Attribute<float> gain{0.0};
     Nodes::Attribute<DeviceTransform> selected_device{DeviceTransform::sRGB};
@@ -345,6 +355,8 @@ public:
     int _width = 0;
     int _height = 0;
     int _nchannels = 0;
+    OIIO::TypeDesc _format;
+
 
     ViewportNode()
     {
@@ -353,17 +365,19 @@ public:
             
             ZoneScopedN("upload to texture");
             auto [ptr, bbox] = plate;
-            auto [x, y, w, h, c] = bbox;
+            if (ptr == nullptr) return;
+            auto [x, y, w, h, c, f] = bbox;
 
             // update texture size and bounding box
-            if (_width != w || _height != h || _nchannels!=c) {
+            if (_width != w || _height != h || _nchannels!=c || _format!=f) {
                 _width = w;
                 _height = h; 
                 _nchannels = c;
-                init_texture();
+                _format = f;
+                init_textures();
             }
 
-            update_texture(ptr, w, h, c);
+            update_textures(ptr, w, h, c, f);
             color_correct_texture();
         });
 
@@ -371,7 +385,7 @@ public:
         gain.onChange([&](auto val) {color_correct_texture(); });
     }
 
-    void init_texture()
+    void init_textures()
     {
         std::cout << "Viewport->init texture" << "\n";
 
@@ -414,12 +428,13 @@ public:
         }
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
     }
 
-    void update_texture(void* ptr, int w, int h, int c) {
+
+
+    void update_textures(void* ptr, int w, int h, int c, OIIO::TypeDesc f) {
         // update texture
-        GLenum glformat;
+        glformat;
         switch (c)
         {
         case 3:
@@ -433,11 +448,23 @@ public:
             break;
         }
 
+        gltype;
+        if (f == OIIO::TypeHalf) {
+            gltype = GL_HALF_FLOAT;
+        }
+        else if (f == OIIO::TypeUInt8)
+        {
+            gltype = GL_UNSIGNED_BYTE;
+        }
+        else {
+            throw "format is not recognized";
+        }
+
         // transfer pixels to texture
         //auto [x, y, w, h] = m_bbox;
         glBindTexture(GL_TEXTURE_2D, _datatex);
         //glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle_mask.data());
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, glformat, GL_HALF_FLOAT, ptr);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, glformat, gltype, ptr);
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 
@@ -608,13 +635,31 @@ public:
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("gamma");
             if (ImGui::IsItemClicked(1)) gamma.set(1.0);
 
+            ImGui::LabelText("glformat", "%s", to_string(glformat).c_str());
+            ImGui::LabelText("gltype", "%s", to_string(gltype).c_str());
 
+            // select internal texture format
+            std::vector<GLenum> format_options = { GL_RGB8, GL_RGBA16F };
+            std::vector<std::string> format_names;
+            for (auto format : format_options)
+            {
+                format_names.push_back(to_string(format));
+            }
+
+            auto it = std::find(format_options.begin(), format_options.end(), glinternalformat);
+            int current_index = -1;
+            if (it!=format_options.end()) {
+                current_index = std::distance(format_options.begin(), it);
+            }
+            if (ImGui::Combo("glinternalformat", &current_index, format_names)) {
+                glinternalformat = format_options[current_index];
+                init_textures();
+            }
             //ImGui::SetNextItemWidth(devices_combo_width);
             //ImGui::Combo("##device", &selected_device, "linear\0sRGB\0Rec.709\0");
             //if (ImGui::IsItemHovered()) ImGui::SetTooltip("device");
 
             ImGui::ImageViewer("viewer1", (ImTextureID)_correctedtex, _width, _height, &pan, &zoom);
-            itemsize = ImGui::GetItemRectSize();
         }
         ImGui::EndGroup();
     }
@@ -671,7 +716,7 @@ int main(int argc, char* argv[])
         // open default sequence
         //read_node.open("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0004.exr");
         //read_node.open("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.%04d.exr");
-        //read_node.open("C:/Users/andris/Desktop/testimages/58_31_FIRE_v20.mp4");
+        read_node.open("C:/Users/andris/Desktop/testimages/58_31_FIRE_v20.mp4");
     }
     
     //viewport_node.fit();

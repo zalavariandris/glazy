@@ -27,6 +27,7 @@ std::string to_string(GLenum t)
     switch (t)
     {
         // GLtypes
+        case GL_UNSIGNED_BYTE: return "GL_UNSIGNED_BYTE";
         case GL_UNSIGNED_INT: return "GL_UNSIGNED_INT";
         case GL_FLOAT: return "GL_FLOAT";
         case GL_HALF_FLOAT: return "GL_HALF_FLOAT";
@@ -40,6 +41,7 @@ std::string to_string(GLenum t)
         case GL_RG: return "GL_RG";
 
         // Sized Internal Format
+        case GL_RGB8: return "GL_RGB8";
         case GL_RGB16F:  return "GL_RGB16F";
         case GL_RGBA16F: return "GL_RGBA16F";
         case GL_RGB32F:  return "GL_RGB32F";

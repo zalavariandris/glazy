@@ -5,6 +5,11 @@ namespace filesystem
 {
     class SequencePath
     {
+    private:
+        std::string _pattern;
+        int _first_frame;
+        int _last_frame;
+    public:
         /// pattern
         ///  
         SequencePath(std::string sequence_pattern, std::tuple<int,int> range)
@@ -14,31 +19,56 @@ namespace filesystem
             if (!std::regex_match(sequence_pattern, sequence_groups, sequence_match_re)) {
                 throw "printf pattern not recognized eg.: filename.%04d.exr";
             }
+
+            _pattern = sequence_pattern;
+            _first_frame = std::get<0>(range);
+            _last_frame = std::get<1>(range);
         }
 
         // create sequence path from item on disk
         static SequencePath from_item_on_disk(std::filesystem::path item)
         {
-            assert(std::filesystem::exist(item));
+            assert(std::filesystem::exists(item));
         }
 
         bool exists() {
+            auto first_path = at(_first_frame);
+            auto last_path = at(_last_frame);
 
+            return std::filesystem::exists(first_path) && std::filesystem::exists(last_path);
         }
 
         std::filesystem::path at(int frame)
         {
-            // thi file not necesseraly exist.
+            /// this file does not necesseraly exists.
+
+            // ref: educative.io educative.io/edpresso/how-to-use-the-sprintf-method-in-c
+            int size_s = std::snprintf(nullptr, 0, _pattern.c_str(), frame) + 1; // Extra space for '\0'
+            if (size_s <= 0) { throw std::runtime_error("Error during formatting."); }
+            auto size = static_cast<size_t>(size_s);
+            auto buf = std::make_unique<char[]>(size);
+            std::snprintf(buf.get(), size, _pattern.c_str(), frame);
+
+            auto filename = std::string(buf.get(), buf.get() + size - 1);
+            return std::filesystem::path(filename);
         }
 
         std::tuple<int, int> range()
         {
-
+            return { _first_frame, _last_frame };
         }
 
         std::vector<int> missing_frames()
         {
-
+            std::vector<int> missing;
+            for (int frame = _first_frame; frame <= _last_frame; frame++)
+            {
+                if (!std::filesystem::exists(at(frame)))
+                {
+                    missing.push_back(frame);
+                }
+            }
+            return missing;
         }
     };
 }
@@ -183,6 +213,29 @@ namespace MovieIO {
         }
     };
 
+    std::string cvtype2str(int type) {
+        std::string r;
+
+        uchar depth = type & CV_MAT_DEPTH_MASK;
+        uchar chans = 1 + (type >> CV_CN_SHIFT);
+
+        switch (depth) {
+        case CV_8U:  r = "8U"; break;
+        case CV_8S:  r = "8S"; break;
+        case CV_16U: r = "16U"; break;
+        case CV_16S: r = "16S"; break;
+        case CV_32S: r = "32S"; break;
+        case CV_32F: r = "32F"; break;
+        case CV_64F: r = "64F"; break;
+        default:     r = "User"; break;
+        }
+
+        r += "C";
+        r += (chans + '0');
+
+        return r;
+    }
+
     class OpenCVMovieInput : public MovieInput
     {
     private:
@@ -194,6 +247,9 @@ namespace MovieIO {
         {
             cap = cv::VideoCapture(name);
 
+            //cv::Mat image;
+            //cap.read(image);
+            //auto tname = cvtype2str(image.type());
 
             _first_frame = 0;
             _last_frame = cap.get(cv::CAP_PROP_FRAME_COUNT);
@@ -226,8 +282,11 @@ namespace MovieIO {
         bool read(void* data) override
         {
             auto spec = info();
-            cv::Mat mat(spec.width, spec.height, CV_8UC3, data);
-            return cap.read(mat);
+            
+            cv::Mat mat(spec.height, spec.width, CV_8UC3, data);
+            bool success = cap.read(mat);
+            //cv::cvtColor(mat, mat, cv::COLOR_BGR2RGB);
+            return success;
         }
     };
 

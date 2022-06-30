@@ -282,8 +282,6 @@ void ImGui::ImageViewer(const char* std_id, ImTextureID user_texture_id, int tex
 
     ImGui::EndGroup();
     ImGui::PopID();
-
-
 }
 
 bool ImGui::SliderInt(const char* label, Nodes::Attribute<int>* attr, int v_min, int v_max)
