@@ -42,6 +42,7 @@ std::string to_string(GLenum t)
 
         // Sized Internal Format
         case GL_RGB8: return "GL_RGB8";
+        case GL_RGBA8: return "GL_RGBA8";
         case GL_RGB16F:  return "GL_RGB16F";
         case GL_RGBA16F: return "GL_RGBA16F";
         case GL_RGB32F:  return "GL_RGB32F";
@@ -50,4 +51,36 @@ std::string to_string(GLenum t)
         // return unknown value
         default: return "[UNKNOWN GLenum]";
     }
+}
+
+GLint internalformat_from_format_and_type(GLenum format, GLenum type)
+{
+    switch (type) {
+    case GL_UNSIGNED_BYTE:
+        switch (format) {
+        case GL_RGB: return GL_RGB8;
+        case GL_RGBA: return GL_RGBA8;
+        case GL_BGR: return GL_RGB8;
+        case GL_BGRA: return GL_RGBA8;
+        }
+        break;
+    case GL_HALF_FLOAT:
+        switch (format) {
+        case GL_RGB: return GL_RGB16F;
+        case GL_RGBA: return GL_RGBA16F;
+        case GL_BGR: return GL_RGB16F;
+        case GL_BGRA: return GL_RGBA16F;
+        }
+        break;
+    case GL_FLOAT:
+        switch (format) {
+        case GL_RGB: return GL_RGB32F;
+        case GL_RGBA: return GL_RGBA32F;
+        case GL_BGR: return GL_RGB32F;
+        case GL_BGRA: return GL_RGBA32F;
+        }
+        break;
+    }
+
+    throw "format or type was not recognized";
 }

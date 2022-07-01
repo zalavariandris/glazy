@@ -39,6 +39,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "glhelpers.h"
+#include "stringutils.h"
 
 class RenderTexture
 {
@@ -126,26 +127,31 @@ public:
 
 #include "MovieIO.h"
 
+struct TextureSpec {
+    int x;
+    int y;
+    int width;
+    int height;
+    GLenum glformat;
+    GLenum gltype;
+};
+
 class ReadNode
 {
 private:
-    int _F;
     std::string _cache_pattern;
 
-    using MemoryImage = std::tuple<void*, int,int,int, OIIO::TypeDesc>; //ptr, width, height, channels, format
+    using MemoryImage = std::tuple<void*, int,int, std::vector<std::string>, OIIO::TypeDesc>; //ptr, width, height, channels, format
 
     int _first_frame;
     int _last_frame;
-    bool _is_movie;
 
-    std::filesystem::path _current_filepath;
     std::unique_ptr<MovieIO::MovieInput> _current_file;
-
 
 public:
     Nodes::Attribute<std::string> file; // filename or sequence pattern
     Nodes::Attribute<int> frame;
-    Nodes::Outlet<std::tuple<void*, std::tuple<int, int, int,int, int, OIIO::TypeDesc>>> plate_out;
+    Nodes::Outlet<std::tuple<void*, TextureSpec>> plate_out;
 
     void* memory;
     size_t capacity{ 0 };
@@ -164,21 +170,6 @@ public:
         return _last_frame - _first_frame + 1;
     }
 
-    void open(std::string filepath) {
-        _cache.clear(); // clear the cache
-
-        bool Exist = std::filesystem::exists(filepath);
-
-        std::cout << "ReadNode->open: " << filepath << "\n";
-
-        _current_file = MovieIO::MovieInput::open(filepath);
-        auto [b, e] = _current_file->range();
-        _first_frame = b;
-        _last_frame = e;
-        file.set(filepath);
-        frame.set(_first_frame);
-    }
-
     ReadNode()
     {
         // alloc default memory with a small imagesize
@@ -186,15 +177,45 @@ public:
         memory = std::malloc(capacity);
         
         // setup inlet triggers
-        file.onChange([&](std::string pattern) {
-            frame.set(_first_frame);
+        file.onChange([&](std::string pattern){
+            _cache.clear();
+            try
+            {
+                _current_file = MovieIO::MovieInput::open(pattern);
+
+                auto [b, e] = _current_file->range();
+                _first_frame = b;
+                _last_frame = e;
+                frame.set(_first_frame);
+            }
+            catch (std::filesystem::filesystem_error err)
+            {
+                _first_frame = 0;
+                _last_frame = 0;
+                _current_file.reset();
+                return;
+            }
         });
 
         frame.onChange([&](int F){
-            _F = frame.get();
             read();
         });
     }
+
+    //void open(std::string filepath) {
+        //_cache.clear(); // clear the cache
+
+        //bool Exist = std::filesystem::exists(filepath);
+
+        //std::cout << "ReadNode->open: " << filepath << "\n";
+
+        //_current_file = MovieIO::MovieInput::open(filepath);
+        //auto [b, e] = _current_file->range();
+        //_first_frame = b;
+        //_last_frame = e;
+        //file.set(filepath);
+        //frame.set(_first_frame);
+    //}
 
     ~ReadNode()
     {
@@ -203,21 +224,17 @@ public:
 
     void read()
     {
-        if (!_cache.contains(_F))
+        if (!_current_file) return;
+        if (!_cache.contains(frame.get()) )
         {
             ZoneScoped;
+            if (! _current_file->seek(frame.get()) ) {
+                return;
+            };
 
-            // reopen the file if filename changed
-            if (_current_filepath != file.get()) {
-                _current_filepath = file.get();
-                _current_file = MovieIO::MovieInput::open(file.get());
-                std::cout << "open file" << "\n";
-            }
-
-            _current_file->seek(frame.get());
             auto info = _current_file->info();
 
-            auto required_capacity = info.width * info.height * info.nchannels * info.format.size();
+            auto required_capacity = info.width * info.height * info.channels.size() * info.format.size();
             if (capacity < required_capacity)
             {
                 std::cout << "reader->realloc" << "\n";
@@ -232,17 +249,47 @@ public:
             }
 
             _current_file->read(memory);
-            auto& img_cache = _cache[_F];
+            if (memory == nullptr) {
+                return;
+            }
+            auto& img_cache = _cache[frame.get()];
             std::get<0>(img_cache) = malloc(capacity);
             std::memcpy(std::get<0>(img_cache), memory, capacity);
             std::get<1>(img_cache) = info.width;
             std::get<2>(img_cache) = info.height;
-            std::get<3>(img_cache) = info.nchannels;
+            std::get<3>(img_cache) = info.channels;
             std::get<4>(img_cache) = info.format;
         }
 
-        auto [memory, w, h, c, f] = _cache.at(_F);
-        plate_out.trigger({ memory,{0,0,w,h,c, f} });
+        auto [memory, w, h, channels, f] = _cache.at(frame.get());
+        GLenum glformat;
+
+        if (channels == std::vector<std::string>({ "B", "G", "R", "A" })) {
+            glformat = GL_BGRA;
+        }
+        else if (channels == std::vector<std::string>({ "B", "G", "R"}))
+        {
+            glformat = GL_BGR;
+        }
+        else if (channels.size() == 4) {
+            glformat = GL_RGBA;
+        }
+        else if (channels.size() == 3) {
+            glformat = GL_RGB;
+        }
+
+        GLenum gltype;
+        if (f == OIIO::TypeHalf) {
+            gltype = GL_HALF_FLOAT;
+        }
+        else if (f == OIIO::TypeUInt8)
+        {
+            gltype = GL_UNSIGNED_BYTE;
+        }
+        else {
+            throw "format is not recognized";
+        }
+        plate_out.trigger({ memory, TextureSpec(0, 0, w, h, glformat, gltype) });
     }
 
     std::vector<std::tuple<int, int>> cached_range() const{
@@ -286,29 +333,22 @@ public:
         ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - ImGui::GetTextLineHeightWithSpacing());
         ImGui::SetNextItemWidth(ImGui::GetTextLineHeightWithSpacing());
         if (ImGui::Button(ICON_FA_FOLDER_OPEN "##open")) {
-            auto selected_file = glazy::open_file_dialog("EXR images (*.exr)\0*.exr\0JPEG images\0*.jpg\0MP4 movies\0*.mp4");
-            if (!selected_file.empty()) open(selected_file.string());
+            auto selected_file = glazy::open_file_dialog("all supported\0*.mp4;*.exr;*.jpg\0EXR images (*.exr)\0*.exr\0JPEG images\0*.jpg\0MP4 movies\0*.mp4");
+            if (!selected_file.empty())
+            {
+                file.set(selected_file.string());
+            }
         }
         ImGui::LabelText("range", "%d-%d", _first_frame, _last_frame);
         ImGui::SliderInt("frame", &frame, _first_frame, _last_frame);
 
-        static bool is_playing{ false };
-        ImGui::Checkbox("play", &is_playing);
-        if (is_playing) {
-            int F = frame.get();
-            F++;
-            if (F > _last_frame) {
-                F = _first_frame;
-            }
-            frame.set(F);
-        }
 
         int used_memory=0;
         for (const auto& [key, memory_img] : _cache) {
-            const auto& [mem, w,h,c, f] = memory_img;
+            const auto& [mem, w,h,channels, f] = memory_img;
 
             
-            used_memory += w * h * c * f.size();
+            used_memory += w * h * channels.size() * f.size();
         }
         ImGui::LabelText("images", "%d", _cache.size());
         ImGui::LabelText("memory", "%.2f MB", used_memory / pow(1000, 2) );
@@ -319,13 +359,22 @@ public:
 
         ImGui::Ranges(cached_range(), _first_frame, _last_frame);
 
-        auto info = _current_file->info();
-        ImGui::LabelText("size", "%dx%d", info.width, info.height);
-        ImGui::LabelText("channels", "%d", info.nchannels);
+        if (_current_file)
+        {
+            auto info = _current_file->info();
+            ImGui::LabelText("size", "%dx%d", info.width, info.height);
 
-        ImGui::LabelText("format", "%s", info.format.c_str());
+            ImGui::LabelText("channels", "%s", join_string(info.channels, ", ").c_str());
+
+            ImGui::LabelText("format", "%s", info.format.c_str());
+
+            for (auto channelset : _current_file->channel_sets()) {
+                ImGui::Text(channelset.name.c_str());
+            }
+        }
     }
 };
+
 
 class ViewportNode {
 private:
@@ -333,9 +382,8 @@ private:
     GLuint _fbo;
     GLuint _program;
 
-    GLint glinternalformat = GL_RGB8;//GL_RGBA16F;
-    GLenum glformat; // keep for gui
-    GLenum gltype; // keep for gui
+    GLint glinternalformat = GL_RGBA16F;
+
 
     enum class DeviceTransform : int{
         Linear=0, sRGB=1, Rec709=2
@@ -345,7 +393,7 @@ private:
     float zoom{ 1 };
 
 public:
-    Nodes::Inlet<std::tuple<void*, std::tuple<int, int, int, int, int, OIIO::TypeDesc>>> image_in{ "image_in" };
+    Nodes::Inlet<std::tuple<void*, TextureSpec>> image_in{ "image_in" };
     Nodes::Attribute<float> gamma{ 1.0 };
     Nodes::Attribute<float> gain{0.0};
     Nodes::Attribute<DeviceTransform> selected_device{DeviceTransform::sRGB};
@@ -354,30 +402,28 @@ public:
     GLuint _correctedtex = -1;
     int _width = 0;
     int _height = 0;
-    int _nchannels = 0;
-    OIIO::TypeDesc _format;
-
+    GLenum _glformat; // keep for gui
+    GLenum _gltype; // keep for gui
 
     ViewportNode()
     {
         init_shader();
-        image_in.onTrigger([&](auto plate) {
+        image_in.onTrigger([&](std::tuple<void*, TextureSpec> data_plate) {
             
             ZoneScopedN("upload to texture");
-            auto [ptr, bbox] = plate;
-            if (ptr == nullptr) return;
-            auto [x, y, w, h, c, f] = bbox;
+            auto [data, plate] = data_plate;
+            assert((data != nullptr, "data must hold values"));
 
             // update texture size and bounding box
-            if (_width != w || _height != h || _nchannels!=c || _format!=f) {
-                _width = w;
-                _height = h; 
-                _nchannels = c;
-                _format = f;
+            if (_width != plate.width || _height != plate.height || _glformat!=plate.glformat || _gltype!=plate.gltype) {
+                _width = plate.width;
+                _height = plate.height; 
+                _glformat = plate.glformat;
+                _gltype = plate.gltype;
                 init_textures();
             }
-
-            update_textures(ptr, w, h, c, f);
+            
+            update_textures(data, plate.width, plate.height, plate.glformat, plate.gltype);
             color_correct_texture();
         });
 
@@ -388,7 +434,7 @@ public:
     void init_textures()
     {
         std::cout << "Viewport->init texture" << "\n";
-
+        glinternalformat = internalformat_from_format_and_type(_glformat, _gltype);
         if (glIsTexture(_datatex)) glDeleteTextures(1, &_datatex);
         glGenTextures(1, &_datatex);
         glBindTexture(GL_TEXTURE_2D, _datatex);
@@ -396,8 +442,8 @@ public:
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexStorage2D(GL_TEXTURE_2D, 1, glinternalformat, _width, _height);
         glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -408,8 +454,8 @@ public:
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexStorage2D(GL_TEXTURE_2D, 1, glinternalformat, _width, _height);
         glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -431,35 +477,7 @@ public:
     }
 
 
-
-    void update_textures(void* ptr, int w, int h, int c, OIIO::TypeDesc f) {
-        // update texture
-        glformat;
-        switch (c)
-        {
-        case 3:
-            glformat = GL_RGB;
-            break;
-        case 4:
-            glformat = GL_RGBA;
-            break;
-        default:
-            glformat = GL_RGB;
-            break;
-        }
-
-        gltype;
-        if (f == OIIO::TypeHalf) {
-            gltype = GL_HALF_FLOAT;
-        }
-        else if (f == OIIO::TypeUInt8)
-        {
-            gltype = GL_UNSIGNED_BYTE;
-        }
-        else {
-            throw "format is not recognized";
-        }
-
+    void update_textures(void* ptr, int w, int h, GLenum glformat, GLenum gltype) {
         // transfer pixels to texture
         //auto [x, y, w, h] = m_bbox;
         glBindTexture(GL_TEXTURE_2D, _datatex);
@@ -635,24 +653,24 @@ public:
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("gamma");
             if (ImGui::IsItemClicked(1)) gamma.set(1.0);
 
-            ImGui::LabelText("glformat", "%s", to_string(glformat).c_str());
-            ImGui::LabelText("gltype", "%s", to_string(gltype).c_str());
+            ImGui::LabelText("glformat", "%s", to_string(_glformat).c_str());
+            ImGui::LabelText("gltype", "%s", to_string(_gltype).c_str());
 
             // select internal texture format
-            std::vector<GLenum> format_options = { GL_RGB8, GL_RGBA16F };
+            std::vector<GLenum> internal_format_options = { GL_RGB8, GL_RGBA8, GL_RGB16F, GL_RGBA16F, GL_RGB32F, GL_RGBA32F };
             std::vector<std::string> format_names;
-            for (auto format : format_options)
+            for (auto format : internal_format_options)
             {
                 format_names.push_back(to_string(format));
             }
 
-            auto it = std::find(format_options.begin(), format_options.end(), glinternalformat);
+            auto it = std::find(internal_format_options.begin(), internal_format_options.end(), glinternalformat);
             int current_index = -1;
-            if (it!=format_options.end()) {
-                current_index = std::distance(format_options.begin(), it);
+            if (it!= internal_format_options.end()) {
+                current_index = std::distance(internal_format_options.begin(), it);
             }
             if (ImGui::Combo("glinternalformat", &current_index, format_names)) {
-                glinternalformat = format_options[current_index];
+                glinternalformat = internal_format_options[current_index];
                 init_textures();
             }
             //ImGui::SetNextItemWidth(devices_combo_width);
@@ -709,14 +727,17 @@ int main(int argc, char* argv[])
     if (argc == 2)
     {
         // open dropped file
-        read_node.open(argv[1]);
+        read_node.file.set(argv[1]);
     }
     else
     {
         // open default sequence
-        //read_node.open("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0004.exr");
-        //read_node.open("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.%04d.exr");
-        read_node.open("C:/Users/andris/Desktop/testimages/58_31_FIRE_v20.mp4");
+
+        //read_node.file.set("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0004.exr");
+        //read_node.file.set("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.%04d.exr");
+        //read_node.file.set("C:/Users/andris/Desktop/testimages/58_31_FIRE_v20.mp4");
+
+        read_node.file.set("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.%04d.exr");
     }
     
     //viewport_node.fit();
@@ -734,7 +755,6 @@ int main(int argc, char* argv[])
             if (ImGui::BeginMenu("File"))
             {
                 if (ImGui::MenuItem("Open", "")) {
-                    //filesequence_node.open();
                     //read_node.filename.set("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr");
                 }
                 ImGui::EndMenu();
@@ -768,18 +788,12 @@ int main(int argc, char* argv[])
 
         //auto viewsize = ImGui::GetMainViewport()->WorkSize;
         
-        if (read_node.length() > 0) {
+        if (read_node.length() > 1) {
             //ImGui::SetNextWindowSize({ viewsize.x * 2 / 3,0 });
             //ImGui::SetNextWindowPos({ viewsize.x * 1 / 3 / 2, viewsize.y - 80 });
             if (ImGui::Begin("Frameslider##Panel"))
             {
                 int F = read_node.frame.get();
-                // filesequence_node.play.get();
-
-                //if (ImGui::SliderInt("frameslider", &F, read_node.first_frame(), read_node.last_frame())) {
-                //    read_node.frame.set(F);
-                //}
-
                 if (ImGui::Frameslider("frameslider", &IS_PLAYING, &F, read_node.first_frame(), read_node.last_frame(), read_node.cached_range()))
                 {
                     read_node.frame.set(F);
