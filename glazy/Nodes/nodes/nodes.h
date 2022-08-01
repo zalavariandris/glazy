@@ -1,5 +1,7 @@
 #pragma once
+
 #include <functional>
+#include "glad/glad.h"
 
 namespace Nodes
 {
@@ -8,7 +10,6 @@ namespace Nodes
 
 
     class Node;
-
 
     template <typename T>
     class Inlet
@@ -129,3 +130,12 @@ namespace Nodes
     };
 
 }
+
+struct TextureSpec {
+    int x;
+    int y;
+    int width;
+    int height;
+    GLenum glformat;
+    GLenum gltype;
+};

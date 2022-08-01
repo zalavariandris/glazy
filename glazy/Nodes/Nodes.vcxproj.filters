@@ -24,15 +24,48 @@
     <ClCompile Include="ImGuiWidgets.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="nodes\ReadNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MovieIO\MovieIO.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MovieIO\OIIOMovieInput.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MovieIO\OpenCVMovieInput.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MovieIO\SequencePath.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ImGuiWidgets.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="nodes.h">
+    <ClInclude Include="nodes\nodes.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="MovieIO.h">
+    <ClInclude Include="MovieIO\MovieIO.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="nodes\ReadNode.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="nodes\ViewportNode.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MovieIO\OIIOMovieInput.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MovieIO\exr_channel_set_helpers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MovieIO\OpenCVMovieInput.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MovieIO\SequencePath.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

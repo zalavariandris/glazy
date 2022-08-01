@@ -18,7 +18,7 @@ void ImGui::Ranges(const std::vector<std::tuple<int, int>>& ranges, int v_min, i
     const float wrap_pos_x = window->DC.TextWrapPos;
     const bool wrap_enabled = (wrap_pos_x >= 0.0f);
    
-    ImVec2 item_size = ImGui::CalcItemSize(size, 100, ImGui::GetFrameHeight()/2);
+    ImVec2 item_size = ImGui::CalcItemSize(size, 100, ImGui::GetFrameHeight());
     ImRect bb(item_pos, item_pos +item_size );
     ItemSize(item_size);
     if (!ItemAdd(bb, 0))
@@ -97,22 +97,45 @@ bool ImGui::Frameslider(const char* label, bool* is_playing, int* F, int v_min, 
     // timeslider
     ImGui::BeginGroup();
     {
+        // first frame box
         ImGui::BeginDisabled();
         ImGui::SetNextItemWidth(ImGui::GetTextLineHeight() * 2);
         ImGui::InputInt("##start frame", &v_min, 0, 0);
         ImGui::EndDisabled();
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ImGui::GetTextLineHeight() * 2 - ImGui::GetStyle().ItemSpacing.x);
+
+
+        // Frame slider + cache strip
+        int slider_width = ImGui::GetContentRegionAvail().x - ImGui::GetTextLineHeight() * 2 - ImGui::GetStyle().ItemSpacing.x;
+        auto slider_pos = ImGui::GetCursorPos();
+
+        // show cached ranges
+        ImGui::SetCursorPos(slider_pos+ImVec2(1,-2));
+
+        ImGui::Ranges(ranges, v_min, v_max, ImVec2(slider_width, 0));
+
+
+        // show slider on top of cache strip
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImGui::GetStyle().Colors[ImGuiCol_FrameBgHovered]);
+        ImGui::SetCursorPos(slider_pos);
+        ImGui::SetNextItemWidth(slider_width);
         if (ImGui::SliderInt("##frame", F, v_min, v_max)) {
             changed = true;
         }
+        ImGui::PopStyleColor();
+
+        // last frame box
         ImGui::SameLine();
         ImGui::BeginDisabled();
         ImGui::SetNextItemWidth(ImGui::GetTextLineHeight() * 2);
         ImGui::InputInt("##end frame", &v_max, 0, 0);
         ImGui::EndDisabled();
+
+        
     }
     ImGui::EndGroup();
+
+
 
     return changed;
 }

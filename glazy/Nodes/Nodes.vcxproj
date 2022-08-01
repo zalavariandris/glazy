@@ -158,6 +158,11 @@
     <ClCompile Include="..\..\tracy\TracyClient.cpp" />
     <ClCompile Include="ImGuiWidgets.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="MovieIO\MovieIO.cpp" />
+    <ClCompile Include="MovieIO\OIIOMovieInput.cpp" />
+    <ClCompile Include="MovieIO\OpenCVMovieInput.cpp" />
+    <ClCompile Include="MovieIO\SequencePath.cpp" />
+    <ClCompile Include="nodes\ReadNode.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\glazy.vcxproj">
@@ -166,8 +171,14 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ImGuiWidgets.h" />
-    <ClInclude Include="MovieIO.h" />
-    <ClInclude Include="nodes.h" />
+    <ClInclude Include="MovieIO\exr_channel_set_helpers.h" />
+    <ClInclude Include="MovieIO\MovieIO.h" />
+    <ClInclude Include="MovieIO\OIIOMovieInput.h" />
+    <ClInclude Include="MovieIO\OpenCVMovieInput.h" />
+    <ClInclude Include="MovieIO\SequencePath.h" />
+    <ClInclude Include="nodes\nodes.h" />
+    <ClInclude Include="nodes\ReadNode.h" />
+    <ClInclude Include="nodes\ViewportNode.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
