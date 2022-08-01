@@ -1,6 +1,8 @@
 #include "SequencePath.h"
 #include <regex>
 #include <assert.h>
+#include "../../pathutils.h"
+#include <filesystem>
 
 namespace filesystem
 {
@@ -21,6 +23,10 @@ namespace filesystem
     SequencePath SequencePath::from_item_on_disk(std::filesystem::path item)
     {
         assert(std::filesystem::exists(item));
+
+        auto [p, s,e,c] = sequence_from_item(item);
+
+        return SequencePath(p.string(), {s,e});
     }
 
     bool SequencePath::exists() {
