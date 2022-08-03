@@ -326,3 +326,18 @@ bool ImGui::SliderFloat(const char* label, Nodes::Attribute<float>* attr, int v_
     }
     return false;
 }
+
+int ImGui::CalcComboWidth(const std::vector<std::string>& values, ImGuiComboFlags flags)
+{
+    int min_width = ImGui::GetTextLineHeight();
+    for (const auto& layer : values)
+    {
+        auto item_width = ImGui::CalcTextSize(layer.c_str()).x;
+        if (item_width > min_width) {
+            min_width = item_width;
+        }
+    }
+    min_width += ImGui::GetStyle().FramePadding.x * 2;
+    if ((flags & ImGuiComboFlags_NoArrowButton) == 0) min_width += ImGui::GetTextLineHeight() + ImGui::GetStyle().FramePadding.y * 2;
+    return min_width;
+}

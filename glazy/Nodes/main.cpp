@@ -228,8 +228,22 @@ int main(int argc, char* argv[])
 
         if (ImGui::Begin("Viewer##Panel")) {
 
+            ImVec2 cursor_pos = ImGui::GetCursorPos();
             ImGui::ImageViewer("viewer", (ImTextureID)viewport_node._correctedtex, viewport_node._width, viewport_node._height, &pan, &zoom, { -1,-1 });
+
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0);
+            int selected_device = (int)viewport_node.selected_device.get();
+            int combo_width = ImGui::CalcComboWidth({ "linear", "sRGB", "rec709" });
+            ImGui::SetCursorPos(cursor_pos+ImVec2(180,0));
+            ImGui::SetNextItemWidth(combo_width);
+            if (ImGui::Combo("##device", &selected_device, { "linear", "sRGB", "rec709" })) {
+                viewport_node.selected_device.set((ViewportNode::DeviceTransform)selected_device);
+            }
             itemsize = ImGui::GetItemRectSize();
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(2);
         }
         ImGui::End();
 

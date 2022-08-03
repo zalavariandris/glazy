@@ -14,14 +14,16 @@ private:
     GLint glinternalformat = GL_RGBA16F;
 
 
-    enum class DeviceTransform : int {
-        Linear = 0, sRGB = 1, Rec709 = 2
-    };
+
 
     ImVec2 pan{ 0,0 };
     float zoom{ 1 };
 
 public:
+    enum class DeviceTransform : int {
+        Linear = 0, sRGB = 1, Rec709 = 2
+    };
+
     Nodes::Inlet<std::tuple<void*, TextureSpec>> image_in{ "image_in" };
     Nodes::Attribute<float> gamma{ 1.0 };
     Nodes::Attribute<float> gain{ 0.0 };
@@ -58,6 +60,7 @@ public:
 
         gamma.onChange([&](auto val) {color_correct_texture(); });
         gain.onChange([&](auto val) {color_correct_texture(); });
+        selected_device.onChange([&](auto val) {color_correct_texture(); });
     }
 
     void init_textures()
@@ -218,14 +221,14 @@ public:
         }
         )";
 
-        if (glIsProgram(_program)) {
-            glDeleteProgram(_program);
-        }
-        _program = imdraw::make_program_from_source(PASS_THROUGH_VERTEX_CODE, display_correction_fragment_code);
-        if (glIsFramebuffer(_fbo)) {
-            glDeleteFramebuffers(1, &_fbo);
-        }
-        _fbo = imdraw::make_fbo(_correctedtex);
+            if (glIsProgram(_program)) {
+                glDeleteProgram(_program);
+            }
+            _program = imdraw::make_program_from_source(PASS_THROUGH_VERTEX_CODE, display_correction_fragment_code);
+            if (glIsFramebuffer(_fbo)) {
+                glDeleteFramebuffers(1, &_fbo);
+            }
+            _fbo = imdraw::make_fbo(_correctedtex);
     }
 
     void color_correct_texture()
@@ -270,8 +273,9 @@ public:
         ImVec2 itemsize;
         ImGui::BeginGroup(); // display correction
         {
-            //static const std::vector<std::string> devices{ "linear", "sRGB", "Rec.709" };
-            //int devices_combo_width = ImGui::CalcComboWidth(devices);
+            static const std::vector<std::string> devices{ "linear", "sRGB", "Rec.709" };
+            int devices_combo_width = ImGui::CalcComboWidth(devices);
+
             ImGui::SetNextItemWidth(ImGui::GetTextLineHeight() * 6);
             ImGui::SliderFloat(ICON_FA_ADJUST "##gain", &gain, -6.0f, 6.0f);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("gain");
@@ -302,11 +306,16 @@ public:
                 glinternalformat = internal_format_options[current_index];
                 init_textures();
             }
-            //ImGui::SetNextItemWidth(devices_combo_width);
-            //ImGui::Combo("##device", &selected_device, "linear\0sRGB\0Rec.709\0");
-            //if (ImGui::IsItemHovered()) ImGui::SetTooltip("device");
+
+            ImGui::SetNextItemWidth(devices_combo_width);
+            int selected_device_idx = (int)selected_device.get();
+            if(ImGui::Combo("##device", &selected_device_idx, "linear\0sRGB\0Rec.709\0")){
+                selected_device.set((DeviceTransform)selected_device_idx);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("device");
 
             ImGui::ImageViewer("viewer1", (ImTextureID)_correctedtex, _width, _height, &pan, &zoom);
+            
         }
         ImGui::EndGroup();
     }

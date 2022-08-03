@@ -179,7 +179,11 @@ public:
         return ranges;
     }
 
-    void onGUI() {
+    void onGUI()
+    {
+
+        // File ----------------------------------------------------
+        ImGui::Text("File");
 
         std::string filename = file.get();
         if (ImGui::InputText("file", &filename)) {
@@ -199,9 +203,13 @@ public:
         ImGui::LabelText("range", "%d-%d", _first_frame, _last_frame);
         ImGui::SliderInt("frame", &frame, _first_frame, _last_frame);
 
+        ImGui::Separator(); // ---------------------------------------
 
+        // Cache -----------------------------------------------------
+        ImGui::Text("Cache");
         int used_memory = 0;
-        for (const auto& [key, memory_img] : _cache) {
+        for (const auto& [key, memory_img] : _cache)
+        {
             const auto& [mem, w, h, channels, f] = memory_img;
 
 
@@ -210,12 +218,35 @@ public:
         ImGui::LabelText("images", "%d", _cache.size());
         ImGui::LabelText("memory", "%.2f MB", used_memory / pow(1000, 2));
 
-        for (const auto& inlet : plate_out.targets()) {
+        for (const auto& inlet : plate_out.targets())
+        {
             ImGui::Text("inlet: %s", "target");
         }
 
         ImGui::Ranges(cached_range(), _first_frame, _last_frame);
 
+        ImGui::Separator(); // ---------------------------------------
+
+        // ChannelSets
+        ImGui::Text("ChannelSets");
+        if (_current_file)
+        {
+            for (auto channelset : _current_file->channel_sets())
+            {
+                std::string channelset_label = channelset.name.empty() ? "-" : channelset.name;
+                std::string channels_label = join_string(channelset.channels, ", ");
+                ImGui::Text("%s", channelset_label.c_str());
+                ImGui::SameLine();
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 0.66f));
+                ImGui::Text("%s", channels_label.c_str());
+                ImGui::PopStyleColor();
+            }
+        }
+
+        ImGui::Separator(); // ---------------------------------------
+
+        // Info -----------------------------------------------------
+        ImGui::Text("Info");
         if (_current_file)
         {
             auto info = _current_file->info();
@@ -224,10 +255,6 @@ public:
             ImGui::LabelText("channels", "%s", join_string(info.channels, ", ").c_str());
 
             ImGui::LabelText("format", "%s", info.format.c_str());
-
-            for (auto channelset : _current_file->channel_sets()) {
-                ImGui::Text(channelset.name.c_str());
-            }
         }
     }
 };
