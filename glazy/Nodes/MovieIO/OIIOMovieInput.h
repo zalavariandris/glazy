@@ -13,6 +13,8 @@ namespace MovieIO {
         bool _is_sequence{ false };
         int _current_frame;
         std::vector<ChannelSet> _channel_sets;
+
+        std::map<std::string, int> channel_idx_by_name;
     public:
         int _first_frame;
         int _last_frame;

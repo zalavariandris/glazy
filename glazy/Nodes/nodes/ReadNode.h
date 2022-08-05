@@ -25,6 +25,8 @@ public:
     Nodes::Attribute<int> frame;
     Nodes::Outlet<std::tuple<void*, TextureSpec>> plate_out;
 
+    Nodes::Attribute<int> selected_channelset_idx;
+
     void* memory;
     size_t capacity{ 0 };
 

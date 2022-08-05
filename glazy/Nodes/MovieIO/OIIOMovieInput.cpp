@@ -90,10 +90,11 @@ namespace MovieIO
             while (_current_input->seek_subimage(subimage, 0)) {
                 const auto& spec = _current_input->spec();
                 std::vector<std::string> channels;
-                for (int channel = 0; channel < spec.nchannels; channel++)
+                for (int channel_idx = 0; channel_idx < spec.nchannels; channel_idx++)
                 {
-                    std::string channel_name = spec.channel_name(channel);
+                    std::string channel_name = spec.channel_name(channel_idx);
                     channels.push_back(channel_name);
+                    channel_idx_by_name[channel_name] = channel_idx;
                 }
                 auto name = spec.get_string_attribute("name");
                 auto layer = ChannelSet(name, subimage, channels);
@@ -202,6 +203,24 @@ namespace MovieIO
 
     bool OIIOMovieInput::read(void* data, ChannelSet channel_set)
     {
+        if (_current_input->current_subimage() != channel_set.part) {
+            _current_input->seek_subimage(channel_set.part, 0);
+        }
+
+        // collect channel indices
+        std::vector<int> channel_indices;
+        for (std::string channel_name : channel_set.channels) {
+            int channel_idx = channel_idx_by_name.at(channel_name);
+            channel_indices.push_back(channel_idx);
+        }
+
+        // find chbegin and chend
+        const auto [chbegin_it, chend_it] = std::minmax_element(channel_indices.begin(), channel_indices.end());
+        int chbegin = *chbegin_it;
+        int chend = *chend_it;
+        if (chbegin + 4 > chend) throw "maximum 4 channels exceeded";
+        
+        //_current_input->read_image(subimage, miplevel, chbegin, chend, format)
         return _current_input->read_image(0, 4, _current_input->spec().format, data);
     }
 
