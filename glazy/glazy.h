@@ -4,7 +4,6 @@
 
 // Logging
 #include <iostream>
-
 #include <algorithm>
 
 // FileSystem
@@ -59,6 +58,10 @@
 
 // Icon Fonts
 #include "IconsFontAwesome5.h"
+
+// FileDialog
+#include <windows.h>
+#include <commdlg.h>
 
 inline void glPrintErrors()
 {
@@ -179,14 +182,13 @@ namespace glazy {
 
 	void ApplyEmbraceTheDarknessTheme();
 
-	void set_vsync(bool enable) {
+	inline void set_vsync(bool enable) {
 		glfwSwapInterval(enable ? 1 : 0);
 		_vsync = enable;
 	}
 
-
-
-	bool get_vsync() {
+	inline bool get_vsync()
+	{
 		return _vsync;
 	}
 

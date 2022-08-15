@@ -39,6 +39,12 @@
     <ClCompile Include="MovieIO\SequencePath.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="nodes\MemoryImage.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="nodes\ViewportNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ImGuiWidgets.h">
@@ -66,6 +72,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="MovieIO\SequencePath.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="nodes\MemoryImage.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

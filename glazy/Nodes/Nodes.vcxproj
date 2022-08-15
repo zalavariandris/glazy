@@ -162,7 +162,9 @@
     <ClCompile Include="MovieIO\OIIOMovieInput.cpp" />
     <ClCompile Include="MovieIO\OpenCVMovieInput.cpp" />
     <ClCompile Include="MovieIO\SequencePath.cpp" />
+    <ClCompile Include="nodes\MemoryImage.cpp" />
     <ClCompile Include="nodes\ReadNode.cpp" />
+    <ClCompile Include="nodes\ViewportNode.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\glazy.vcxproj">
@@ -176,6 +178,7 @@
     <ClInclude Include="MovieIO\OIIOMovieInput.h" />
     <ClInclude Include="MovieIO\OpenCVMovieInput.h" />
     <ClInclude Include="MovieIO\SequencePath.h" />
+    <ClInclude Include="nodes\MemoryImage.h" />
     <ClInclude Include="nodes\nodes.h" />
     <ClInclude Include="nodes\ReadNode.h" />
     <ClInclude Include="nodes\ViewportNode.h" />

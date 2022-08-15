@@ -10,27 +10,25 @@
 
 // ImGui
 #define IMGUI_DEFINE_MATH_OPERATORS
-#include "imgui.h"
-#include "imgui_stdlib.h"
-#include "imgui_internal.h" // use imgui math operators
+#include <imgui.h>
+#include <imgui_stdlib.h>
+#include <imgui_internal.h> // use imgui math operators
 
 #include "glazy.h"
 
 #include <filesystem>
 #include <tuple>
 
-#include "OpenImageIO/imageio.h"
+#include <OpenImageIO/imageio.h>
 
-#include "glad/glad.h"
+#include <glad/glad.h>
 
-#include "../../tracy/Tracy.hpp"
+//#include <../../tracy/Tracy.hpp>
 #include "Camera.h"
 
 #include <format>
 
 #include "ImGuiWidgets.h"
-
-#include "nodes/nodes.h"
 
 #include <future>
 
@@ -125,6 +123,7 @@ public:
     }
 };
 
+#include "nodes/nodes.h"
 #include "MovieIO/MovieIO.h"
 #include "nodes/ReadNode.h"
 #include "nodes/ViewportNode.h"
@@ -191,7 +190,7 @@ int main(int argc, char* argv[])
 
     while (glazy::is_running()) {
         glazy::new_frame();
-        FrameMark;
+        //FrameMark;
 
         ImVec2 itemsize;
         static ImVec2 pan{ 0,0 };
@@ -218,7 +217,7 @@ int main(int argc, char* argv[])
                 }
 
                 if (ImGui::MenuItem("Fit", "")) {
-                    zoom = std::min(itemsize.x / viewport_node._width, itemsize.y / viewport_node._height);
+                    //zoom = std::min(itemsize.x / viewport_node._width, itemsize.y / viewport_node._height);
                     pan = ImVec2(0, 0);
                 }
                 ImGui::EndMenu();
@@ -229,7 +228,7 @@ int main(int argc, char* argv[])
         if (ImGui::Begin("Viewer##Panel")) {
 
             ImVec2 cursor_pos = ImGui::GetCursorPos();
-            ImGui::ImageViewer("viewer", (ImTextureID)viewport_node._correctedtex, viewport_node._width, viewport_node._height, &pan, &zoom, { -1,-1 });
+            //ImGui::ImageViewer("viewer", (ImTextureID)viewport_node._correctedtex, viewport_node._width, viewport_node._height, &pan, &zoom, { -1,-1 });
 
             ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
@@ -239,7 +238,7 @@ int main(int argc, char* argv[])
             ImGui::SetCursorPos(cursor_pos+ImVec2(180,0));
             ImGui::SetNextItemWidth(combo_width);
             if (ImGui::Combo("##device", &selected_device, { "linear", "sRGB", "rec709" })) {
-                viewport_node.selected_device.set((ViewportNode::DeviceTransform)selected_device);
+                //viewport_node.selected_device.set((ViewportNode::DeviceTransform)selected_device);
             }
             itemsize = ImGui::GetItemRectSize();
             ImGui::PopStyleVar();
@@ -293,7 +292,7 @@ int main(int argc, char* argv[])
 
         glazy::end_frame();
 
-        FrameMark;
+        //FrameMark;
     }
     glazy::destroy();
 
