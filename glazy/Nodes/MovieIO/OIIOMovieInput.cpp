@@ -217,11 +217,11 @@ namespace MovieIO
         // find chbegin and chend
         const auto [chbegin_it, chend_it] = std::minmax_element(channel_indices.begin(), channel_indices.end());
         int chbegin = *chbegin_it;
-        int chend = *chend_it;
+        int chend = *chend_it+1;
         if (chbegin + 4 > chend) throw "maximum 4 channels exceeded";
         
         //_current_input->read_image(subimage, miplevel, chbegin, chend, format)
-        return _current_input->read_image(0, 4, _current_input->spec().format, data);
+        return _current_input->read_image(chbegin, chend, _current_input->spec().format, data);
     }
 
     std::vector<ChannelSet> OIIOMovieInput::channel_sets() const {

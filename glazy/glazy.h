@@ -85,7 +85,7 @@ inline void glPrintErrors()
 
 namespace ImGui
 {
-	static auto vector_getter = [](void* vec, int idx, const char** out_text)
+	inline static auto vector_getter = [](void* vec, int idx, const char** out_text)
 	{
 		auto& vector = *static_cast<std::vector<std::string>*>(vec);
 		if (idx < 0 || idx >= static_cast<int>(vector.size())) { return false; }
@@ -93,14 +93,14 @@ namespace ImGui
 		return true;
 	};
 
-	bool Combo(const char* label, int* currIndex, const std::vector<std::string>& values)
+	inline bool Combo(const char* label, int* currIndex, const std::vector<std::string>& values)
 	{
 		if (values.empty()) { return false; }
 		return Combo(label, currIndex, vector_getter,
 			(void*)(&values), values.size()); // TODO: switch to c++ style cast. but ImGui doesn not accept const pointer. I dont know why, when its not chahgint the values array. Theoretically this is not safe. In practice with this particular function its seems safe
 	}
 
-	bool ListBox(const char* label, int* currIndex, std::vector<std::string>& values)
+	inline bool ListBox(const char* label, int* currIndex, std::vector<std::string>& values)
 	{
 		if (values.empty()) { return false; }
 		return ListBox(label, currIndex, vector_getter,
@@ -108,7 +108,7 @@ namespace ImGui
 	}
 }
 
-void control_camera(Camera& camera, int scree_width, int screen_height) {
+inline void control_camera(Camera& camera, int scree_width, int screen_height) {
 	auto io = ImGui::GetIO();
 	// control camera
 	if (!ImGui::IsAnyItemHovered()) {
@@ -153,14 +153,14 @@ void control_camera(Camera& camera, int scree_width, int screen_height) {
 
 
 namespace glazy {
-	GLFWwindow* window;
-	Camera camera;
+	static GLFWwindow* window;
+	static Camera camera;
 
-	std::chrono::steady_clock::time_point g_Time;
-	float DeltaTime; // in seconds
-	float Framerate; // frames per sec
+	static std::chrono::steady_clock::time_point g_Time;
+	static float DeltaTime; // in seconds
+	static float Framerate; // frames per sec
 
-	bool _vsync = false;
+	static bool _vsync = false;
 
 
 	// GLuint default_program;
@@ -349,7 +349,7 @@ namespace glazy {
 	/**
 	* return empty string if cancelled
 	*/
-	std::filesystem::path open_file_dialog(const char* filter) {
+	inline std::filesystem::path open_file_dialog(const char* filter) {
 		OPENFILENAMEA ofn;
 		CHAR szFile[260] = { 0 };
 		ZeroMemory(&ofn, sizeof(OPENFILENAME));
@@ -371,8 +371,8 @@ namespace glazy {
 	/// Returns true when the file has changed since last frame
 	/// changes are kept for mutliple calls. And renew new frame
 	/// </summary>
-	std::map<std::filesystem::path, std::filesystem::file_time_type> mod_times;
-	bool is_file_modified(const std::filesystem::path& path)
+	static std::map<std::filesystem::path, std::filesystem::file_time_type> mod_times;
+	inline bool is_file_modified(const std::filesystem::path& path)
 	{
 		
 		if (!mod_times.contains(path)) 
@@ -392,7 +392,7 @@ namespace glazy {
 	/// <summary>
 	/// private function. clear mod changes
 	/// </summary>
-	void _clear_mod_flags() {
+	inline void _clear_mod_flags() {
 		for (const auto& [path, timestamp] : mod_times) {
 			mod_times[path] = std::filesystem::last_write_time(path);
 		}
@@ -404,19 +404,19 @@ namespace glazy {
 	* @deprecated since 1.0
 	* @see is_running()
 	*/
-	bool window_should_close() {
+	inline bool window_should_close() {
 		return glfwWindowShouldClose(window);
 	}
 
-	bool is_running() {
+	inline bool is_running() {
 		return !glfwWindowShouldClose(window);
 	}
 
-	void quit() {
+	inline void quit() {
 		glfwSetWindowShouldClose(window, 1);
 	}
 
-	void new_frame(bool wait_events = false)
+	inline void new_frame(bool wait_events = false)
 	{
 		//ZoneNamed(HELLO, true);
 		// poll events
@@ -475,7 +475,7 @@ namespace glazy {
 		//control_camera(camera, display_w, display_h);
 	}
 
-	void end_frame()
+	inline void end_frame()
 	{
 		//ZoneScoped;
 		// glazy windows
@@ -625,7 +625,7 @@ namespace glazy {
 
 	}
 
-	void destroy() {
+	inline void destroy() {
 		// - cleanup implot
 		ImPlot::DestroyContext();
 

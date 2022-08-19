@@ -7,7 +7,10 @@
 
 #include <filesystem>
 #include <IconsFontAwesome5.h>
+
+#include "../../stringutils.h"
 #include "glazy.h"
+
 
 ReadNode::ReadNode()
 {
@@ -51,7 +54,6 @@ void ReadNode::read()
     if (!_movie_input) return;
 
     std::shared_ptr<MemoryImage> image;
-
     if (!enable_cache.get() || !_cache.contains(CacheKey(frame.get())))
     {
         //ZoneScoped;
@@ -141,25 +143,46 @@ void ReadNode::onGUI()
     ImGui::SliderInt("frame", &frame, _first_frame, _last_frame);
 
     ImGui::Separator(); // ---------------------------------------
+    ImGui::Text("Channel sets");
 
-    //int used_memory = 0;
-    //for (const auto& [key, memory_img] : _cache) {
-    //    const auto& [mem, w, h, channels, f] = memory_img;
+    const auto& channel_sets = _movie_input->channel_sets();
+    for (auto i = 0; i < channel_sets.size(); i++)
+    {
+        const auto& channel_set = channel_sets.at(i);
 
-    //    bool enable_cache_value = enable_cache.get();
-    //    if (ImGui::Checkbox("enable cache", &enable_cache_value))
-    //    {
-    //        enable_cache.set(enable_cache_value);
-    //    }
+        bool is_selected = i==selected_channelset_idx.get();
+        if (ImGui::Selectable(channel_set.name.c_str(), &is_selected))
+        {
+            selected_channelset_idx.set(i);
+        }
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8, 0.8, 0.8, 0.5));
+        for (const auto& channel_name : channel_set.channels)
+        {
+            ImGui::Text(channel_name.c_str());
+            ImGui::SameLine();
+        }
+        ImGui::NewLine();
+        ImGui::PopStyleColor();
+    }
 
-    //    int used_memory = 0;
-    //    for (const auto& [key, img] : _cache)
-    //    {
-    //        used_memory += img->bytes();
-    //    }
-    //    ImGui::LabelText("images", "%d", _cache.size());
-    //    ImGui::LabelText("memory", "%.2f MB", used_memory / pow(1000, 2));
+    ImGui::Separator(); // ---------------------------------------
+    ImGui::Text("Cache");
 
+    bool enable_cache_value = enable_cache.get();
+    if (ImGui::Checkbox("enable cache", &enable_cache_value))
+    {
+        enable_cache.set(enable_cache_value);
+    }
+
+    int used_memory = 0;
+    for (const auto& [key, img] : _cache)
+    {
+        used_memory += img->bytes();
+    }
+    ImGui::LabelText("images", "%d", _cache.size());
+    ImGui::LabelText("memory", "%.2f MB", used_memory / pow(1000, 2));
+    //}
     //    for (const auto& inlet : plate_out.targets())
     //    {
     //        ImGui::Text("inlet: %s", "target");
@@ -167,9 +190,9 @@ void ReadNode::onGUI()
 
     //    ImGui::Ranges(cached_range(), _first_frame, _last_frame);
 
-    //    if (_current_file)
+    //    if (_movie_input)
     //    {
-    //        auto info = _current_file->info();
+    //        auto info = _movie_input->info();
     //        ImGui::LabelText("size", "%dx%d", info.width, info.height);
 
     //        ImGui::LabelText("channels", "%s", join_string(info.channels, ", ").c_str());

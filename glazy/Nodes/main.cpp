@@ -200,8 +200,9 @@ int main(int argc, char* argv[])
         {
             if (ImGui::BeginMenu("File"))
             {
-                if (ImGui::MenuItem("Open", "")) {
-                    //read_node.filename.set("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr");
+                if (ImGui::MenuItem("Open", ""))
+                {
+                    read_node.file.set("C:/Users/andris/Desktop/testimages/openexr-images-master/Beachball/singlepart.0001.exr");
                 }
                 ImGui::EndMenu();
             }
@@ -217,7 +218,7 @@ int main(int argc, char* argv[])
                 }
 
                 if (ImGui::MenuItem("Fit", "")) {
-                    //zoom = std::min(itemsize.x / viewport_node._width, itemsize.y / viewport_node._height);
+                    zoom = std::min(itemsize.x / viewport_node._width, itemsize.y / viewport_node._height);
                     pan = ImVec2(0, 0);
                 }
                 ImGui::EndMenu();
@@ -228,7 +229,7 @@ int main(int argc, char* argv[])
         if (ImGui::Begin("Viewer##Panel")) {
 
             ImVec2 cursor_pos = ImGui::GetCursorPos();
-            //ImGui::ImageViewer("viewer", (ImTextureID)viewport_node._correctedtex, viewport_node._width, viewport_node._height, &pan, &zoom, { -1,-1 });
+            ImGui::ImageViewer("viewer", (ImTextureID)viewport_node._correctedtex, viewport_node._width, viewport_node._height, &pan, &zoom, { -1,-1 });
 
             ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
@@ -237,8 +238,9 @@ int main(int argc, char* argv[])
             int combo_width = ImGui::CalcComboWidth({ "linear", "sRGB", "rec709" });
             ImGui::SetCursorPos(cursor_pos+ImVec2(180,0));
             ImGui::SetNextItemWidth(combo_width);
-            if (ImGui::Combo("##device", &selected_device, { "linear", "sRGB", "rec709" })) {
-                //viewport_node.selected_device.set((ViewportNode::DeviceTransform)selected_device);
+            if (ImGui::Combo("##device", &selected_device, { "linear", "sRGB", "rec709" }))
+            {
+                viewport_node.selected_device.set((ViewportNode::DeviceTransform)selected_device);
             }
             itemsize = ImGui::GetItemRectSize();
             ImGui::PopStyleVar();
@@ -246,11 +248,12 @@ int main(int argc, char* argv[])
         }
         ImGui::End();
 
-        //auto viewsize = ImGui::GetMainViewport()->WorkSize;
+        auto viewsize = ImGui::GetMainViewport()->WorkSize;
         
-        if (read_node.length() > 1) {
-            //ImGui::SetNextWindowSize({ viewsize.x * 2 / 3,0 });
-            //ImGui::SetNextWindowPos({ viewsize.x * 1 / 3 / 2, viewsize.y - 80 });
+        if (read_node.length() > 1)
+        {
+            ImGui::SetNextWindowSize({ viewsize.x * 2 / 3,0 });
+            ImGui::SetNextWindowPos({ viewsize.x * 1 / 3 / 2, viewsize.y - 80 });
             if (ImGui::Begin("Frameslider##Panel"))
             {
                 int F = read_node.frame.get();
@@ -264,13 +267,11 @@ int main(int argc, char* argv[])
             ImGui::End();
         }
 
-        //ImGui::SetNextWindowSize({ 300, viewsize.y * 2 / 3 });
-        //ImGui::SetNextWindowPos({ viewsize.x-300, viewsize.y * 1 / 3 / 2 });
+        ImGui::SetNextWindowSize({ 300, viewsize.y * 2 / 3 });
+        ImGui::SetNextWindowPos({ viewsize.x-300, viewsize.y * 1 / 3 / 2 });
         if (ImGui::Begin("Inspector##Panel")) {
-            //if (ImGui::CollapsingHeader("filesequence", ImGuiTreeNodeFlags_DefaultOpen | ImGuiWindowFlags_NoDocking)) {
-            //    filesequence_node.onGui();
-            //}
-            if (ImGui::CollapsingHeader("read", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (ImGui::CollapsingHeader("read", ImGuiTreeNodeFlags_DefaultOpen))
+            {
                 read_node.onGUI();
             }
             if (ImGui::CollapsingHeader("viewport", ImGuiTreeNodeFlags_DefaultOpen)) {

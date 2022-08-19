@@ -2,14 +2,17 @@
 
 #include <IconsFontAwesome5.h>
 
-#include "imgui.h"
+#include <imgui.h>
 #include <imgui_stdlib.h>
 #include "../ImGuiWidgets.h"
 
-#include "../glazy/glhelpers.h"
+//#include "../glazy/glazy.h"
 #include "../glazy/imdraw/imdraw.h"
 #include "../glazy/imdraw/imdraw_internal.h"
 #include "../glazy/imgeo/imgeo.h"
+#include "../glazy/glhelpers.h"
+
+#include "../glazy/glazy.h"
 
 ViewportNode::ViewportNode()
 {
@@ -276,10 +279,12 @@ void ViewportNode::onGUI()
             current_index = std::distance(internal_format_options.begin(), it);
         }
 
-        //if (ImGui::Combo("glinternalformat", &current_index, format_names)) {
-        //    glinternalformat = internal_format_options[current_index];
-        //    init_textures();
-        //}
+
+        if (ImGui::Combo("glinternalformat", &current_index, format_names))
+        {
+            glinternalformat = internal_format_options[current_index];
+            init_textures();
+        }
 
         ImGui::SetNextItemWidth(devices_combo_width);
         int selected_device_idx = (int)selected_device.get();

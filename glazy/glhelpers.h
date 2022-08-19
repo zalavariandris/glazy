@@ -2,7 +2,7 @@
 #include <string>
 #include <glad/glad.h>
 
-std::string to_string(GLint t) {
+inline std::string to_string(GLint t) {
     switch (t) {
         case GL_RGB8: return "GL_RGB8";
         case GL_RGB16F: return "GL_RGB16F";
@@ -22,7 +22,7 @@ std::string to_string(GLint t) {
     }
 }
 
-std::string to_string(GLenum t)
+inline std::string to_string(GLenum t)
 {
     switch (t)
     {
@@ -53,7 +53,7 @@ std::string to_string(GLenum t)
     }
 }
 
-GLint internalformat_from_format_and_type(GLenum format, GLenum type)
+inline GLint internalformat_from_format_and_type(GLenum format, GLenum type)
 {
     switch (type) {
     case GL_UNSIGNED_BYTE:

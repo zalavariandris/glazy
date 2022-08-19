@@ -13,7 +13,7 @@ namespace imdraw {
 		GLsizei count;
 	};
 
-	GeometryBuffer make_geo(imgeo::Trimesh geo, std::map<std::string, GLuint> locations = std::map<std::string, GLuint>({ 
+	inline GeometryBuffer make_geo(imgeo::Trimesh geo, std::map<std::string, GLuint> locations = std::map<std::string, GLuint>({ 
 		{"position", 0},
 		{"uv", 1},
 		{"normal", 2}
@@ -45,7 +45,7 @@ namespace imdraw {
 		return { geo.mode, vao, ebo, (GLsizei)geo.indices.size() };
 	}
 
-	void draw(GeometryBuffer geo) {
+	inline void draw(GeometryBuffer geo) {
 		// draw VAO
 		glBindVertexArray(geo.vao);
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, geo.ebo);

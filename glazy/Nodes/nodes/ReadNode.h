@@ -34,15 +34,9 @@ class ReadNode
 {
 private:
     std::string _cache_pattern;
-
-    //using MemoryImage = std::tuple<void*, int, int, std::vector<std::string>, OIIO::TypeDesc>; //ptr, width, height, channels, format
-
     int _first_frame;
     int _last_frame;
-
-    std::unique_ptr<MovieIO::MovieInput> _movie_input;
-
-
+    std::unique_ptr<MovieIO::MovieInput> _movie_input;;
     std::unordered_map<CacheKey, std::shared_ptr<MemoryImage>> _cache; // memory, width, height, channels
 
 public:
