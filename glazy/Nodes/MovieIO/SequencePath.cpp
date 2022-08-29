@@ -8,12 +8,14 @@ namespace filesystem
 {
     SequencePath::SequencePath(std::string sequence_pattern, std::tuple<int, int> range)
     {
+        // validate pattern
         static std::regex sequence_match_re("(.+)%0([0-9]+)d(.+)");
         std::smatch sequence_groups;
         if (!std::regex_match(sequence_pattern, sequence_groups, sequence_match_re)) {
             throw "printf pattern not recognized eg.: filename.%04d.exr";
         }
 
+        // set members
         _pattern = sequence_pattern;
         _first_frame = std::get<0>(range);
         _last_frame = std::get<1>(range);
