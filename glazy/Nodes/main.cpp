@@ -26,7 +26,6 @@
 //#include <../../tracy/Tracy.hpp>
 #include "Camera.h"
 
-#include <format>
 
 #include "ImGuiWidgets.h"
 
@@ -128,10 +127,15 @@ public:
 #include "nodes/ReadNode.h"
 #include "nodes/ViewportNode.h"
 
+#include "MovieIO/MovieIO.h"
+#include "nodes/MemoryImage.h"
+
+#include "OpenImageIO/imageio.h"
 
 
 int main(int argc, char* argv[])
 {
+
     /// Open with file argument
     // Fix Current Working Directory
     if (argc > 0) {

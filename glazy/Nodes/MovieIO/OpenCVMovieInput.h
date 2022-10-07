@@ -10,7 +10,7 @@ namespace MovieIO
     class OpenCVMovieInput : public MovieInput
     {
     private:
-        cv::VideoCapture cap;
+        mutable cv::VideoCapture cap;
         int _first_frame;
         int _last_frame;
     public:
@@ -18,11 +18,11 @@ namespace MovieIO
 
         std::tuple<int, int> range() const;
 
-        bool seek(int frame) override;
+        bool seek(int frame, ChannelSet channel_set) override;
 
         Info info() const override;
 
-        bool read(void* data, ChannelSet channel_set = ChannelSet()) override;
+        bool read(void* data) const override;
 
         std::vector<ChannelSet> channel_sets() const override;
 };

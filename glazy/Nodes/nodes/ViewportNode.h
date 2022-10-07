@@ -22,10 +22,15 @@ public:
         Linear = 0, sRGB = 1, Rec709 = 2
     };
 
+    enum class AlphaChannelMode : int {
+        Opaque = 0, Transparent = 1, Overlay = 2
+    };
+
     Nodes::Inlet<std::shared_ptr<MemoryImage>> image_in{ "image_in" };
     Nodes::Attribute<float> gamma{ 1.0 };
     Nodes::Attribute<float> gain{ 0.0 };
     Nodes::Attribute<DeviceTransform> selected_device{ DeviceTransform::sRGB };
+    Nodes::Attribute<AlphaChannelMode> alpha_channel_mode{ AlphaChannelMode::Opaque };
 
     GLuint _datatex = -1;
     GLuint _correctedtex = -1;

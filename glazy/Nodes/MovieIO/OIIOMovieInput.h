@@ -7,13 +7,13 @@
 namespace MovieIO {
     class OIIOMovieInput : public MovieInput
     {
-        std::unique_ptr<OIIO::ImageInput> _current_input;
+        mutable std::unique_ptr<OIIO::ImageInput> _oiio_input;
         std::filesystem::path _current_filepath;
         std::string _sequence_path;
         bool _is_sequence{ false };
         int _current_frame;
         std::vector<ChannelSet> _channel_sets;
-
+        ChannelSet _current_channel_set;
         std::map<std::string, int> channel_idx_by_name;
     public:
         int _first_frame;
@@ -28,11 +28,11 @@ namespace MovieIO {
 
         std::tuple<int, int> range() const override;
 
-        bool seek(int frame) override;
+        bool seek(int frame, ChannelSet channel_set) override;
 
         Info info() const override;
 
-        bool read(void* data, ChannelSet channel_set = ChannelSet()) override;
+        bool read(void* data) const override;
 
         std::vector<ChannelSet> channel_sets() const override;
     };

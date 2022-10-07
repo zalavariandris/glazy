@@ -2,6 +2,8 @@
 #include "../../pathutils.h" // sequence
 #include "exr_channel_set_helpers.h"
 
+#include <assert.h>
+
 namespace MovieIO
 {
     OIIOMovieInput::OIIOMovieInput(std::string sequence_path)
@@ -73,8 +75,8 @@ namespace MovieIO
         _sequence_path = sequence_path;
         _current_frame = _first_frame;
         _current_filepath = sequence_item(sequence_path, _current_frame);
-        _current_input = OIIO::ImageInput::open(_current_filepath.string());
-
+        _oiio_input = OIIO::ImageInput::open(_current_filepath.string());
+        std::cout << "OIIOError: " << OIIO::geterror() << "\n";
         update_channel_sets();
     }
 
@@ -87,8 +89,8 @@ namespace MovieIO
         {
             std::vector<ChannelSet> part_channel_sets;
             int subimage = 0;
-            while (_current_input->seek_subimage(subimage, 0)) {
-                const auto& spec = _current_input->spec();
+            while (_oiio_input->seek_subimage(subimage, 0)) {
+                const auto& spec = _oiio_input->spec();
                 std::vector<std::string> channels;
                 for (int channel_idx = 0; channel_idx < spec.nchannels; channel_idx++)
                 {
@@ -178,38 +180,53 @@ namespace MovieIO
         return { _first_frame, _last_frame };
     }
 
-    bool OIIOMovieInput::seek(int frame)
+    bool OIIOMovieInput::seek(int frame, ChannelSet channel_set)
     {
-        if (_current_frame == frame) return true;
-        if (frame<_first_frame || frame>_last_frame) return false;
+        assert(frame >= _first_frame && frame <= _last_frame); // frame in range
+        // TODO: assert channel set in channel sets!
+
+        if (_current_frame == frame && _current_channel_set == channel_set) return true;
+        
         _current_frame = frame;
-        if (_is_sequence) {
+        _current_channel_set = channel_set;
+        
+        if (_is_sequence) // open file for specified frame
+        {
             _current_filepath = sequence_item(_sequence_path, _current_frame);
-            _current_input = OIIO::ImageInput::open(_current_filepath.string());
-            return true;
+            _oiio_input = OIIO::ImageInput::open(_current_filepath.string());
+            assert((bool)_oiio_input);
         }
+
+        bool success = _oiio_input->seek_subimage(_current_channel_set.part, 0);
+        assert(success);
+        std::cout << "OIIOError: " << OIIO::geterror() << "\n";
         return true;
     }
 
     Info OIIOMovieInput::info() const
     {
-        auto spec = _current_input->spec();
-        return {
+        assert((bool)_oiio_input);
+        auto spec = _oiio_input->spec_dimensions(_current_channel_set.part, 0);
+        std::cout << "FORMAT: " << spec.format << "\n";
+        assert(spec.format != OIIO::TypeUnknown);
+        return Info(
             spec.x,spec.y,spec.width,spec.height,
-            {"R", "G", "B", "A"},
+            _current_channel_set.channels,
             spec.format
-        };
+        );
     }
 
-    bool OIIOMovieInput::read(void* data, ChannelSet channel_set)
+    bool OIIOMovieInput::read(void* data) const
     {
-        if (_current_input->current_subimage() != channel_set.part) {
-            _current_input->seek_subimage(channel_set.part, 0);
-        }
+        assert((bool)_oiio_input);
+        auto dim = _oiio_input->spec_dimensions(_current_channel_set.part, 0);
+        auto spec = _oiio_input->spec_dimensions(0, 0);
+        bool read_success = _oiio_input->read_image(0, 4, dim.format, data);
+        std::cout << "dimensions: " << dim.width << "px x " << dim.height << "px " << dim.nchannels << "c " << dim.format << "\n";
 
         // collect channel indices
         std::vector<int> channel_indices;
-        for (std::string channel_name : channel_set.channels) {
+        for (std::string channel_name : _current_channel_set.channels) {
             int channel_idx = channel_idx_by_name.at(channel_name);
             channel_indices.push_back(channel_idx);
         }
@@ -217,11 +234,19 @@ namespace MovieIO
         // find chbegin and chend
         const auto [chbegin_it, chend_it] = std::minmax_element(channel_indices.begin(), channel_indices.end());
         int chbegin = *chbegin_it;
-        int chend = *chend_it+1;
+        int chend = *chend_it;
+        chend += 1;
         if (chbegin + 4 > chend) throw "maximum 4 channels exceeded";
         
         //_current_input->read_image(subimage, miplevel, chbegin, chend, format)
-        return _current_input->read_image(chbegin, chend, _current_input->spec().format, data);
+        //bool is_half = _oiio_input->spec().format == OIIO::TypeDesc::HALF;
+        //std::cout << "OIIOError: " << OIIO::geterror() << "\n";
+
+        //auto i = this->info();
+        //const auto& file_color_depth_format = i.format;
+        
+        
+        return read_success;
     }
 
     std::vector<ChannelSet> OIIOMovieInput::channel_sets() const {

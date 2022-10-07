@@ -59,7 +59,8 @@ void ReadNode::read()
         //ZoneScoped;
 
         // get info at current frame
-        if (!_movie_input->seek(frame.get())) {
+        MovieIO::ChannelSet channel_set = _movie_input->channel_sets().at(selected_channelset_idx.get());
+        if (!_movie_input->seek(frame.get(), channel_set)) {
             return;
         };
 
@@ -68,8 +69,9 @@ void ReadNode::read()
         // Read pixels
         // TODO: REALLOC is faster. Implement it on MemoryImage
         image = std::make_shared<MemoryImage>(info.width, info.height, info.channels, info.format);
-        MovieIO::ChannelSet channel_set = _movie_input->channel_sets().at(selected_channelset_idx.get());
-        if (!_movie_input->read(image->data, channel_set))
+        bool is_half = info.format == OIIO::TypeDesc::HALF;
+
+        if (!_movie_input->read(image->data))
         {
             throw "Cant read image data";
         }

@@ -37,6 +37,7 @@ ViewportNode::ViewportNode()
     gamma.onChange([&](auto val) {color_correct_texture(); });
     gain.onChange([&](auto val) {color_correct_texture(); });
     selected_device.onChange([&](auto val) {color_correct_texture(); });
+    alpha_channel_mode.onChange([&](auto val) {color_correct_texture(); });
 }
 
 void ViewportNode::init_textures()
@@ -113,6 +114,7 @@ void ViewportNode::init_shader()
     uniform float gamma_correction;
     uniform float gain_correction;
     uniform int convert_to_device; // 0:linear | 1:sRGB | 2:Rec709
+    uniform int alpha_channel_mode; // 0:opaque | 1:transparent | 2:matte overlay
 
     float sRGB_to_linear(float channel){
         return channel <= 0.04045
@@ -193,7 +195,22 @@ void ViewportNode::init_shader()
             color = linear_to_rec709(color);
         }
 
-        FragColor = vec4(color, texture(inputTexture, uv).a);
+        float alpha = 1.0;
+        
+        if(alpha_channel_mode == 0){
+            alpha = 1.0;
+        }
+        else if(alpha_channel_mode==1)
+        {
+            alpha = texture(inputTexture, uv).a;
+        }
+        else if(alpha_channel_mode==2)
+        {
+            alpha=1.0;
+            color.r+=texture(inputTexture, uv).a;
+        }
+
+        FragColor = vec4(color, alpha);
     }
     )";
 
@@ -231,6 +248,7 @@ void ViewportNode::color_correct_texture()
         {"gain_correction", gain.get()},
         {"gamma_correction", 1.0f / gamma.get()},
         {"convert_to_device", (int)selected_device.get()},
+        {"alpha_channel_mode",(int)alpha_channel_mode.get()}
         });
     glBindTexture(GL_TEXTURE_2D, _datatex);
     glBindVertexArray(vao);
@@ -252,6 +270,8 @@ void ViewportNode::onGUI()
         static const std::vector<std::string> devices{ "linear", "sRGB", "Rec.709" };
         int devices_combo_width = ImGui::CalcComboWidth(devices);
 
+
+
         ImGui::SetNextItemWidth(ImGui::GetTextLineHeight() * 6);
         ImGui::SliderFloat(ICON_FA_ADJUST "##gain", &gain, -6.0f, 6.0f);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("gain");
@@ -261,6 +281,15 @@ void ViewportNode::onGUI()
         ImGui::SliderFloat("##gamma", &gamma, 0, 4);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("gamma");
         if (ImGui::IsItemClicked(1)) gamma.set(1.0);
+
+        static const std::vector<std::string> alpha_modes = { "opaque", "transparent", "matte overlay" };
+        int alpha_combo_width = ImGui::CalcComboWidth(alpha_modes);
+        ImGui::SetNextItemWidth(alpha_combo_width);
+        int selected_alpha_idx = (int)alpha_channel_mode.get();
+        if (ImGui::Combo("##alpha_mode", &selected_alpha_idx, "opaque\0transparent\0matte\0")) {
+            alpha_channel_mode.set((AlphaChannelMode)selected_alpha_idx);
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("alpha channel mode");
 
         ImGui::LabelText("glformat", "%s", to_string(_glformat).c_str());
         ImGui::LabelText("gltype", "%s", to_string(_gltype).c_str());

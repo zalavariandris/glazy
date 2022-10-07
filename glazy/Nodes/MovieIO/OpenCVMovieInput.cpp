@@ -42,7 +42,7 @@ namespace MovieIO
         return { _first_frame, _last_frame };
     }
 
-    bool OpenCVMovieInput::seek(int frame)
+    bool OpenCVMovieInput::seek(int frame, ChannelSet channel_set)
     {
         if (cap.get(cv::CAP_PROP_POS_FRAMES) != frame)
         {
@@ -62,10 +62,9 @@ namespace MovieIO
         };
     }
 
-    bool OpenCVMovieInput::read(void* data, ChannelSet channel_set)
+    bool OpenCVMovieInput::read(void* data) const
     {
         auto spec = info();
-
         cv::Mat mat(spec.height, spec.width, CV_8UC3, data);
         bool success = cap.read(mat);
         //cv::cvtColor(mat, mat, cv::COLOR_BGR2RGB);

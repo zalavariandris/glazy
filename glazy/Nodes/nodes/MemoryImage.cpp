@@ -7,7 +7,7 @@ MemoryImage::MemoryImage(int width, int height, std::vector<std::string> channel
     format(format)
 {
     // allocate Image
-    std::cout << "allocate image: " << width << "x" << height << " #" << channels.size() << "(" << format.c_str() << ")" << "\n";
+    std::cout << "allocate image: " << width << "x" << height << " C" << channels.size() << " (" << format.c_str() << ")" << "\n";
     data = (void*)std::malloc(bytes());
     if (data == nullptr) {
         throw std::bad_alloc();
@@ -21,11 +21,13 @@ void MemoryImage::realloc()
 
 MemoryImage::MemoryImage(const MemoryImage& other)
 {
+    std::cout << "Copy memory Image" << "\n";
     // free current memory if allocated
     if (data != nullptr) free(data);
 
     // allocate memory
     data = (void*)malloc(other.bytes());
+
 
     // copy pixel data
     std::memcpy(data, other.data, other.bytes());
@@ -60,6 +62,13 @@ GLenum MemoryImage::glformat() const
     else if (channels.size() == 3)
     {
         return GL_RGB;
+    }
+    else if (channels.size() == 2) {
+        return GL_RG;
+    }
+    else if (channels.size() == 1)
+    {
+        return GL_R;
     }
 }
 
